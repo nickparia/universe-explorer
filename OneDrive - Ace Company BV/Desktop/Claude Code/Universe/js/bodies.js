@@ -424,6 +424,9 @@ export function createSolarSystem(scene, textures) {
   // ── Dwarf planets (procedural) ──
   buildDwarfPlanets(scene);
 
+  // ── Spacecraft ──
+  buildSpacecraft(scene);
+
   // ── Comets ──
   buildComets(scene);
 
@@ -432,6 +435,83 @@ export function createSolarSystem(scene, textures) {
 
   // ── Kuiper belt ──
   buildKuiperBelt(scene);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Spacecraft
+// ═══════════════════════════════════════════════════════════════
+
+function buildSpacecraft(scene) {
+  const craftDefs = [
+    { name: 'VOYAGER 1', desc: 'Launched 1977. Farthest human-made object at 24.4 billion km. First to enter interstellar space (2012). Still transmitting.',
+      dist: 163, angle: 1.2, size: 1.5, color: 0xffeedd },
+    { name: 'VOYAGER 2', desc: 'Launched 1977. Only spacecraft to visit all four gas giants. Entered interstellar space 2018. Twin of Voyager 1.',
+      dist: 137, angle: 3.8, size: 1.5, color: 0xffeedd },
+    { name: 'NEW HORIZONS', desc: 'First to fly by Pluto (2015). Revealed a heart-shaped nitrogen glacier. Now exploring the Kuiper Belt.',
+      dist: 60, angle: 5.1, size: 1.2, color: 0xddddff },
+    { name: 'JWST', desc: 'James Webb Space Telescope at Sun-Earth L2 point. 6.5m gold mirror. Seeing the first galaxies formed after the Big Bang.',
+      dist: 1.01, angle: null, size: 2, color: 0xffdd66 },  // angle=null means follow Earth
+    { name: 'ISS', desc: 'International Space Station. 420 km altitude. Continuously crewed since 2000. Visible from Earth with naked eye.',
+      dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true },
+  ];
+
+  craftDefs.forEach((def) => {
+    const group = new THREE.Group();
+
+    // Spacecraft body — small box + solar panels
+    const bodyGeo = new THREE.BoxGeometry(def.size, def.size * 0.5, def.size * 0.8);
+    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.4 });
+    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
+    group.add(bodyMesh);
+
+    // Solar panel "wings"
+    const panelGeo = new THREE.BoxGeometry(def.size * 3, def.size * 0.05, def.size * 0.8);
+    const panelMat = new THREE.MeshStandardMaterial({ color: 0x334488, roughness: 0.3, metalness: 0.5 });
+    const panelMesh = new THREE.Mesh(panelGeo, panelMat);
+    group.add(panelMesh);
+
+    // Glowing beacon so it's visible from distance
+    const beaconGeo = new THREE.SphereGeometry(def.size * 4, 8, 8);
+    const beaconMat = new THREE.MeshBasicMaterial({
+      color: def.color, transparent: true, opacity: 0.15,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    group.add(new THREE.Mesh(beaconGeo, beaconMat));
+
+    // Brighter inner beacon
+    const innerGeo = new THREE.SphereGeometry(def.size * 1.5, 8, 8);
+    const innerMat = new THREE.MeshBasicMaterial({
+      color: def.color, transparent: true, opacity: 0.5,
+      blending: THREE.AdditiveBlending, depthWrite: false
+    });
+    group.add(new THREE.Mesh(innerGeo, innerMat));
+
+    // Position
+    if (def.orbitsEarth && earthRef) {
+      // ISS — very close to Earth
+      const ePos = earthRef.g.position;
+      group.position.set(ePos.x + 52, 1, ePos.z);
+      group.userData._isISS = true;
+    } else if (def.angle === null && earthRef) {
+      // JWST — follows Earth at L2 (slightly farther from Sun)
+      const ePos = earthRef.g.position;
+      const dir = ePos.clone().normalize();
+      group.position.copy(dir.multiplyScalar(def.dist * AU));
+      group.userData._isJWST = true;
+    } else {
+      // Deep space probes — fixed positions at given AU distance and angle
+      group.position.set(
+        Math.cos(def.angle) * def.dist * AU,
+        (Math.random() - 0.5) * 200, // slight vertical offset
+        Math.sin(def.angle) * def.dist * AU
+      );
+    }
+
+    scene.add(group);
+    setWorldPos(group, group.position);
+
+    bodies.push({ name: def.name, desc: def.desc, g: group, r: def.size * 4 });
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -815,6 +895,27 @@ export function updateBodies(dt, camWorldPos) {
 
     // Self-rotation
     if (m.ref.mesh) m.ref.mesh.rotation.y += 0.001 * (1 / Math.max(m.ref.r, 0.4));
+  }
+
+  // ── Spacecraft that follow Earth (ISS, JWST) ──
+  if (earthRef) {
+    const ePos = earthRef.g.userData._worldPos || earthRef.g.position;
+    for (let i = 0; i < bodies.length; i++) {
+      const b = bodies[i];
+      if (!b.g || !b.g.userData) continue;
+      if (b.g.userData._isISS) {
+        // ISS orbits Earth very close
+        const issAngle = elapsed * 2.0; // fast orbit
+        b.g.position.set(ePos.x + Math.cos(issAngle) * 52, Math.sin(issAngle * 0.7) * 2, ePos.z + Math.sin(issAngle) * 52);
+        if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
+      }
+      if (b.g.userData._isJWST) {
+        // JWST at L2 — slightly farther from Sun than Earth
+        const dir = ePos.clone().normalize();
+        b.g.position.copy(dir.multiplyScalar(1.01 * AU));
+        if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
+      }
+    }
   }
 
   // ── Comets ──

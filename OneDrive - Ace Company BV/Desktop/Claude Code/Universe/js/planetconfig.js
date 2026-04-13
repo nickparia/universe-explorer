@@ -365,6 +365,68 @@ export const PLANET_CONFIGS = {
       lore: 'Once the ninth planet. New Horizons revealed a complex, geologically active world in 2015.',
     },
   },
+
+  // ── Spacecraft ──
+  'VOYAGER 1': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'DEEP SPACE PROBE',
+      facts: ['Launched: September 5, 1977', 'Distance: 163 AU (24.4 billion km)', 'Speed: 17 km/s relative to Sun'],
+      lore: 'The farthest human-made object. Still transmitting from interstellar space. Carries the Golden Record — a message to the cosmos.' },
+  },
+  'VOYAGER 2': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'DEEP SPACE PROBE',
+      facts: ['Launched: August 20, 1977', 'Distance: 137 AU (20.5 billion km)', 'Only craft to visit all 4 gas giants'],
+      lore: 'Twin of Voyager 1. Its Grand Tour of Jupiter, Saturn, Uranus, and Neptune was a once-in-176-years alignment.' },
+  },
+  'NEW HORIZONS': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'DEEP SPACE PROBE',
+      facts: ['Launched: January 19, 2006', 'Pluto flyby: July 14, 2015', 'Now exploring the Kuiper Belt'],
+      lore: 'Carried a portion of Clyde Tombaugh\'s ashes — the man who discovered Pluto — to the world he found.' },
+  },
+  'JWST': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'SPACE TELESCOPE',
+      facts: ['Launched: December 25, 2021', 'Location: Sun-Earth L2 (1.5 million km)', '6.5m gold-plated beryllium mirror'],
+      lore: 'Seeing the universe in infrared light. Its first deep field image revealed galaxies formed just 600 million years after the Big Bang.' },
+  },
+  'ISS': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'SPACE STATION',
+      facts: ['Altitude: 420 km above Earth', 'Speed: 7.66 km/s (orbits every 90 min)', 'Continuously crewed since Nov 2, 2000'],
+      lore: 'A collaboration of 15 nations. The third brightest object in the night sky. Humanity\'s home in orbit.' },
+  },
+
+  // ── Notable moons ──
+  'IO': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'JOVIAN MOON', facts: ['Diameter: 3,643 km', '400+ active volcanoes', 'Resurfaces itself every million years'], lore: 'The most volcanically active body in the solar system. Tidal forces from Jupiter keep its interior molten.' },
+  },
+  'EUROPA': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'JOVIAN MOON', facts: ['Diameter: 3,122 km', 'Ice shell: 15-25 km thick', 'Subsurface ocean: ~100 km deep'], lore: 'The prime candidate for extraterrestrial life. More water than all of Earth\'s oceans combined, hidden beneath ice.' },
+  },
+  'GANYMEDE': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'JOVIAN MOON', facts: ['Diameter: 5,268 km (larger than Mercury)', 'Has its own magnetic field', 'Subsurface ocean between ice layers'], lore: 'The largest moon in the solar system. The only moon known to generate its own magnetosphere.' },
+  },
+  'CALLISTO': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'JOVIAN MOON', facts: ['Diameter: 4,821 km', 'Most heavily cratered object known', 'Surface unchanged for 4 billion years'], lore: 'An ancient, battered world. Its distance from Jupiter makes it a candidate for a future human base.' },
+  },
+  'TITAN': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: true, density: 1.5 },
+    info: { type: 'SATURNIAN MOON', facts: ['Diameter: 5,150 km (larger than Mercury)', 'Dense nitrogen atmosphere', 'Methane lakes, rivers, and rain'], lore: 'The only moon with a thick atmosphere. Huygens probe landed here in 2005, revealing an alien yet eerily Earth-like landscape.' },
+  },
+  'ENCELADUS': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'SATURNIAN MOON', facts: ['Diameter: 504 km', 'South pole geysers spray water ice', 'Subsurface ocean confirmed by Cassini'], lore: 'Tiny, brilliant white, and hiding a secret ocean. Its geysers feed Saturn\'s E ring with fresh ice particles.' },
+  },
+  'TRITON': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'NEPTUNIAN MOON', facts: ['Diameter: 2,707 km', 'Retrograde orbit (orbits backwards)', 'Nitrogen geysers erupt 8 km high'], lore: 'A captured Kuiper Belt object. Orbiting backwards, it is slowly spiraling inward and will one day be torn apart by Neptune.' },
+  },
 };
 
 /**
