@@ -455,36 +455,145 @@ function buildSpacecraft(scene) {
       dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true },
   ];
 
+  const silverMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.6 });
+  const goldMat = new THREE.MeshStandardMaterial({ color: 0xddaa33, roughness: 0.3, metalness: 0.7 });
+  const darkMat = new THREE.MeshStandardMaterial({ color: 0x333333, roughness: 0.8, metalness: 0.2 });
+  const panelMat = new THREE.MeshStandardMaterial({ color: 0x223366, roughness: 0.3, metalness: 0.5 });
+  const foilMat = new THREE.MeshStandardMaterial({ color: 0xbbaa55, roughness: 0.5, metalness: 0.4 });
+
+  function buildJWST(s) {
+    const g = new THREE.Group();
+    // Primary mirror — hexagonal array (simplified as a cylinder)
+    const mirror = new THREE.Mesh(new THREE.CylinderGeometry(s * 2.5, s * 2.5, s * 0.15, 6), goldMat);
+    mirror.rotation.x = Math.PI / 2;
+    g.add(mirror);
+    // Sunshield — 5-layer diamond shape below mirror
+    const shield = new THREE.Mesh(new THREE.BoxGeometry(s * 5, s * 0.05, s * 3), foilMat);
+    shield.position.y = -s * 1.2;
+    g.add(shield);
+    // Support struts
+    const strut = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.05, s * 0.05, s * 1.5), silverMat);
+    strut.position.y = -s * 0.5;
+    g.add(strut);
+    return g;
+  }
+
+  function buildVoyager(s) {
+    const g = new THREE.Group();
+    // Large dish antenna
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.5, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.4), silverMat);
+    dish.rotation.x = -Math.PI / 2;
+    g.add(dish);
+    // Central bus
+    const bus = new THREE.Mesh(new THREE.BoxGeometry(s * 0.6, s * 0.4, s * 0.6), foilMat);
+    bus.position.y = -s * 0.3;
+    g.add(bus);
+    // Boom arms — magnetometer + RTG
+    const boom1 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.03, s * 0.03, s * 4), darkMat);
+    boom1.rotation.z = Math.PI / 2;
+    boom1.position.set(s * 2, -s * 0.3, 0);
+    g.add(boom1);
+    const boom2 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.03, s * 0.03, s * 3), darkMat);
+    boom2.rotation.z = Math.PI / 3;
+    boom2.position.set(-s * 1.2, -s * 0.8, 0);
+    g.add(boom2);
+    // RTG (nuclear power) at end of boom
+    const rtg = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.15, s * 0.15, s * 0.6), darkMat);
+    rtg.position.set(-s * 2.5, -s * 1.5, 0);
+    g.add(rtg);
+    return g;
+  }
+
+  function buildNewHorizons(s) {
+    const g = new THREE.Group();
+    // Triangular body
+    const body = new THREE.Mesh(new THREE.ConeGeometry(s * 0.8, s * 1.2, 3), foilMat);
+    body.rotation.x = Math.PI / 2;
+    g.add(body);
+    // Large dish antenna on top
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.0, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), silverMat);
+    dish.rotation.x = -Math.PI / 2;
+    dish.position.y = s * 0.5;
+    g.add(dish);
+    // RTG boom
+    const boom = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.04, s * 0.04, s * 2), darkMat);
+    boom.position.set(0, -s * 0.8, 0);
+    g.add(boom);
+    return g;
+  }
+
+  function buildISS(s) {
+    const g = new THREE.Group();
+    // Main truss
+    const truss = new THREE.Mesh(new THREE.BoxGeometry(s * 8, s * 0.15, s * 0.15), silverMat);
+    g.add(truss);
+    // Pressurized modules (center)
+    const hab = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.25, s * 0.25, s * 2.5, 8), silverMat);
+    hab.rotation.z = Math.PI / 2;
+    g.add(hab);
+    // Solar panel pairs (4 on each side)
+    for (let side = -1; side <= 1; side += 2) {
+      for (let i = 0; i < 4; i++) {
+        const panel = new THREE.Mesh(new THREE.BoxGeometry(s * 0.15, s * 1.8, s * 0.6), panelMat);
+        panel.position.set(side * (s * 1.2 + i * s * 1.0), 0, 0);
+        g.add(panel);
+      }
+    }
+    return g;
+  }
+
   craftDefs.forEach((def) => {
     const group = new THREE.Group();
 
-    // Spacecraft body — small box + solar panels
-    const bodyGeo = new THREE.BoxGeometry(def.size, def.size * 0.5, def.size * 0.8);
-    const bodyMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.6, metalness: 0.4 });
-    const bodyMesh = new THREE.Mesh(bodyGeo, bodyMat);
-    group.add(bodyMesh);
+    // Build craft-specific geometry
+    let craftModel;
+    if (def.name === 'JWST') craftModel = buildJWST(def.size);
+    else if (def.name.startsWith('VOYAGER')) craftModel = buildVoyager(def.size);
+    else if (def.name === 'NEW HORIZONS') craftModel = buildNewHorizons(def.size);
+    else if (def.name === 'ISS') craftModel = buildISS(def.size);
+    else craftModel = new THREE.Mesh(new THREE.BoxGeometry(def.size, def.size * 0.5, def.size), silverMat);
+    group.add(craftModel);
 
-    // Solar panel "wings"
-    const panelGeo = new THREE.BoxGeometry(def.size * 3, def.size * 0.05, def.size * 0.8);
-    const panelMat = new THREE.MeshStandardMaterial({ color: 0x334488, roughness: 0.3, metalness: 0.5 });
-    const panelMesh = new THREE.Mesh(panelGeo, panelMat);
-    group.add(panelMesh);
+    // Trajectory trail for deep space probes
+    if (def.dist && def.dist > 5 && def.angle !== null) {
+      const trailPts = [];
+      const trailColors = [];
+      const segments = 80;
+      for (let i = 0; i <= segments; i++) {
+        const t = i / segments;
+        // Trail from Sun (origin) to current position
+        const r = t * def.dist * AU;
+        trailPts.push(new THREE.Vector3(
+          Math.cos(def.angle) * r,
+          (Math.random() - 0.5) * 20 * t, // slight vertical wander
+          Math.sin(def.angle) * r
+        ));
+        // Fade: dim near Sun, bright near craft
+        const brightness = t * t; // quadratic fade-in
+        trailColors.push(brightness * 0.3, brightness * 0.4, brightness * 0.6);
+      }
+      const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
+      trailGeo.setAttribute('color', new THREE.Float32BufferAttribute(trailColors, 3));
+      const trailMat = new THREE.LineBasicMaterial({
+        vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false
+      });
+      const trail = new THREE.Line(trailGeo, trailMat);
+      scene.add(trail);
+      setWorldPos(trail, new THREE.Vector3(0, 0, 0));
+    }
 
-    // Glowing beacon so it's visible from distance
-    const beaconGeo = new THREE.SphereGeometry(def.size * 4, 24, 24);
-    const beaconMat = new THREE.MeshBasicMaterial({
-      color: def.color, transparent: true, opacity: 0.08,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide
+    // Glowing beacon — sprite-based, visible from distance
+    const beaconMat = new THREE.SpriteMaterial({
+      map: getPointTexture(),
+      color: new THREE.Color(def.color),
+      transparent: true,
+      opacity: 0.5,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
     });
-    group.add(new THREE.Mesh(beaconGeo, beaconMat));
-
-    // Brighter inner beacon
-    const innerGeo = new THREE.SphereGeometry(def.size * 1.5, 16, 16);
-    const innerMat = new THREE.MeshBasicMaterial({
-      color: def.color, transparent: true, opacity: 0.5,
-      blending: THREE.AdditiveBlending, depthWrite: false
-    });
-    group.add(new THREE.Mesh(innerGeo, innerMat));
+    const beacon = new THREE.Sprite(beaconMat);
+    beacon.scale.setScalar(def.size * 10);
+    group.add(beacon);
 
     // Position
     if (def.orbitsEarth && earthRef) {

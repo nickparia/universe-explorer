@@ -50,7 +50,12 @@ export function setActivePlanet(name) {
   _currentNearest = name;
   _userSelected = true;
   for (let i = 0; i < barItems.length; i++) {
-    barItems[i].el.classList.toggle('active', barItems[i].name === name);
+    const isActive = barItems[i].name === name;
+    barItems[i].el.classList.toggle('active', isActive);
+    // Scroll active item into view
+    if (isActive && barContainer) {
+      barItems[i].el.scrollIntoView({ behavior: 'smooth', inline: 'center', block: 'nearest' });
+    }
   }
 }
 
