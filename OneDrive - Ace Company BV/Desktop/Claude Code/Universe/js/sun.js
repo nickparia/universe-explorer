@@ -1,143 +1,14 @@
 // sun.js — Animated solar surface shader + prominences
+// Inspired by NASA SDO observations
 import * as THREE from 'three';
 
 // ═══════════════════════════════════════════════════════════════
-// Solar Surface Shader — churning plasma with convection cells
+// Solar Prominences
 // ═══════════════════════════════════════════════════════════════
 
-const SunVS = /* glsl */`
-varying vec3 vNormal;
-varying vec3 vPosition;
-varying vec2 vUv;
-uniform float time;
+const MAX_PROMINENCES = 5;
+const SPRITES_PER_ARC = 28;
 
-vec3 mod289(vec3 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
-vec4 mod289(vec4 x) { return x - floor(x * (1.0/289.0)) * 289.0; }
-vec4 perm(vec4 x) { return mod289(((x * 34.0) + 1.0) * x); }
-
-float snoise(vec3 p) {
-  vec3 a = floor(p);
-  vec3 d = p - a;
-  d = d * d * (3.0 - 2.0 * d);
-  vec4 b = a.xxyy + vec4(0.0, 1.0, 0.0, 1.0);
-  vec4 k1 = perm(b.xyxy);
-  vec4 k2 = perm(k1.xyxy + b.zzww);
-  vec4 c = k2 + a.zzzz;
-  vec4 k3 = perm(c);
-  vec4 k4 = perm(c + 1.0);
-  vec4 o1 = fract(k3 * (1.0/41.0));
-  vec4 o2 = fract(k4 * (1.0/41.0));
-  vec4 o3 = o2 * d.z + o1 * (1.0 - d.z);
-  vec2 o4 = o3.yw * d.x + o3.xz * (1.0 - d.x);
-  return o4.y * d.y + o4.x * (1.0 - d.y);
-}
-
-void main() {
-  vNormal = normalize(normalMatrix * normal);
-  vUv = uv;
-
-  vec3 pos = position;
-  float displacement = snoise(normal * 2.5 + time * 0.12) * 0.04;
-  displacement += snoise(normal * 5.0 - time * 0.18) * 0.02;
-  pos += normal * displacement * length(position);
-
-  vPosition = pos;
-  gl_Position = projectionMatrix * modelViewMatrix * vec4(pos, 1.0);
-}
-`;
-
-const SunFS = /* glsl */`
-varying vec3 vNormal;
-varying vec3 vPosition;
-varying vec2 vUv;
-uniform float time;
-
-// Better noise using sin-based hash — produces full 0-1 range
-float hash(vec3 p) {
-  p = fract(p * vec3(443.897, 441.423, 437.195));
-  p += dot(p, p.yzx + 19.19);
-  return fract((p.x + p.y) * p.z);
-}
-
-float noise(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
-  f = f * f * (3.0 - 2.0 * f);
-
-  return mix(
-    mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
-        mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
-    mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
-        mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y),
-    f.z
-  );
-}
-
-float fbm(vec3 p) {
-  float v = 0.0, a = 0.5;
-  for (int i = 0; i < 5; i++) {
-    v += noise(p) * a;
-    p = p * 2.1 + vec3(0.3);
-    a *= 0.5;
-  }
-  return v;
-}
-
-void main() {
-  // Use object-space position for noise — consistent regardless of view
-  vec3 n = normalize(vPosition);
-
-  // Layer 1: large slow convection cells
-  float n1 = fbm(n * 3.0 + time * 0.12);
-
-  // Layer 2: medium turbulence, different direction
-  float n2 = fbm(n * 6.0 - time * 0.18 + 50.0);
-
-  // Domain warp — makes it look organic and churning
-  float warped = fbm(n * 4.0 + vec3(n1, n2, n1) * 2.0 + time * 0.06);
-
-  // Combine with strong contrast stretch
-  float t = n1 * 0.35 + warped * 0.45 + n2 * 0.2;
-  // Force full 0-1 range
-  t = smoothstep(0.2, 0.8, t);
-
-  // Color ramp: dark red → orange → yellow → white
-  vec3 c1 = vec3(0.5, 0.05, 0.0);   // dark red
-  vec3 c2 = vec3(0.9, 0.2, 0.0);    // deep orange
-  vec3 c3 = vec3(1.0, 0.55, 0.05);  // orange
-  vec3 c4 = vec3(1.0, 0.85, 0.3);   // yellow
-  vec3 c5 = vec3(1.0, 0.98, 0.85);  // white-hot
-
-  vec3 color;
-  if (t < 0.25) {
-    color = mix(c1, c2, t / 0.25);
-  } else if (t < 0.5) {
-    color = mix(c2, c3, (t - 0.25) / 0.25);
-  } else if (t < 0.75) {
-    color = mix(c3, c4, (t - 0.5) / 0.25);
-  } else {
-    color = mix(c4, c5, (t - 0.75) / 0.25);
-  }
-
-  // Small-scale granulation
-  float gran = noise(n * 18.0 + time * 0.3);
-  color += vec3(0.15, 0.08, 0.0) * smoothstep(0.4, 0.6, gran);
-
-  // Brightness — the sun should be BRIGHT
-  color *= 2.2;
-
-  gl_FragColor = vec4(color, 1.0);
-}
-`;
-
-// ═══════════════════════════════════════════════════════════════
-// Solar Prominences — wispy sprite-based arcs of glowing plasma
-// ═══════════════════════════════════════════════════════════════
-
-const MAX_PROMINENCES = 4;
-const SPRITES_PER_ARC = 24;
-
-// Generate a soft radial gradient texture for sprites
 function makeGlowTexture() {
   const size = 64;
   const cv = document.createElement('canvas');
@@ -145,13 +16,13 @@ function makeGlowTexture() {
   const ctx = cv.getContext('2d');
   const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
   g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.15, 'rgba(255,200,100,0.8)');
-  g.addColorStop(0.4, 'rgba(255,120,30,0.3)');
-  g.addColorStop(1, 'rgba(255,60,0,0)');
+  g.addColorStop(0.1, 'rgba(255,200,100,0.85)');
+  g.addColorStop(0.3, 'rgba(255,120,40,0.35)');
+  g.addColorStop(0.6, 'rgba(255,60,10,0.08)');
+  g.addColorStop(1, 'rgba(255,30,0,0)');
   ctx.fillStyle = g;
   ctx.fillRect(0, 0, size, size);
-  const t = new THREE.CanvasTexture(cv);
-  return t;
+  return new THREE.CanvasTexture(cv);
 }
 
 let _glowTex = null;
@@ -167,15 +38,13 @@ class Prominence {
     this.life = 0;
     this.duration = 0;
     this.sprites = [];
-    this.arcPoints = [];
   }
 
   spawn(parent) {
     this.active = true;
     this.life = 0;
-    this.duration = 15 + Math.random() * 25;
+    this.duration = 18 + Math.random() * 30;
 
-    // Random base point on sun surface
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     const base = new THREE.Vector3(
@@ -184,20 +53,15 @@ class Prominence {
       Math.cos(phi)
     ).normalize();
 
-    // Random tangent for arc plane
     const rand = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
     const tangent = new THREE.Vector3().crossVectors(base, rand).normalize();
 
-    const height = 30 + Math.random() * 80;
-    const spread = 0.1 + Math.random() * 0.25;
+    const height = 40 + Math.random() * 100;
+    const spread = 0.08 + Math.random() * 0.2;
 
-    // Remove old sprites
     this._remove(parent);
 
-    // Create sprites along arc
-    this.arcPoints = [];
     const tex = getGlowTex();
-
     for (let i = 0; i < SPRITES_PER_ARC; i++) {
       const t = i / (SPRITES_PER_ARC - 1);
       const arcAngle = (t - 0.5) * spread;
@@ -206,20 +70,13 @@ class Prominence {
 
       const dir = base.clone().applyAxisAngle(tangent, arcAngle).normalize();
       const pos = dir.multiplyScalar(radial);
-      this.arcPoints.push(pos.clone());
 
-      // Size varies — bigger at peak, smaller at base
       const peakT = Math.sin(t * Math.PI);
-      const spriteSize = 15 + peakT * 40;
-
-      // Color — white-hot at base, orange-red at peak
-      const r = 1.0;
-      const g = 0.8 - peakT * 0.5;
-      const b = 0.4 - peakT * 0.35;
+      const spriteSize = 12 + peakT * 45;
 
       const mat = new THREE.SpriteMaterial({
         map: tex,
-        color: new THREE.Color(r, g, b),
+        color: new THREE.Color(1.0, 0.6 - peakT * 0.35, 0.2 - peakT * 0.15),
         transparent: true,
         opacity: 0,
         blending: THREE.AdditiveBlending,
@@ -229,7 +86,7 @@ class Prominence {
       const sprite = new THREE.Sprite(mat);
       sprite.position.copy(pos);
       sprite.scale.setScalar(spriteSize);
-      sprite._baseOpacity = 0.4 + peakT * 0.3;
+      sprite._baseOpacity = 0.3 + peakT * 0.3;
       parent.add(sprite);
       this.sprites.push(sprite);
     }
@@ -253,8 +110,7 @@ class Prominence {
       return;
     }
 
-    // Fade in/out
-    const fadeIn = Math.min(this.life / 5, 1);
+    const fadeIn = Math.min(this.life / 4, 1);
     const fadeOut = Math.min((this.duration - this.life) / 5, 1);
     const fade = fadeIn * fadeOut;
 
@@ -263,6 +119,166 @@ class Prominence {
     }
   }
 }
+
+// ═══════════════════════════════════════════════════════════════
+// Sun Surface Shader (GLSL)
+// ═══════════════════════════════════════════════════════════════
+
+const SunVertexShader = /* glsl */`
+#include <common>
+#include <logdepthbuf_pars_vertex>
+
+varying vec3 vPos;
+varying vec3 vNorm;
+varying vec3 vViewDir;
+
+void main() {
+  vPos = position;
+  vNorm = normalize(normalMatrix * normal);
+  vec4 mvPos = modelViewMatrix * vec4(position, 1.0);
+  vViewDir = normalize(-mvPos.xyz);
+
+  gl_Position = projectionMatrix * mvPos;
+
+  #include <logdepthbuf_vertex>
+}
+`;
+
+const SunFragmentShader = /* glsl */`
+#include <common>
+#include <logdepthbuf_pars_fragment>
+
+uniform float time;
+varying vec3 vPos;
+varying vec3 vNorm;
+varying vec3 vViewDir;
+
+// ── Noise ──
+float hash3(vec3 p) {
+  p = fract(p * vec3(443.897, 441.423, 437.195));
+  p += dot(p, p.yzx + 19.19);
+  return fract((p.x + p.y) * p.z);
+}
+
+float noise3(vec3 p) {
+  vec3 i = floor(p);
+  vec3 f = fract(p);
+  f = f * f * (3.0 - 2.0 * f);
+  return mix(
+    mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x),
+        mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
+    mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x),
+        mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z);
+}
+
+float fbm(vec3 p, int oct) {
+  float v = 0.0, a = 0.5;
+  for (int i = 0; i < 7; i++) {
+    if (i >= oct) break;
+    v += noise3(p) * a;
+    p = p * 2.1 + 0.31;
+    a *= 0.47;
+  }
+  return v;
+}
+
+void main() {
+  vec3 n = normalize(vPos);
+
+  // ═══ LIMB DARKENING ═══
+  float NdV = max(dot(vNorm, vViewDir), 0.0);
+  float limb = 0.3 + 0.7 * pow(NdV, 0.38);
+  float limbMask = smoothstep(0.0, 0.1, NdV);
+
+  // ═══ CHURNING PLASMA — all turbulence, no geometric patterns ═══
+  // Layer 1: slow, large-scale convection currents
+  float slow1 = fbm(n * 2.0 + time * 0.09, 5);
+  float slow2 = fbm(n * 2.3 - time * 0.07 + 40.0, 5);
+
+  // Layer 2: medium turbulence — the "boiling" look
+  float mid1 = fbm(n * 4.0 + time * 0.14 + 20.0, 5);
+  float mid2 = fbm(n * 5.0 - time * 0.11 + 70.0, 4);
+
+  // Layer 3: fast, fine-scale turbulence — the "alive" shimmer
+  float fast1 = fbm(n * 9.0 + time * 0.25, 4);
+  float fast2 = fbm(n * 12.0 - time * 0.2 + 90.0, 3);
+
+  // ═══ HEAVY DOMAIN WARPING — the secret to organic chaos ═══
+  // Warp coordinates using noise to create swirling, unpredictable flow
+  vec3 warpedPos = n * 3.5 + vec3(slow1, slow2, slow1 * 0.7) * 3.5;
+  float plasma1 = fbm(warpedPos + time * 0.05, 7);
+
+  // Second warp pass — warp the already-warped result
+  vec3 warpedPos2 = n * 5.0 + vec3(plasma1, mid1, mid2) * 2.8 - time * 0.06;
+  float plasma2 = fbm(warpedPos2, 6);
+
+  // Third warp — creates those beautiful swirling tendrils
+  vec3 warpedPos3 = n * 7.0 + vec3(plasma2, plasma1, slow2) * 2.0 + time * 0.08;
+  float plasma3 = fbm(warpedPos3, 5);
+
+  // ═══ ERUPTION HOTSPOTS — pulsing bright regions ═══
+  float hotspot1 = fbm(n * 1.2 + time * 0.015, 3);
+  float hotspot2 = fbm(n * 1.8 - time * 0.02 + 60.0, 3);
+  float eruption = smoothstep(0.58, 0.72, hotspot1) * smoothstep(0.52, 0.68, hotspot2);
+  // Pulsing intensity
+  eruption *= 0.7 + 0.3 * sin(time * 0.8 + hotspot1 * 12.0);
+
+  // ═══ DARK FILAMENTS — cooler channels cutting through ═══
+  float filament = fbm(n * 3.0 + vec3(slow2, slow1, mid1) * 4.0 + time * 0.03, 6);
+  float darkChannel = 1.0 - smoothstep(0.42, 0.52, filament) * (1.0 - smoothstep(0.52, 0.58, filament)) * 0.7;
+
+  // ═══ COMBINE — layered chaos ═══
+  float intensity = plasma1 * 0.3 + plasma2 * 0.25 + plasma3 * 0.15
+                  + mid1 * 0.15 + fast1 * 0.08 + fast2 * 0.07;
+  // Apply dark filaments
+  intensity *= darkChannel;
+  // Extreme contrast stretch — deep darks to brilliant brights
+  intensity = smoothstep(0.08, 0.92, intensity);
+  // Eruption boost
+  intensity = clamp(intensity + eruption * 0.35, 0.0, 1.0);
+
+  // ═══ SDO COLOR RAMP — extreme dynamic range ═══
+  vec3 col;
+  if (intensity < 0.1) {
+    // Near-black to deep crimson — sunspot-dark regions
+    col = mix(vec3(0.06, 0.005, 0.0), vec3(0.22, 0.03, 0.0), intensity / 0.1);
+  } else if (intensity < 0.25) {
+    // Deep red — quiet chromosphere
+    col = mix(vec3(0.22, 0.03, 0.0), vec3(0.50, 0.10, 0.01), (intensity - 0.1) / 0.15);
+  } else if (intensity < 0.45) {
+    // Burnt orange — typical surface
+    col = mix(vec3(0.50, 0.10, 0.01), vec3(0.78, 0.28, 0.02), (intensity - 0.25) / 0.2);
+  } else if (intensity < 0.65) {
+    // Amber-orange — warm convection
+    col = mix(vec3(0.78, 0.28, 0.02), vec3(0.92, 0.48, 0.06), (intensity - 0.45) / 0.2);
+  } else if (intensity < 0.82) {
+    // Golden — active regions
+    col = mix(vec3(0.92, 0.48, 0.06), vec3(1.0, 0.68, 0.15), (intensity - 0.65) / 0.17);
+  } else {
+    // Brilliant white-gold — eruption peaks
+    col = mix(vec3(1.0, 0.68, 0.15), vec3(1.0, 0.88, 0.45), (intensity - 0.82) / 0.18);
+  }
+
+  // Eruption regions push toward searing white
+  col = mix(col, vec3(1.0, 0.9, 0.5), eruption * 0.5);
+
+  // Fine shimmer — adds high-frequency "heat haze" life
+  float shimmer = fast1 * 0.08 + fast2 * 0.06;
+  col += vec3(shimmer * 0.5, shimmer * 0.25, shimmer * 0.05);
+
+  // ═══ LIMB EFFECTS ═══
+  col *= limb;
+  col *= limbMask;
+
+  // Chromosphere glow at extreme limb
+  float limbGlow = smoothstep(0.01, 0.05, NdV) * (1.0 - smoothstep(0.05, 0.14, NdV));
+  col += vec3(0.8, 0.3, 0.05) * limbGlow * 0.25;
+
+  gl_FragColor = vec4(col, 1.0);
+
+  #include <logdepthbuf_fragment>
+}
+`;
 
 // ═══════════════════════════════════════════════════════════════
 // Public API
@@ -274,118 +290,44 @@ let prominenceTimer = 0;
 let _sunGroup = null;
 let _sunRadius = 800;
 
-/**
- * Create the animated sun material and prominence system.
- * @param {number} sunRadius
- * @param {THREE.Group} sunGroup — add prominences to this group
- * @returns {THREE.ShaderMaterial} — use this as the sun mesh material
- */
 export function createSunShader(sunRadius, sunGroup) {
   _sunGroup = sunGroup;
   _sunRadius = sunRadius;
 
-  // Use MeshBasicMaterial with onBeforeCompile to inject plasma noise.
-  // This ensures logarithmic depth buffer works correctly (ShaderMaterial doesn't).
-  const timeUniform = { value: 0 };
+  sunMaterial = new THREE.ShaderMaterial({
+    uniforms: {
+      time: { value: 0 }
+    },
+    vertexShader: SunVertexShader,
+    fragmentShader: SunFragmentShader,
+    // Required for logarithmic depth buffer compatibility
+    depthWrite: true,
+    depthTest: true,
+  });
 
-  sunMaterial = new THREE.MeshBasicMaterial({ color: 0xffffff });
+  // Enable log depth buffer support
   sunMaterial.onBeforeCompile = (shader) => {
-    shader.uniforms.time = timeUniform;
-
-    // Inject time uniform and noise into vertex shader
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <common>',
-      `#include <common>
-       uniform float time;
-       varying vec3 vObjPos;`
-    );
-    shader.vertexShader = shader.vertexShader.replace(
-      '#include <begin_vertex>',
-      `#include <begin_vertex>
-       vObjPos = position;`
-    );
-
-    // Replace fragment shader color output with plasma noise
-    shader.fragmentShader = shader.fragmentShader.replace(
-      '#include <common>',
-      `#include <common>
-       uniform float time;
-       varying vec3 vObjPos;
-
-       float sunHash(vec3 p) {
-         p = fract(p * vec3(443.897, 441.423, 437.195));
-         p += dot(p, p.yzx + 19.19);
-         return fract((p.x + p.y) * p.z);
-       }
-       float sunNoise(vec3 p) {
-         vec3 i = floor(p); vec3 f = fract(p);
-         f = f * f * (3.0 - 2.0 * f);
-         return mix(
-           mix(mix(sunHash(i), sunHash(i+vec3(1,0,0)), f.x),
-               mix(sunHash(i+vec3(0,1,0)), sunHash(i+vec3(1,1,0)), f.x), f.y),
-           mix(mix(sunHash(i+vec3(0,0,1)), sunHash(i+vec3(1,0,1)), f.x),
-               mix(sunHash(i+vec3(0,1,1)), sunHash(i+vec3(1,1,1)), f.x), f.y), f.z);
-       }
-       float sunFbm(vec3 p) {
-         float v=0.0, a=0.5;
-         for(int i=0;i<5;i++){v+=sunNoise(p)*a; p=p*2.1+0.3; a*=0.5;}
-         return v;
-       }`
-    );
-    shader.fragmentShader = shader.fragmentShader.replace(
-      'vec4 diffuseColor = vec4( diffuse, opacity );',
-      `vec3 n = normalize(vObjPos);
-       float sn1 = sunFbm(n*3.0 + time*0.12);
-       float sn2 = sunFbm(n*6.0 - time*0.18 + 50.0);
-       float sw = sunFbm(n*4.0 + vec3(sn1,sn2,sn1)*2.0 + time*0.06);
-       float st = sn1*0.35 + sw*0.45 + sn2*0.2;
-       st = smoothstep(0.2, 0.8, st);
-
-       // Darker color ramp so plasma variation is visible through bloom
-       vec3 sc1=vec3(0.3,0.02,0.0);   // very dark red
-       vec3 sc2=vec3(0.6,0.1,0.0);    // dark orange
-       vec3 sc3=vec3(0.85,0.35,0.02); // orange
-       vec3 sc4=vec3(0.95,0.65,0.12); // yellow-orange
-       vec3 sc5=vec3(1.0,0.9,0.5);    // bright yellow (NOT white)
-       vec3 sunCol;
-       if(st<0.25) sunCol=mix(sc1,sc2,st/0.25);
-       else if(st<0.5) sunCol=mix(sc2,sc3,(st-0.25)/0.25);
-       else if(st<0.75) sunCol=mix(sc3,sc4,(st-0.5)/0.25);
-       else sunCol=mix(sc4,sc5,(st-0.75)/0.25);
-       sunCol += vec3(0.1,0.05,0.0)*smoothstep(0.4,0.6,sunNoise(n*18.0+time*0.3));
-       // Lower brightness so bloom doesn't wash everything white
-       sunCol *= 1.1;
-
-       vec4 diffuseColor = vec4(sunCol, opacity);`
-    );
+    // Three.js injects logarithmicDepthBuffer support via onBeforeCompile
+    // for ShaderMaterial when the renderer has it enabled
   };
-  sunMaterial._timeUniform = timeUniform;
 
-  // Create prominences
   for (let i = 0; i < MAX_PROMINENCES; i++) {
     prominences.push(new Prominence(sunRadius));
   }
 
-  // Spawn initial prominences staggered
-  for (let i = 0; i < 2; i++) {
+  for (let i = 0; i < 3; i++) {
     prominences[i].spawn(sunGroup);
-    prominences[i].life = Math.random() * 8;
+    prominences[i].life = Math.random() * 10;
   }
 
   return sunMaterial;
 }
 
-/**
- * Update sun animation. Call every frame.
- * @param {number} dt — delta time in seconds
- * @param {number} elapsed — total elapsed time
- */
 export function updateSun(dt, elapsed) {
-  if (sunMaterial && sunMaterial._timeUniform) {
-    sunMaterial._timeUniform.value = elapsed;
+  if (sunMaterial) {
+    sunMaterial.uniforms.time.value = elapsed;
   }
 
-  // Update prominences
   prominenceTimer += dt;
   let activeCount = 0;
 
@@ -394,8 +336,7 @@ export function updateSun(dt, elapsed) {
     if (prominences[i].active) activeCount++;
   }
 
-  // Spawn new prominences periodically
-  if (prominenceTimer > 6 && activeCount < MAX_PROMINENCES) {
+  if (prominenceTimer > 5 && activeCount < MAX_PROMINENCES) {
     prominenceTimer = 0;
     for (let i = 0; i < prominences.length; i++) {
       if (!prominences[i].active) {

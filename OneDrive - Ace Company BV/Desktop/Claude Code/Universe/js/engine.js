@@ -149,19 +149,22 @@ export function initEngine() {
   );
 
   // ── Lights ──
-  sunLight = new THREE.PointLight(0xfff8e8, 800000);
+  // Intensity must be very high for inverse-square falloff across AU distances.
+  // At 1 AU (3000 units): 30000000 / 3000² = 3.33 illuminance (before tone mapping)
+  sunLight = new THREE.PointLight(0xfff8e8, 30000000);
   sunLight.decay = 2;  // physically correct inverse-square falloff
   scene.add(sunLight);
   setWorldPos(sunLight, sunLight.position);
 
-  // Subtle ambient so the dark side isn't pure black —
-  // simulates indirect light (reflected moonlight, dust scatter)
-  const ambient = new THREE.AmbientLight(0x202030, 0.15);
+  // Ambient fill — ensures even distant planets (Saturn, Neptune) are
+  // visible rather than pitch black. Without this, inverse-square falloff
+  // makes anything past Jupiter nearly invisible.
+  const ambient = new THREE.AmbientLight(0x303040, 0.6);
   scene.add(ambient);
   setWorldPos(ambient, ambient.position);
 
-  // Hemisphere light — warm from above (sun-lit dust), cool from below (space)
-  const hemi = new THREE.HemisphereLight(0x444433, 0x111122, 0.3);
+  // Hemisphere light — warm from sun-lit side, cool from space side
+  const hemi = new THREE.HemisphereLight(0x554433, 0x111122, 0.5);
   scene.add(hemi);
   setWorldPos(hemi, hemi.position);
 
@@ -175,9 +178,9 @@ export function initEngine() {
   // 2) Bloom
   const bloomPass = new UnrealBloomPass(
     new THREE.Vector2(window.innerWidth, window.innerHeight),
-    0.5,   // strength — subtle glow, not overpowering
-    0.3,   // radius
-    0.9    // threshold — only very bright objects bloom
+    0.35,  // strength — gentle glow
+    0.5,   // radius — wide, soft
+    0.85   // threshold
   );
   composer.addPass(bloomPass);
 

@@ -225,13 +225,19 @@ export function createSolarSystem(scene, textures) {
   );
   sunGroup.add(sunMesh);
 
-  // Corona glow — FrontSide shells just slightly larger than sun.
-  // FrontSide ensures they don't show objects behind the sun.
-  [[810,0xffdd66,.12],[820,0xffaa33,.06],[840,0xff8800,.03]]
-    .forEach(([r, c, a]) => {
+  // Corona glow — BackSide so they only show as halo AROUND the sun,
+  // not stacking additively on top of the surface.
+  [
+    [810, 0xffdd88, 0.25],   // tight inner corona
+    [830, 0xffbb55, 0.15],
+    [870, 0xff9933, 0.08],
+    [940, 0xff7722, 0.04],
+    [1050, 0xff5511, 0.02],  // wide outer halo
+    [1200, 0xff3300, 0.008],
+  ].forEach(([r, c, a]) => {
       sunGroup.add(new THREE.Mesh(
         new THREE.SphereGeometry(r, 48, 48),
-        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.FrontSide })
+        new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide })
       ));
     });
   scene.add(sunGroup);
@@ -239,16 +245,16 @@ export function createSolarSystem(scene, textures) {
 
   bodies.push({ name: 'SUN', desc: 'Our star. 4.6 billion years old, 1.4 million km diameter. 99.86% of the solar system mass.', g: sunGroup, r: 800 });
 
-  // ── Sun Lens Flare ──
+  // ── Sun Lens Flare — subtle, not overpowering ──
   {
-    const flareTexture = makeFlareTex(256, 'rgba(255,255,255,0.9)', 'rgba(255,255,200,0)');
-    const flareTexOrange = makeFlareTex(128, 'rgba(255,180,80,0.6)', 'rgba(255,120,20,0)');
-    const flareTexBlue = makeFlareTex(64, 'rgba(130,180,255,0.4)', 'rgba(80,120,255,0)');
+    const flareTexture = makeFlareTex(256, 'rgba(255,240,200,0.5)', 'rgba(255,200,120,0)');
+    const flareTexOrange = makeFlareTex(128, 'rgba(255,160,60,0.3)', 'rgba(255,100,20,0)');
+    const flareTexBlue = makeFlareTex(64, 'rgba(130,180,255,0.2)', 'rgba(80,120,255,0)');
 
     const lensflare = new Lensflare();
-    lensflare.addElement(new LensflareElement(flareTexture, 700, 0, new THREE.Color(0xffffff)));
-    lensflare.addElement(new LensflareElement(flareTexOrange, 300, 0.15, new THREE.Color(0xffaa44)));
-    lensflare.addElement(new LensflareElement(flareTexBlue, 180, 0.35, new THREE.Color(0x8899ff)));
+    lensflare.addElement(new LensflareElement(flareTexture, 200, 0, new THREE.Color(0xffeedd)));
+    lensflare.addElement(new LensflareElement(flareTexOrange, 120, 0.2, new THREE.Color(0xffaa44)));
+    lensflare.addElement(new LensflareElement(flareTexBlue, 80, 0.4, new THREE.Color(0x8899ff)));
 
     const sunLight = getSunLight();
     if (sunLight) sunLight.add(lensflare);
@@ -338,16 +344,13 @@ export function createSolarSystem(scene, textures) {
       group.add(cloudMesh);
     }
 
-    // Venus thick atmosphere cloud layer
+    // Venus thick atmosphere cloud layer — fully opaque since Venus
+    // is completely shrouded in clouds
     if (def.venusClouds && textures.venusAtmo) {
       const venusCloudMesh = new THREE.Mesh(
         new THREE.SphereGeometry(def.r * 1.03, 72, 72),
         new THREE.MeshStandardMaterial({
           map: textures.venusAtmo,
-          transparent: true,
-          opacity: 0.85,
-          depthWrite: false,
-          side: THREE.FrontSide,
           roughness: 0.6,
           metalness: 0,
         })
