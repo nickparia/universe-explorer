@@ -471,15 +471,15 @@ function buildSpacecraft(scene) {
     group.add(panelMesh);
 
     // Glowing beacon so it's visible from distance
-    const beaconGeo = new THREE.SphereGeometry(def.size * 4, 8, 8);
+    const beaconGeo = new THREE.SphereGeometry(def.size * 4, 24, 24);
     const beaconMat = new THREE.MeshBasicMaterial({
-      color: def.color, transparent: true, opacity: 0.15,
-      blending: THREE.AdditiveBlending, depthWrite: false
+      color: def.color, transparent: true, opacity: 0.08,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide
     });
     group.add(new THREE.Mesh(beaconGeo, beaconMat));
 
     // Brighter inner beacon
-    const innerGeo = new THREE.SphereGeometry(def.size * 1.5, 8, 8);
+    const innerGeo = new THREE.SphereGeometry(def.size * 1.5, 16, 16);
     const innerMat = new THREE.MeshBasicMaterial({
       color: def.color, transparent: true, opacity: 0.5,
       blending: THREE.AdditiveBlending, depthWrite: false
