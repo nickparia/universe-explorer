@@ -461,11 +461,11 @@ function buildMoons(scene, textures) {
 
     // Saturn moons
     { name: 'TITAN', desc: 'Only moon with a dense atmosphere. Methane lakes and rain. Larger than Mercury.',
-      r: 20, parentRef: saturnRef, dist: 800, speed: 0.1, tex: textures.titan },
+      r: 20, parentRef: saturnRef, dist: 1500, speed: 0.1, tex: textures.titan },
     { name: 'ENCELADUS', desc: 'Geysers of water ice erupt from the south pole. Subsurface ocean confirmed.',
-      r: 6, parentRef: saturnRef, dist: 600, speed: 0.22, tex: textures.enceladus },
+      r: 10, parentRef: saturnRef, dist: 1350, speed: 0.18, tex: textures.enceladus },
     { name: 'MIMAS', desc: 'Herschel crater makes it look like the Death Star. Only 396 km across.',
-      r: 4, parentRef: saturnRef, dist: 550, speed: 0.3, tex: textures.mimas },
+      r: 8, parentRef: saturnRef, dist: 1280, speed: 0.25, tex: textures.mimas },
 
     // Uranus moons
     { name: 'TITANIA', desc: 'Largest moon of Uranus. Icy surface with massive canyons.',
