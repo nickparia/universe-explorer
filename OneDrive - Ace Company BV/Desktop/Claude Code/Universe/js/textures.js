@@ -88,6 +88,19 @@ const PROCEDURAL = {
   neptune:  () => mkProc(512,256, 12,30,168, 32,70,220, 1.3, 7,7),
   pluto:    () => mkProc(512,256, 180,160,130, 220,200,170, 1.5, 3,3),
   venusAtmo: () => mkProc(512,256, 200,180,100, 240,220,150, 1.2, 5,5),
+  // ── Moon textures (procedural) ──
+  phobos:   () => mkProc(256,128, 80,75,68, 130,122,110, 3.0, 8,8),
+  deimos:   () => mkProc(256,128, 90,82,72, 140,130,115, 2.8, 9,9),
+  io:       () => mkProc(256,128, 180,160,40, 230,200,60, 1.8, 3,3),   // sulfur yellow
+  europa:   () => mkProc(256,128, 160,150,130, 220,215,200, 1.5, 4,4), // icy white
+  ganymede: () => mkProc(256,128, 120,110,90, 180,168,145, 2.0, 5,5),  // brownish gray
+  callisto: () => mkProc(256,128, 60,55,48, 120,112,100, 2.5, 6,6),    // dark cratered
+  titan:    () => mkProc(256,128, 160,120,50, 210,170,80, 1.3, 7,7),   // orange haze
+  enceladus:() => mkProc(256,128, 200,200,210, 240,240,250, 1.6, 8,8), // bright ice
+  mimas:    () => mkProc(256,128, 140,138,132, 200,196,188, 2.2, 9,9), // gray cratered
+  titania:  () => mkProc(256,128, 130,120,110, 185,175,165, 2.0, 10,10),
+  oberon:   () => mkProc(256,128, 100,90,82, 155,145,135, 2.3, 11,11),
+  triton:   () => mkProc(256,128, 150,160,170, 210,220,230, 1.8, 12,12), // icy blue-pink
   starmap:  () => mkTex(2048,1024, (ctx,w,h) => {
     ctx.fillStyle='#000'; ctx.fillRect(0,0,w,h);
     for(let i=0;i<3000;i++){
@@ -123,6 +136,19 @@ const TEXTURE_PATHS = {
   neptune:           ['textures/2k_neptune.jpg'],
   pluto:             ['textures/2k_pluto.jpg'],
   starmap:           ['textures/starmap_4k.jpg', 'textures/8k_stars_milky_way.jpg', 'textures/8k_stars.jpg'],
+  // Moon textures — procedural only (no real texture files)
+  phobos:    [],
+  deimos:    [],
+  io:        [],
+  europa:    [],
+  ganymede:  [],
+  callisto:  [],
+  titan:     [],
+  enceladus: [],
+  mimas:     [],
+  titania:   [],
+  oberon:    [],
+  triton:    [],
   landmarkOrion:     ['textures/landmark_orion.jpg'],
   landmarkPillars:   ['textures/landmark_pillars.jpg'],
   landmarkCrab:      ['textures/landmark_crab.jpg'],

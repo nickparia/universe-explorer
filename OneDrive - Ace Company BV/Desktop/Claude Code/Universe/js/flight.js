@@ -313,8 +313,8 @@ export function updateFlight(dt, allBodies) {
         if (keys['KeyW'] || keys['ArrowUp'])    orbitDistance = Math.max(orbitBody.r * 1.5, orbitDistance - orbitBody.r * 2 * dt);
         if (keys['KeyS'] || keys['ArrowDown'])  orbitDistance += orbitBody.r * 2 * dt;
 
-        // Auto-rotation — steady cinematic orbit
-        orbitTheta += dt * 0.21;
+        // Auto-rotation — slow cinematic drift, ~45 seconds per full orbit
+        orbitTheta += dt * 0.14;
 
         // Compute orbit position
         const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);

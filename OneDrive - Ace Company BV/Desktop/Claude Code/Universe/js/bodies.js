@@ -27,8 +27,14 @@ let sunGroup, sunMesh;
 let planets = [];   // { name, desc, g (Group), r, mesh, orb, spd, angle, moonOrbit, clouds }
 let bodies  = [];   // returned by getBodies()
 let comets  = [];   // { g, mesh, trail, trailPositions, a, b, cx, angle, spd }
-let moonRef = null; // reference to Moon entry in planets
+let moonRef = null; // reference to Earth's Moon entry
 let earthRef = null;
+let marsRef = null;
+let jupiterRef = null;
+let saturnRef = null;
+let uranusRef = null;
+let neptuneRef = null;
+let moons = []; // { ref (planet entry), parentRef, dist, speed, angleOffset }
 let elapsed = 0;
 let auroraGroup = null; // Earth aurora sprites
 let auroraAdded = false;
@@ -398,7 +404,12 @@ export function createSolarSystem(scene, textures) {
       setWorldPos(orbitLine, new THREE.Vector3(0, 0, 0));
     }
 
-    if (def.name === 'EARTH') earthRef = entry;
+    if (def.name === 'EARTH')   earthRef = entry;
+    if (def.name === 'MARS')    marsRef = entry;
+    if (def.name === 'JUPITER') jupiterRef = entry;
+    if (def.name === 'SATURN')  saturnRef = entry;
+    if (def.name === 'URANUS')  uranusRef = entry;
+    if (def.name === 'NEPTUNE') neptuneRef = entry;
 
     planets.push(entry);
     bodies.push({ name: def.name, desc: def.desc, g: group, r: def.r });
@@ -406,6 +417,9 @@ export function createSolarSystem(scene, textures) {
 
   // ── Earth Aurora sprites ──
   buildEarthAurora(scene);
+
+  // ── Planetary moons ──
+  buildMoons(scene, textures);
 
   // ── Dwarf planets (procedural) ──
   buildDwarfPlanets(scene);
@@ -418,6 +432,84 @@ export function createSolarSystem(scene, textures) {
 
   // ── Kuiper belt ──
   buildKuiperBelt(scene);
+}
+
+// ═══════════════════════════════════════════════════════════════
+// Planetary Moons
+// ═══════════════════════════════════════════════════════════════
+
+function buildMoons(scene, textures) {
+  // Moon definitions: { name, desc, r, parentRef, dist, speed, tex }
+  // dist = orbital distance from parent center (scene units)
+  // speed = orbital speed multiplier (higher = faster orbit)
+  const moonDefs = [
+    // Mars moons
+    { name: 'PHOBOS', desc: 'Tiny, irregular moon. Orbits so close it will break apart in 50M years.',
+      r: 2, parentRef: marsRef, dist: 55, speed: 0.5, tex: textures.phobos },
+    { name: 'DEIMOS', desc: 'Mars\u2019s smaller moon. Only 12 km across. Slowly drifting away.',
+      r: 1.5, parentRef: marsRef, dist: 80, speed: 0.3, tex: textures.deimos },
+
+    // Jupiter — Galilean moons
+    { name: 'IO', desc: 'Most volcanically active body in the solar system. 400+ active volcanoes.',
+      r: 14, parentRef: jupiterRef, dist: 700, speed: 0.25, tex: textures.io },
+    { name: 'EUROPA', desc: 'Subsurface ocean beneath ice crust. Prime candidate for extraterrestrial life.',
+      r: 12, parentRef: jupiterRef, dist: 850, speed: 0.18, tex: textures.europa },
+    { name: 'GANYMEDE', desc: 'Largest moon in the solar system. Bigger than Mercury. Has its own magnetic field.',
+      r: 20, parentRef: jupiterRef, dist: 1050, speed: 0.12, tex: textures.ganymede },
+    { name: 'CALLISTO', desc: 'Most heavily cratered object in the solar system. 4.5 billion years of impacts.',
+      r: 18, parentRef: jupiterRef, dist: 1250, speed: 0.08, tex: textures.callisto },
+
+    // Saturn moons
+    { name: 'TITAN', desc: 'Only moon with a dense atmosphere. Methane lakes and rain. Larger than Mercury.',
+      r: 20, parentRef: saturnRef, dist: 800, speed: 0.1, tex: textures.titan },
+    { name: 'ENCELADUS', desc: 'Geysers of water ice erupt from the south pole. Subsurface ocean confirmed.',
+      r: 6, parentRef: saturnRef, dist: 600, speed: 0.22, tex: textures.enceladus },
+    { name: 'MIMAS', desc: 'Herschel crater makes it look like the Death Star. Only 396 km across.',
+      r: 4, parentRef: saturnRef, dist: 550, speed: 0.3, tex: textures.mimas },
+
+    // Uranus moons
+    { name: 'TITANIA', desc: 'Largest moon of Uranus. Icy surface with massive canyons.',
+      r: 10, parentRef: uranusRef, dist: 350, speed: 0.14, tex: textures.titania },
+    { name: 'OBERON', desc: 'Outermost major moon of Uranus. Dark, cratered, ancient surface.',
+      r: 9, parentRef: uranusRef, dist: 450, speed: 0.1, tex: textures.oberon },
+
+    // Neptune moons
+    { name: 'TRITON', desc: 'Captured Kuiper Belt object. Orbits backwards. Nitrogen geysers.',
+      r: 11, parentRef: neptuneRef, dist: 380, speed: 0.15, tex: textures.triton },
+  ];
+
+  moonDefs.forEach((def) => {
+    if (!def.parentRef) return; // parent planet not found
+
+    const group = new THREE.Group();
+    const mesh = new THREE.Mesh(
+      new THREE.SphereGeometry(def.r, 32, 32),
+      new THREE.MeshStandardMaterial({ map: def.tex, roughness: 0.85, metalness: 0 })
+    );
+    mesh.renderOrder = 10;
+    group.add(mesh);
+
+    scene.add(group);
+    setWorldPos(group, group.position);
+
+    const angleOffset = Math.random() * Math.PI * 2;
+
+    const entry = {
+      name: def.name, desc: def.desc, g: group, r: def.r, mesh,
+      orb: 0, spd: 0, angle: angleOffset, moonOrbit: true, clouds: null
+    };
+
+    moons.push({
+      ref: entry,
+      parentRef: def.parentRef,
+      dist: def.dist,
+      speed: def.speed,
+      angleOffset
+    });
+
+    planets.push(entry);
+    bodies.push({ name: def.name, desc: def.desc, g: group, r: def.r });
+  });
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -691,7 +783,7 @@ export function updateBodies(dt, camWorldPos) {
   // ── Moon follows Earth ──
   if (moonRef && earthRef) {
     const moonAngle = elapsed * 0.1;
-    const moonDist = 150; // ~3x Earth radius, compressed from real 60x for visibility
+    const moonDist = 150;
     const ex = earthRef.g.position.x;
     const ez = earthRef.g.position.z;
     moonRef.g.position.set(
@@ -700,9 +792,29 @@ export function updateBodies(dt, camWorldPos) {
       ez + Math.sin(moonAngle) * moonDist
     );
     if (moonRef.g.userData._worldPos) moonRef.g.userData._worldPos.copy(moonRef.g.position);
-    if (moonRef.mesh) {
-      moonRef.mesh.rotation.y += 0.0015 * (1 / Math.max(moonRef.r, 0.4));
-    }
+    if (moonRef.mesh) moonRef.mesh.rotation.y += 0.0015 * (1 / Math.max(moonRef.r, 0.4));
+  }
+
+  // ── All other moons follow their parent planets ──
+  for (let i = 0; i < moons.length; i++) {
+    const m = moons[i];
+    const parent = m.parentRef;
+    if (!parent || !parent.g) continue;
+
+    const parentPos = parent.g.userData._worldPos || parent.g.position;
+    const angle = m.angleOffset + elapsed * m.speed;
+
+    // Orbit in the parent's tilted plane
+    const px = parentPos.x + Math.cos(angle) * m.dist;
+    const py = parentPos.y;
+    const pz = parentPos.z + Math.sin(angle) * m.dist;
+
+    m.ref.g.position.set(px, py, pz);
+    if (m.ref.g.userData._worldPos) m.ref.g.userData._worldPos.set(px, py, pz);
+    else m.ref.g.userData._worldPos = new THREE.Vector3(px, py, pz);
+
+    // Self-rotation
+    if (m.ref.mesh) m.ref.mesh.rotation.y += 0.001 * (1 / Math.max(m.ref.r, 0.4));
   }
 
   // ── Comets ──
