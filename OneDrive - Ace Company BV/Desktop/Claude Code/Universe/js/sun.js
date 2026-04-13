@@ -293,12 +293,262 @@ void main() {
 `;
 
 // ═══════════════════════════════════════════════════════════════
+// Coronal Mass Ejections — particle-based plasma eruptions
+// ═══════════════════════════════════════════════════════════════
+
+const MAX_CMES = 3;
+const PARTICLES_PER_CME = 600;
+
+// Particle texture — soft hot core with diffuse outer glow
+function makeCMETexture() {
+  const size = 64;
+  const cv = document.createElement('canvas');
+  cv.width = size; cv.height = size;
+  const ctx = cv.getContext('2d');
+  const g = ctx.createRadialGradient(size/2, size/2, 0, size/2, size/2, size/2);
+  g.addColorStop(0, 'rgba(255,255,255,1)');
+  g.addColorStop(0.08, 'rgba(255,230,180,0.9)');
+  g.addColorStop(0.25, 'rgba(255,160,60,0.4)');
+  g.addColorStop(0.5, 'rgba(255,80,20,0.1)');
+  g.addColorStop(1, 'rgba(255,40,0,0)');
+  ctx.fillStyle = g;
+  ctx.fillRect(0, 0, size, size);
+  return new THREE.CanvasTexture(cv);
+}
+
+let _cmeTex = null;
+function getCMETex() {
+  if (!_cmeTex) _cmeTex = makeCMETexture();
+  return _cmeTex;
+}
+
+class CME {
+  constructor(sunRadius) {
+    this.sunRadius = sunRadius;
+    this.active = false;
+    this.life = 0;
+    this.duration = 0;
+    this.points = null;       // THREE.Points
+    this.positions = null;    // Float32Array
+    this.velocities = null;   // per-particle velocity
+    this.lives = null;        // per-particle life
+    this.sizes = null;        // Float32Array for sizes
+    this.colors = null;       // Float32Array for colors
+    this.baseDir = new THREE.Vector3();
+    this.tangent = new THREE.Vector3();
+    this.isCME = false;       // true = breaks free, false = confined flare
+    this.peakHeight = 0;
+    this.flashSprite = null;  // bright surface flash
+  }
+
+  spawn(parent) {
+    this.active = true;
+    this.life = 0;
+    this.duration = 12 + Math.random() * 18;
+    this.isCME = Math.random() > 0.5; // 50% chance of full CME vs confined flare
+    this.peakHeight = this.isCME
+      ? 200 + Math.random() * 600    // CME: massive, up to 600+ units above surface
+      : 80 + Math.random() * 200;     // Flare: smaller arcs
+
+    // Random eruption point on sun surface
+    const theta = Math.random() * Math.PI * 2;
+    const phi = Math.acos(2 * Math.random() - 1);
+    this.baseDir.set(
+      Math.sin(phi) * Math.cos(theta),
+      Math.sin(phi) * Math.sin(theta),
+      Math.cos(phi)
+    ).normalize();
+
+    // Tangent for arc plane
+    const rand = new THREE.Vector3(Math.random()-0.5, Math.random()-0.5, Math.random()-0.5).normalize();
+    this.tangent.crossVectors(this.baseDir, rand).normalize();
+
+    // Remove old geometry
+    this._remove(parent);
+
+    // Create particle buffer
+    this.positions = new Float32Array(PARTICLES_PER_CME * 3);
+    this.velocities = [];
+    this.lives = new Float32Array(PARTICLES_PER_CME);
+    this.sizes = new Float32Array(PARTICLES_PER_CME);
+    this.colors = new Float32Array(PARTICLES_PER_CME * 3);
+
+    // Initialize all particles at the eruption point
+    const basePos = this.baseDir.clone().multiplyScalar(this.sunRadius);
+    for (let i = 0; i < PARTICLES_PER_CME; i++) {
+      // Stagger spawn times so particles erupt sequentially
+      this.lives[i] = -i * (this.duration * 0.4 / PARTICLES_PER_CME); // negative = not yet spawned
+      this.positions[i * 3] = basePos.x;
+      this.positions[i * 3 + 1] = basePos.y;
+      this.positions[i * 3 + 2] = basePos.z;
+      this.sizes[i] = 0;
+
+      // Initial velocity: outward + arc curve + turbulence
+      const arcT = i / PARTICLES_PER_CME;
+      const arcAngle = (arcT - 0.5) * (this.isCME ? 0.8 : 0.4);
+      const outDir = this.baseDir.clone().applyAxisAngle(this.tangent, arcAngle).normalize();
+
+      // Speed varies: fast at start, slower at peak, fast again (or escaping for CME)
+      const speed = 40 + Math.random() * 60;
+      const turbulence = new THREE.Vector3(
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10,
+        (Math.random() - 0.5) * 10
+      );
+
+      this.velocities.push(outDir.multiplyScalar(speed).add(turbulence));
+
+      // Initial color: white-hot
+      this.colors[i * 3] = 1.0;
+      this.colors[i * 3 + 1] = 0.9;
+      this.colors[i * 3 + 2] = 0.6;
+    }
+
+    const geo = new THREE.BufferGeometry();
+    geo.setAttribute('position', new THREE.BufferAttribute(this.positions, 3));
+    geo.setAttribute('size', new THREE.BufferAttribute(this.sizes, 1));
+    geo.setAttribute('color', new THREE.BufferAttribute(this.colors, 3));
+
+    const mat = new THREE.PointsMaterial({
+      size: 60,
+      map: getCMETex(),
+      vertexColors: true,
+      sizeAttenuation: true,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      transparent: true,
+      opacity: 0.8,
+    });
+
+    this.points = new THREE.Points(geo, mat);
+    parent.add(this.points);
+
+    // Surface flash at eruption point
+    const flashMat = new THREE.SpriteMaterial({
+      map: getCMETex(),
+      color: new THREE.Color(1.0, 0.9, 0.5),
+      transparent: true,
+      opacity: 0,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+    });
+    this.flashSprite = new THREE.Sprite(flashMat);
+    this.flashSprite.position.copy(basePos);
+    this.flashSprite.scale.setScalar(100 + Math.random() * 150);
+    parent.add(this.flashSprite);
+  }
+
+  _remove(parent) {
+    if (this.points) {
+      parent.remove(this.points);
+      this.points.geometry.dispose();
+      this.points.material.dispose();
+      this.points = null;
+    }
+    if (this.flashSprite) {
+      parent.remove(this.flashSprite);
+      this.flashSprite.material.dispose();
+      this.flashSprite = null;
+    }
+  }
+
+  update(dt, parent) {
+    if (!this.active || !this.points) return;
+    this.life += dt;
+
+    if (this.life > this.duration) {
+      this.active = false;
+      this._remove(parent);
+      return;
+    }
+
+    const progress = this.life / this.duration;
+
+    // Flash brightness — bright at start, fades
+    if (this.flashSprite) {
+      const flashT = Math.max(0, 1 - this.life / 3);
+      this.flashSprite.material.opacity = flashT * 0.6;
+    }
+
+    // Global fade — particles dim as the event progresses
+    const globalFade = progress < 0.1 ? progress / 0.1 :
+                       progress > 0.7 ? (1 - progress) / 0.3 : 1.0;
+
+    const positions = this.positions;
+    const sizes = this.sizes;
+    const colors = this.colors;
+    const sunR = this.sunRadius;
+
+    for (let i = 0; i < PARTICLES_PER_CME; i++) {
+      this.lives[i] += dt;
+
+      // Not yet spawned
+      if (this.lives[i] < 0) {
+        sizes[i] = 0;
+        continue;
+      }
+
+      const pLife = this.lives[i];
+      const i3 = i * 3;
+
+      // Apply velocity
+      positions[i3]     += this.velocities[i].x * dt;
+      positions[i3 + 1] += this.velocities[i].y * dt;
+      positions[i3 + 2] += this.velocities[i].z * dt;
+
+      // Distance from sun center
+      const dist = Math.sqrt(positions[i3]*positions[i3] + positions[i3+1]*positions[i3+1] + positions[i3+2]*positions[i3+2]);
+
+      // Gravity — pull back toward sun (unless CME that has broken free)
+      if (!this.isCME || dist < sunR + this.peakHeight * 0.8) {
+        const grav = 8.0 / Math.max(dist * dist / (sunR * sunR), 0.1);
+        this.velocities[i].x -= (positions[i3] / dist) * grav * dt;
+        this.velocities[i].y -= (positions[i3 + 1] / dist) * grav * dt;
+        this.velocities[i].z -= (positions[i3 + 2] / dist) * grav * dt;
+      }
+
+      // Turbulence — random jitter for organic look
+      this.velocities[i].x += (Math.random() - 0.5) * 2.0 * dt;
+      this.velocities[i].y += (Math.random() - 0.5) * 2.0 * dt;
+      this.velocities[i].z += (Math.random() - 0.5) * 2.0 * dt;
+
+      // Drag — slow down over time
+      this.velocities[i].multiplyScalar(1 - 0.3 * dt);
+
+      // Particle size — grows then shrinks
+      const lifeFrac = Math.min(pLife / 2, 1);
+      const sizeFade = lifeFrac < 0.3 ? lifeFrac / 0.3 : Math.max(0, 1 - (lifeFrac - 0.3) / 0.7);
+      sizes[i] = (30 + Math.random() * 40) * sizeFade * globalFade;
+
+      // Color evolution: white-hot → orange → deep red → fade
+      const temp = Math.max(0, 1 - pLife / (this.duration * 0.6));
+      colors[i3]     = 0.3 + temp * 0.7;                    // R: stays high
+      colors[i3 + 1] = Math.max(0.05, temp * 0.7);          // G: fades
+      colors[i3 + 2] = Math.max(0.01, temp * temp * 0.5);   // B: fades fast
+
+      // Kill particles that fall back into the sun
+      if (dist < sunR * 0.95) {
+        sizes[i] = 0;
+        this.velocities[i].set(0, 0, 0);
+      }
+    }
+
+    // Update GPU buffers
+    this.points.geometry.attributes.position.needsUpdate = true;
+    this.points.geometry.attributes.size.needsUpdate = true;
+    this.points.geometry.attributes.color.needsUpdate = true;
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
 // Public API
 // ═══════════════════════════════════════════════════════════════
 
 let sunMaterial = null;
 let prominences = [];
 let prominenceTimer = 0;
+let cmes = [];
+let cmeTimer = 0;
 let _sunGroup = null;
 let _sunRadius = 800;
 
@@ -332,6 +582,13 @@ export function createSunShader(sunRadius, sunGroup) {
     prominences[i].life = Math.random() * 10;
   }
 
+  // CME / flare particle system
+  for (let i = 0; i < MAX_CMES; i++) {
+    cmes.push(new CME(sunRadius));
+  }
+  // Spawn one immediately so there's always something erupting
+  cmes[0].spawn(sunGroup);
+
   return sunMaterial;
 }
 
@@ -353,6 +610,26 @@ export function updateSun(dt, elapsed) {
     for (let i = 0; i < prominences.length; i++) {
       if (!prominences[i].active) {
         prominences[i].spawn(_sunGroup);
+        break;
+      }
+    }
+  }
+
+  // ── CME / Flare updates ──
+  cmeTimer += dt;
+  let activeCMEs = 0;
+
+  for (let i = 0; i < cmes.length; i++) {
+    cmes[i].update(dt, _sunGroup);
+    if (cmes[i].active) activeCMEs++;
+  }
+
+  // Spawn new CME every 8-15 seconds
+  if (cmeTimer > 8 + Math.random() * 7 && activeCMEs < MAX_CMES) {
+    cmeTimer = 0;
+    for (let i = 0; i < cmes.length; i++) {
+      if (!cmes[i].active) {
+        cmes[i].spawn(_sunGroup);
         break;
       }
     }
