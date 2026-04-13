@@ -127,6 +127,9 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 .pb-item.active .pb-name{color:rgba(120,180,255,0.95)}
 .pb-dist{font-size:7px;letter-spacing:1px;color:rgba(255,255,255,0.3);margin-top:2px;
   text-shadow:0 1px 3px rgba(0,0,0,0.8)}
+.pb-divider{color:rgba(255,255,255,0.1);padding:5px 4px;font-size:12px;user-select:none}
+.pb-craft .pb-name{color:rgba(180,220,255,0.6);font-size:9px}
+.pb-craft.active .pb-name{color:rgba(180,220,255,0.95)}
 
 /* ── Time scale indicator ── */
 #time-scale{position:absolute;bottom:55px;left:50%;transform:translateX(-50%);
@@ -239,15 +242,7 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
   <div id="planet-bar"></div>
   <div id="nav" style="display:none!important"></div>
   <div id="boost-wrap" style="display:none!important"></div>
-  <div id="atmo-hud" style="position:absolute;bottom:70px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.4)">
-    <div id="atmo-pressure" style="display:none"></div>
-    <div id="atmo-temperature" style="display:none;margin-top:3px"></div>
-    <div id="hull-stress" style="display:none;margin-top:3px"></div>
-    <div style="width:100px;height:3px;background:rgba(255,255,255,0.08);margin-top:5px;overflow:hidden">
-      <div id="hull-bar" style="height:100%;width:0%;transition:width 0.3s,background 0.3s"></div>
-    </div>
-    <div id="atmo-warning" style="display:none;margin-top:8px;font-size:14px;letter-spacing:3px"></div>
-  </div>
+  <div id="atmo-hud" style="display:none!important"></div>
   <div id="surface-hud" style="position:absolute;top:20px;left:20px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.35);display:none">
     <div id="surface-planet" style="font-size:16px;letter-spacing:5px;color:rgba(120,180,255,0.65)"></div>
     <div id="surface-alt" style="margin-top:5px"></div>

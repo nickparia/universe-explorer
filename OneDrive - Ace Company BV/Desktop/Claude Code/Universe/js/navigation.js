@@ -35,7 +35,8 @@ function updateTimeHud() {
 // Order matches number keys: 0=Sun, 1=Mercury...9=Pluto
 const PLANET_ORDER = ['SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
 const PLANET_LABELS = ['☉ SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
-const PLANET_KEYS = ['0','1','2','3','4','5','6','7','8','9'];
+const SPACECRAFT_ORDER = ['ISS','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
+const SPACECRAFT_LABELS = ['ISS','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
 
 let barItems = []; // { el, distEl, name, bodyRef }
 let barContainer = null;
@@ -57,6 +58,7 @@ function createBar(allBodies) {
   barContainer = document.getElementById('planet-bar');
   if (!barContainer) return;
 
+  // Planets
   for (let i = 0; i < PLANET_ORDER.length; i++) {
     const name = PLANET_ORDER[i];
     const body = allBodies.find(b => b.name === name);
@@ -65,16 +67,31 @@ function createBar(allBodies) {
     const el = document.createElement('div');
     el.className = 'pb-item';
     el.innerHTML = `<div class="pb-name">${PLANET_LABELS[i]}</div><div class="pb-dist"></div>`;
-    el.title = `${PLANET_LABELS[i]} (press ${PLANET_KEYS[i]})`;
     el.addEventListener('click', () => { setActivePlanet(name); flyTo(name); });
     barContainer.appendChild(el);
 
-    barItems.push({
-      el,
-      distEl: el.querySelector('.pb-dist'),
-      name,
-      bodyRef: body
-    });
+    barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
+  }
+
+  // Divider
+  const divider = document.createElement('div');
+  divider.className = 'pb-divider';
+  divider.textContent = '|';
+  barContainer.appendChild(divider);
+
+  // Spacecraft
+  for (let i = 0; i < SPACECRAFT_ORDER.length; i++) {
+    const name = SPACECRAFT_ORDER[i];
+    const body = allBodies.find(b => b.name === name);
+    if (!body) continue;
+
+    const el = document.createElement('div');
+    el.className = 'pb-item pb-craft';
+    el.innerHTML = `<div class="pb-name">${SPACECRAFT_LABELS[i]}</div><div class="pb-dist"></div>`;
+    el.addEventListener('click', () => { setActivePlanet(name); flyTo(name); });
+    barContainer.appendChild(el);
+
+    barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
   }
 }
 
