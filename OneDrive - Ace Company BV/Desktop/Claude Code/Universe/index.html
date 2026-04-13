@@ -1,0 +1,289 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<title>Universe Explorer</title>
+<style>
+*{margin:0;padding:0;box-sizing:border-box}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Courier New',monospace}
+canvas{display:block;cursor:crosshair}
+
+/* ── SETUP SCREEN ── */
+#setup{position:fixed;inset:0;background:#000;z-index:200;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;padding:40px;color:#fff}
+#setup h1{font-size:clamp(18px,3vw,40px);letter-spacing:8px;font-weight:100;
+  text-shadow:0 0 40px rgba(120,180,255,0.8);margin-bottom:6px}
+#setup .sub{font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.3);margin-bottom:32px}
+.steps{display:flex;gap:24px;margin-bottom:32px;max-width:900px;width:100%}
+.step{flex:1;border:1px solid rgba(255,255,255,0.08);padding:20px;border-radius:4px}
+.step-num{font-size:9px;letter-spacing:3px;color:rgba(120,180,255,0.6);margin-bottom:10px}
+.step h3{font-size:12px;letter-spacing:2px;font-weight:400;color:rgba(255,255,255,0.8);margin-bottom:10px}
+.step p{font-size:10px;color:rgba(255,255,255,0.4);line-height:1.8;letter-spacing:0.5px}
+.step code{display:block;margin-top:10px;padding:8px 12px;background:rgba(255,255,255,0.04);
+  border:1px solid rgba(255,255,255,0.08);font-size:10px;color:rgba(120,220,120,0.8);
+  letter-spacing:1px;border-radius:2px}
+.step a{color:rgba(120,180,255,0.7);text-decoration:none;font-size:10px}
+.step a:hover{color:rgba(120,180,255,1)}
+.files{font-size:9px;color:rgba(255,255,255,0.3);line-height:2;letter-spacing:0.5px;
+  border:1px solid rgba(255,255,255,0.06);padding:12px 16px;margin-top:10px;border-radius:2px}
+.files span{color:rgba(120,220,120,0.6)}
+.note{font-size:9px;color:rgba(255,200,80,0.5);letter-spacing:1px;margin-bottom:24px;text-align:center}
+#proceed-btn{padding:11px 44px;background:transparent;border:1px solid rgba(120,180,255,0.35);
+  color:rgba(120,180,255,0.8);font-family:'Courier New',monospace;font-size:10px;letter-spacing:6px;
+  cursor:pointer;transition:all .3s}
+#proceed-btn:hover{background:rgba(120,180,255,0.07);box-shadow:0 0 24px rgba(120,180,255,0.2)}
+
+/* ── LOADING ── */
+#loading{position:fixed;inset:0;background:#000;z-index:180;display:none;
+  flex-direction:column;align-items:center;justify-content:center;gap:14px}
+#loading .ltxt{font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.35)}
+#loading-bar-wrap{width:220px;height:1px;background:rgba(255,255,255,0.07)}
+#loading-bar{height:100%;width:0;background:rgba(120,180,255,0.5);transition:width .2s}
+#loading-detail{font-size:8px;letter-spacing:2px;color:rgba(255,255,255,0.2);margin-top:4px;max-width:320px;text-align:center}
+
+/* ── PLAY OVERLAY ── */
+#overlay{position:fixed;inset:0;background:rgba(0,0,0,0.88);z-index:100;
+  display:none;flex-direction:column;align-items:center;justify-content:center}
+#overlay h1{font-size:clamp(18px,3vw,42px);letter-spacing:10px;font-weight:100;
+  text-shadow:0 0 50px rgba(120,180,255,0.8);margin-bottom:8px}
+.sub2{font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.3);margin-bottom:28px}
+#tex-status{font-size:8px;letter-spacing:2px;margin-bottom:24px;text-align:center;line-height:2}
+.t-ok{color:rgba(80,220,120,0.7)}.t-miss{color:rgba(255,140,80,0.6)}
+table{font-size:10px;letter-spacing:1.5px;border-collapse:collapse;margin-bottom:24px}
+td{padding:3px 14px;color:rgba(255,255,255,0.55)}
+td:first-child{color:rgba(120,180,255,0.7);text-align:right}
+#start-btn{padding:11px 44px;background:transparent;border:1px solid rgba(120,180,255,0.35);
+  color:rgba(120,180,255,0.8);font-family:'Courier New',monospace;font-size:10px;letter-spacing:6px;
+  cursor:pointer;transition:all .3s}
+#start-btn:hover{background:rgba(120,180,255,0.07);box-shadow:0 0 24px rgba(120,180,255,0.2)}
+
+/* ── HUD ── */
+#hud{position:fixed;inset:0;pointer-events:none;z-index:10;display:none}
+#crosshair{position:absolute;top:50%;left:50%;transform:translate(-50%,-50%);width:18px;height:18px;opacity:0.18}
+#crosshair::before,#crosshair::after{content:'';position:absolute;background:#fff}
+#crosshair::before{width:1px;height:100%;left:50%}
+#crosshair::after{height:1px;width:100%;top:50%}
+.brk{position:absolute;width:14px;height:14px;opacity:0.16}
+.brk::before,.brk::after{content:'';position:absolute;background:rgba(160,210,255,0.8)}
+.brk::before{width:1px;height:100%}.brk::after{height:1px;width:100%;top:0}
+.tl{top:12px;left:12px}.tr{top:12px;right:12px;transform:scaleX(-1)}
+.bl{bottom:12px;left:12px;transform:scaleY(-1)}.br{bottom:12px;right:12px;transform:scale(-1)}
+#target-info{position:absolute;top:18px;left:50%;transform:translateX(-50%);text-align:center}
+#target-name{font-size:22px;letter-spacing:8px;color:rgba(255,255,255,0.78);display:block}
+#target-dist{margin-top:5px;font-size:13px;color:rgba(255,255,255,0.3);display:block;letter-spacing:3px}
+#ang-size{font-size:11px;color:rgba(255,255,255,0.18);letter-spacing:1px}
+#nav{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);text-align:center}
+#speed-val{font-size:28px;letter-spacing:5px;color:rgba(120,180,255,0.85);display:block}
+#speed-unit{font-size:12px;letter-spacing:3px;color:rgba(255,255,255,0.2)}
+#warp-active{font-size:14px;letter-spacing:5px;color:rgba(255,180,80,0.75);display:none;margin-top:4px}
+#ctrl-hint{position:absolute;bottom:20px;right:20px;font-size:13px;letter-spacing:1.5px;
+  line-height:2.2;text-align:right;color:rgba(255,255,255,0.18)}
+#ctrl-hint span{color:rgba(120,180,255,0.42)}
+#boost-wrap{position:absolute;bottom:24px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.25)}
+#boost-bar{width:100px;height:2px;background:rgba(255,255,255,0.08);margin-top:6px;overflow:hidden}
+#boost-fill{height:100%;width:100%;background:rgba(120,180,255,0.65);transition:width .1s}
+#music-ui{position:absolute;top:20px;right:20px;pointer-events:all;font-size:12px;
+  letter-spacing:2px;color:rgba(255,255,255,0.25);text-align:right}
+#music-btn{background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.38);
+  font-family:'Courier New',monospace;font-size:12px;letter-spacing:2px;padding:6px 14px;
+  cursor:pointer;transition:all .3s;display:block;margin-left:auto}
+#music-btn:hover{border-color:rgba(120,180,255,0.3);color:rgba(120,180,255,0.65)}
+#track-lbl{font-size:10px;color:rgba(255,255,255,0.18);margin-top:4px}
+#vol-row{display:flex;align-items:center;gap:6px;margin-top:5px;justify-content:flex-end}
+#vol-slider{-webkit-appearance:none;width:70px;height:2px;background:rgba(255,255,255,0.12);outline:none;cursor:pointer}
+#vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:rgba(120,180,255,0.7);cursor:pointer}
+#home-btn{position:absolute;top:60px;left:50%;transform:translateX(-50%);pointer-events:all;
+  background:transparent;border:1px solid rgba(255,100,70,0.22);color:rgba(255,140,110,0.45);
+  font-family:'Courier New',monospace;font-size:12px;letter-spacing:3px;padding:6px 18px;
+  cursor:pointer;display:none;transition:all .3s}
+#home-btn:hover{border-color:rgba(255,100,70,0.5);color:rgba(255,170,140,0.8)}
+
+/* ── Info panel for planet descriptions ── */
+#info-panel{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
+  text-align:center;pointer-events:none;z-index:10;display:none}
+#info-panel .desc{font-size:14px;letter-spacing:1.5px;color:rgba(255,255,255,0.4);
+  max-width:500px;line-height:1.8}
+
+/* ── Warp streak overlay ── */
+#warp-streaks{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;
+  transition:opacity 0.3s}
+
+/* ── Event horizon flash ── */
+#horizon-flash{position:fixed;inset:0;background:#fff;pointer-events:none;z-index:200;opacity:0}
+#reentry-glow{position:fixed;inset:0;pointer-events:none;z-index:6;opacity:0;
+  transition:opacity 0.2s;
+  background:radial-gradient(ellipse at center, transparent 40%, rgba(255,120,20,0.4) 70%, rgba(255,60,10,0.7) 100%)}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+
+<!-- SETUP INSTRUCTIONS -->
+<div id="setup">
+  <h1>UNIVERSE EXPLORER</h1>
+  <div class="sub">8K PHOTOREALISTIC · SETUP REQUIRED</div>
+  <div class="steps">
+    <div class="step">
+      <div class="step-num">STEP 01</div>
+      <h3>DOWNLOAD TEXTURES</h3>
+      <p>Go to Solar System Scope and download the free 8K texture pack (CC-BY 4.0):</p>
+      <p style="margin-top:8px"><a href="https://www.solarsystemscope.com/textures/" target="_blank">solarsystemscope.com/textures →</a></p>
+      <p style="margin-top:8px;color:rgba(255,255,255,0.3)">Download each planet. Free account required. File size ~600MB total.</p>
+    </div>
+    <div class="step">
+      <div class="step-num">STEP 02</div>
+      <h3>ARRANGE FILES</h3>
+      <p>Create a <code>textures/</code> folder next to this HTML file and place the downloaded .jpg/.png files inside:</p>
+      <div class="files">
+        <span>textures/</span><br>
+        &nbsp;&nbsp;<span>8k_sun.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_mercury.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_venus_surface.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_earth_daymap.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_earth_nightmap.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_earth_clouds.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_earth_normal_map.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_earth_specular_map.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_moon.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_mars.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_mars_normal_map.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_jupiter.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_saturn.jpg</span><br>
+        &nbsp;&nbsp;<span>8k_saturn_ring_alpha.png</span><br>
+        &nbsp;&nbsp;<span>2k_uranus.jpg</span><br>
+        &nbsp;&nbsp;<span>2k_neptune.jpg</span>
+      </div>
+    </div>
+    <div class="step">
+      <div class="step-num">STEP 03</div>
+      <h3>SERVE LOCALLY</h3>
+      <p>Browsers block local file loading. Run a local server from the folder containing this HTML file:</p>
+      <code>python -m http.server 8080</code>
+      <p style="margin-top:10px;color:rgba(255,255,255,0.3)">Then open in your browser:</p>
+      <code>localhost:8080</code>
+      <p style="margin-top:10px;color:rgba(255,255,255,0.3)">Or use VS Code Live Server, Node's <code style="display:inline;border:none;background:none;padding:0;color:rgba(120,220,120,0.7)">npx serve</code>, etc.</p>
+    </div>
+  </div>
+  <div class="note">Missing textures fall back to procedural generation — you can launch without any textures to preview.</div>
+  <button id="proceed-btn">LAUNCH ANYWAY (PROCEDURAL)</button>
+</div>
+
+<!-- LOADING -->
+<div id="loading">
+  <div class="ltxt">LOADING TEXTURES</div>
+  <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
+  <div id="loading-detail"></div>
+</div>
+
+<!-- PLAY OVERLAY -->
+<div id="overlay">
+  <h1>UNIVERSE EXPLORER</h1>
+  <div class="sub2">8K PHOTOREALISTIC · 6DOF FLIGHT · SYMPHONIC</div>
+  <div id="tex-status"></div>
+  <table>
+    <tr><td>W / S</td><td>Thrust Forward / Back</td></tr>
+    <tr><td>A / D</td><td>Strafe Left / Right</td></tr>
+    <tr><td>SPACE / C</td><td>Move Up / Down</td></tr>
+    <tr><td>Q / E</td><td>Roll</td></tr>
+    <tr><td>SHIFT</td><td>Warp Drive ×25</td></tr>
+    <tr><td>H</td><td>Return Home</td></tr>
+    <tr><td>RIGHT-DRAG</td><td>Look (Y inverted)</td></tr>
+  </table>
+  <button id="start-btn">LAUNCH</button>
+</div>
+
+<!-- HUD -->
+<div id="hud">
+  <div class="brk tl"></div><div class="brk tr"></div>
+  <div class="brk bl"></div><div class="brk br"></div>
+  <div id="crosshair"></div>
+  <div id="target-info">
+    <span id="target-name">SOL</span>
+    <span id="target-dist">—</span>
+    <span id="ang-size"></span>
+  </div>
+  <button id="home-btn">⌂ RETURN HOME</button>
+  <div id="nav">
+    <span id="speed-val">0.0</span>
+    <span id="speed-unit">U/S</span>
+    <div id="warp-active">⚡ WARP</div>
+  </div>
+  <div id="boost-wrap">WARP<div id="boost-bar"><div id="boost-fill"></div></div></div>
+  <div id="atmo-hud" style="position:absolute;bottom:70px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.4)">
+    <div id="atmo-pressure" style="display:none"></div>
+    <div id="atmo-temperature" style="display:none;margin-top:3px"></div>
+    <div id="hull-stress" style="display:none;margin-top:3px"></div>
+    <div style="width:100px;height:3px;background:rgba(255,255,255,0.08);margin-top:5px;overflow:hidden">
+      <div id="hull-bar" style="height:100%;width:0%;transition:width 0.3s,background 0.3s"></div>
+    </div>
+    <div id="atmo-warning" style="display:none;margin-top:8px;font-size:14px;letter-spacing:3px"></div>
+  </div>
+  <div id="surface-hud" style="position:absolute;top:20px;left:20px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.35);display:none">
+    <div id="surface-planet" style="font-size:16px;letter-spacing:5px;color:rgba(120,180,255,0.65)"></div>
+    <div id="surface-alt" style="margin-top:5px"></div>
+    <div id="surface-coords" style="margin-top:3px"></div>
+    <div id="surface-temp" style="margin-top:3px"></div>
+    <div id="surface-pressure" style="margin-top:3px"></div>
+  </div>
+  <div id="info-card" style="position:absolute;bottom:0;left:0;right:0;
+    text-align:center;pointer-events:none;display:none;opacity:0;
+    padding:40px 20px 50px;
+    background:linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%)">
+    <div id="info-card-name" style="font-size:clamp(24px,4vw,48px);letter-spacing:14px;
+      color:rgba(255,255,255,0.9);font-weight:100;
+      text-shadow:0 0 40px rgba(120,180,255,0.4)"></div>
+    <div id="info-card-type" style="font-size:clamp(9px,1.2vw,13px);letter-spacing:8px;
+      color:rgba(120,180,255,0.7);margin-top:10px;opacity:0;
+      transition:opacity 1.5s ease-in"></div>
+    <div style="width:60px;height:1px;background:rgba(120,180,255,0.2);margin:16px auto;opacity:0;
+      transition:opacity 2s ease-in" id="info-card-line"></div>
+    <div id="info-card-facts" style="font-size:clamp(10px,1.1vw,14px);letter-spacing:2px;
+      color:rgba(255,255,255,0.5);line-height:2.2;opacity:0;
+      transition:opacity 2s ease-in"></div>
+    <div id="info-card-lore" style="font-size:clamp(10px,1.1vw,14px);letter-spacing:1.5px;
+      color:rgba(255,255,255,0.35);margin-top:16px;font-style:italic;
+      max-width:600px;margin-left:auto;margin-right:auto;line-height:1.8;
+      opacity:0;transition:opacity 2.5s ease-in"></div>
+  </div>
+  <div id="ctrl-hint">
+    <span>W/S</span> THRUST · <span>A/D</span> STRAFE<br>
+    <span>Q/E</span> ROLL · <span>SPC/C</span> UP/DN<br>
+    <span>SHIFT</span> WARP · <span>H</span> HOME<br>
+    <span>R-DRAG</span> LOOK (Y INV)
+  </div>
+  <div id="music-ui">
+    <button id="music-btn">♪ MUSIC</button>
+    <div id="track-lbl">MOONLIGHT SONATA</div>
+    <div id="vol-row">
+      <span style="color:rgba(255,255,255,0.14);font-size:6px">VOL</span>
+      <input id="vol-slider" type="range" min="0" max="1" step="0.05" value="0.45">
+    </div>
+  </div>
+</div>
+
+<!-- New overlay elements -->
+<div id="info-panel"><span class="desc"></span></div>
+<div id="warp-streaks"></div>
+<div id="horizon-flash"></div>
+<div id="reentry-glow"></div>
+<div id="atmo-fog" style="position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;
+  background:rgba(115,140,184,1);transition:opacity 0.3s"></div>
+
+<!-- Three.js r170 ES module importmap -->
+<script type="importmap">
+{
+  "imports": {
+    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
+    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
+  }
+}
+</script>
+
+<!-- Prevent context menu on canvas for right-click look -->
+<script>
+document.getElementById('c').addEventListener('contextmenu', e => e.preventDefault());
+</script>
+
+<script type="module" src="js/main.js?v=34"></script>
+</body>
+</html>
