@@ -149,10 +149,12 @@ export function initEngine() {
   );
 
   // ── Lights ──
-  // Intensity must be very high for inverse-square falloff across AU distances.
-  // At 1 AU (3000 units): 30000000 / 3000² = 3.33 illuminance (before tone mapping)
-  sunLight = new THREE.PointLight(0xfff8e8, 30000000);
-  sunLight.decay = 2;  // physically correct inverse-square falloff
+  // Gentler decay (1.6) so distant planets stay visible.
+  // Mercury (1161 units): 800000 / 1161^1.6 ≈ 15 (bright but ACES handles it)
+  // Earth (3000 units): 800000 / 3000^1.6 ≈ 2.2 (natural)
+  // Saturn (28611 units): 800000 / 28611^1.6 ≈ 0.06 (ambient fills in)
+  sunLight = new THREE.PointLight(0xfff8e8, 800000);
+  sunLight.decay = 1.6;
   scene.add(sunLight);
   setWorldPos(sunLight, sunLight.position);
 

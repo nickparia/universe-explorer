@@ -3,13 +3,14 @@ import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
-const THRUST_ACCEL       = 20;
+const THRUST_ACCEL       = 12;      // gentler initial acceleration
 const WARP_MULTIPLIER    = 40;
-const LINEAR_DAMPING     = 0.035;
-const ANGULAR_DAMPING    = 0.08;
+const LINEAR_DAMPING     = 0.06;    // stronger drag when coasting — stops faster
+const THRUST_DAMPING     = 0.025;   // mild drag even while thrusting — prevents runaway
+const ANGULAR_DAMPING    = 0.12;    // snappier rotation stops
 const MAX_BASE_SPEED     = 600;
-const MOUSE_SENS         = 0.002;
-const ROLL_ACCEL         = 1.5;
+const MOUSE_SENS         = 0.0015;  // slightly less twitchy
+const ROLL_ACCEL         = 1.2;
 const GRAVITY_RANGE_MULT = 5;
 const BH_GRAVITY_RANGE_MULT = 50;
 
@@ -101,6 +102,11 @@ export function initFlight(camera) {
     elBoostFill  = document.getElementById('boost-fill');
     elWarpActive = document.getElementById('warp-active');
     elHomeBtn    = document.getElementById('home-btn');
+
+    // Wire up home button click
+    if (elHomeBtn) {
+      elHomeBtn.addEventListener('click', doHome);
+    }
 
     const canvas = document.getElementById('c');
 
@@ -313,9 +319,14 @@ export function updateFlight(dt, allBodies) {
         }
     }
 
-    // ── 10. Linear dampening (only when not thrusting) ───────────────────────
-    if (!thrusting) {
-        velocity.multiplyScalar(1 - LINEAR_DAMPING);
+    // ── 10. Linear dampening ───────────────────────────────────────────────
+    // Always apply some drag — stronger when coasting, mild when thrusting.
+    if (thrusting) {
+        velocity.multiplyScalar(1 - THRUST_DAMPING);
+    } else {
+        const curSpeed = velocity.length();
+        const speedFactor = 1 + Math.min(curSpeed / MAX_BASE_SPEED, 1) * 0.08;
+        velocity.multiplyScalar(1 - LINEAR_DAMPING * speedFactor);
     }
 
     // ── 11. Speed cap ────────────────────────────────────────────────────────

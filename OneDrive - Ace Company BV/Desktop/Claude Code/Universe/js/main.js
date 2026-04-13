@@ -139,7 +139,6 @@ async function boot() {
       updateFilmGrain(elapsed);
 
       // Sun light flicker — subtle variation around base intensity
-      // Base intensity must stay high for inverse-square falloff across AU distances
       if (sunLight) {
         sunLight.intensity = 800000 * (1.0 + Math.sin(elapsed * 6.2) * 0.02 + Math.sin(elapsed * 2.7) * 0.01);
       }

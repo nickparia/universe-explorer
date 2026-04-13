@@ -29,8 +29,29 @@ export function initHud() {
  * @param {Array<{name:string, desc:string, g:Object3D, r:number}>} allBodies
  */
 export function updateHud(camPos, speed, allBodies) {
-  /* 1. Speed ------------------------------------------------------------ */
-  if (speedEl) speedEl.textContent = speed.toFixed(1);
+  /* 1. Speed — show in meaningful units --------------------------------- */
+  if (speedEl) {
+    // Convert scene units/s to approximate km/s (1 AU = 3000 units = 150M km)
+    const kmPerUnit = 150000000 / AU;  // ~50,000 km per unit
+    const kmPerSec = speed * kmPerUnit * 60;  // velocity is scaled by 60 in flight.js
+    const unitEl = document.getElementById('speed-unit');
+
+    if (kmPerSec > 500000) {
+      // Show as fraction of light speed
+      const c = kmPerSec / 299792;
+      speedEl.textContent = c.toFixed(2);
+      if (unitEl) unitEl.textContent = 'c';
+    } else if (kmPerSec > 1000) {
+      speedEl.textContent = (kmPerSec / 1000).toFixed(1);
+      if (unitEl) unitEl.textContent = 'K KM/S';
+    } else if (kmPerSec > 1) {
+      speedEl.textContent = kmPerSec.toFixed(0);
+      if (unitEl) unitEl.textContent = 'KM/S';
+    } else {
+      speedEl.textContent = (kmPerSec * 1000).toFixed(0);
+      if (unitEl) unitEl.textContent = 'M/S';
+    }
+  }
 
   /* 2. Find nearest body ------------------------------------------------ */
   let nb   = null;

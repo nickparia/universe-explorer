@@ -153,31 +153,47 @@ varying vec3 vPos;
 varying vec3 vNorm;
 varying vec3 vViewDir;
 
-// ── Noise ──
-float hash3(vec3 p) {
+// ── Noise primitives ──
+float h3(vec3 p) {
   p = fract(p * vec3(443.897, 441.423, 437.195));
   p += dot(p, p.yzx + 19.19);
   return fract((p.x + p.y) * p.z);
 }
 
-float noise3(vec3 p) {
-  vec3 i = floor(p);
-  vec3 f = fract(p);
+float n3(vec3 p) {
+  vec3 i = floor(p), f = fract(p);
   f = f * f * (3.0 - 2.0 * f);
   return mix(
-    mix(mix(hash3(i), hash3(i + vec3(1,0,0)), f.x),
-        mix(hash3(i + vec3(0,1,0)), hash3(i + vec3(1,1,0)), f.x), f.y),
-    mix(mix(hash3(i + vec3(0,0,1)), hash3(i + vec3(1,0,1)), f.x),
-        mix(hash3(i + vec3(0,1,1)), hash3(i + vec3(1,1,1)), f.x), f.y), f.z);
+    mix(mix(h3(i), h3(i+vec3(1,0,0)), f.x),
+        mix(h3(i+vec3(0,1,0)), h3(i+vec3(1,1,0)), f.x), f.y),
+    mix(mix(h3(i+vec3(0,0,1)), h3(i+vec3(1,0,1)), f.x),
+        mix(h3(i+vec3(0,1,1)), h3(i+vec3(1,1,1)), f.x), f.y), f.z);
 }
 
+// Standard smooth FBM
 float fbm(vec3 p, int oct) {
   float v = 0.0, a = 0.5;
   for (int i = 0; i < 7; i++) {
     if (i >= oct) break;
-    v += noise3(p) * a;
+    v += n3(p) * a;
     p = p * 2.1 + 0.31;
     a *= 0.47;
+  }
+  return v;
+}
+
+// RIDGED FBM — creates sharp, flame-like ridges and tendrils
+float ridged(vec3 p, int oct) {
+  float v = 0.0, a = 0.5, prev = 1.0;
+  for (int i = 0; i < 7; i++) {
+    if (i >= oct) break;
+    float n = 1.0 - abs(n3(p) * 2.0 - 1.0);  // ridge: sharp peaks
+    n = n * n;                                   // sharpen further
+    n *= prev;                                   // weight by previous octave
+    prev = n;
+    v += n * a;
+    p = p * 2.15 + 0.28;
+    a *= 0.52;
   }
   return v;
 }
@@ -187,92 +203,88 @@ void main() {
 
   // ═══ LIMB DARKENING ═══
   float NdV = max(dot(vNorm, vViewDir), 0.0);
-  float limb = 0.3 + 0.7 * pow(NdV, 0.38);
-  float limbMask = smoothstep(0.0, 0.1, NdV);
+  float limb = 0.25 + 0.75 * pow(NdV, 0.35);
+  float limbMask = smoothstep(0.0, 0.08, NdV);
 
-  // ═══ CHURNING PLASMA — all turbulence, no geometric patterns ═══
-  // Layer 1: slow, large-scale convection currents
-  float slow1 = fbm(n * 2.0 + time * 0.09, 5);
-  float slow2 = fbm(n * 2.3 - time * 0.07 + 40.0, 5);
+  // ═══ FIRE LAYER 1: Large roiling plasma (slow, massive) ═══
+  float s1 = fbm(n * 2.0 + time * 0.08, 5);
+  float s2 = fbm(n * 2.5 - time * 0.06 + 40.0, 5);
 
-  // Layer 2: medium turbulence — the "boiling" look
-  float mid1 = fbm(n * 4.0 + time * 0.14 + 20.0, 5);
-  float mid2 = fbm(n * 5.0 - time * 0.11 + 70.0, 4);
+  // ═══ FIRE LAYER 2: Ridged flame structures (the "fire" look) ═══
+  // Domain warp with slow layer, then ridged noise for sharp flame edges
+  vec3 firePos = n * 4.0 + vec3(s1, s2, s1 * 0.8) * 3.0;
+  float flame1 = ridged(firePos + time * 0.12, 6);
 
-  // Layer 3: fast, fine-scale turbulence — the "alive" shimmer
-  float fast1 = fbm(n * 9.0 + time * 0.25, 4);
-  float fast2 = fbm(n * 12.0 - time * 0.2 + 90.0, 3);
+  // Second fire pass — different scale, opposite flow
+  vec3 firePos2 = n * 6.0 + vec3(s2, flame1, s1) * 2.5 - time * 0.09;
+  float flame2 = ridged(firePos2, 5);
 
-  // ═══ HEAVY DOMAIN WARPING — the secret to organic chaos ═══
-  // Warp coordinates using noise to create swirling, unpredictable flow
-  vec3 warpedPos = n * 3.5 + vec3(slow1, slow2, slow1 * 0.7) * 3.5;
-  float plasma1 = fbm(warpedPos + time * 0.05, 7);
+  // ═══ FIRE LAYER 3: Outward-flowing tendrils ═══
+  // Animate outward from surface (radial flow = multiply n by growing time)
+  vec3 radialFlow = n * (3.0 + time * 0.15);
+  float tendrils = ridged(radialFlow + vec3(s1, s2, flame1) * 2.0, 5);
 
-  // Second warp pass — warp the already-warped result
-  vec3 warpedPos2 = n * 5.0 + vec3(plasma1, mid1, mid2) * 2.8 - time * 0.06;
-  float plasma2 = fbm(warpedPos2, 6);
+  // ═══ FIRE LAYER 4: Rapid flicker (heat shimmer) ═══
+  float flicker1 = n3(n * 15.0 + time * 1.2);
+  float flicker2 = n3(n * 20.0 - time * 0.9 + 50.0);
+  float heatShimmer = flicker1 * 0.6 + flicker2 * 0.4;
 
-  // Third warp — creates those beautiful swirling tendrils
-  vec3 warpedPos3 = n * 7.0 + vec3(plasma2, plasma1, slow2) * 2.0 + time * 0.08;
-  float plasma3 = fbm(warpedPos3, 5);
+  // ═══ ERUPTIONS — intense bright pulses ═══
+  float erupt = fbm(n * 1.5 + time * 0.02, 3);
+  float eruptMask = smoothstep(0.56, 0.70, erupt);
+  eruptMask *= 0.6 + 0.4 * sin(time * 1.2 + erupt * 15.0);
 
-  // ═══ ERUPTION HOTSPOTS — pulsing bright regions ═══
-  float hotspot1 = fbm(n * 1.2 + time * 0.015, 3);
-  float hotspot2 = fbm(n * 1.8 - time * 0.02 + 60.0, 3);
-  float eruption = smoothstep(0.58, 0.72, hotspot1) * smoothstep(0.52, 0.68, hotspot2);
-  // Pulsing intensity
-  eruption *= 0.7 + 0.3 * sin(time * 0.8 + hotspot1 * 12.0);
+  // ═══ DARK CHASMS — deep cracks in the fire ═══
+  float chasm = ridged(n * 3.5 + vec3(s2, s1, flame2) * 3.5 + time * 0.04, 5);
+  float darkCrack = smoothstep(0.3, 0.5, chasm);
 
-  // ═══ DARK FILAMENTS — cooler channels cutting through ═══
-  float filament = fbm(n * 3.0 + vec3(slow2, slow1, mid1) * 4.0 + time * 0.03, 6);
-  float darkChannel = 1.0 - smoothstep(0.42, 0.52, filament) * (1.0 - smoothstep(0.52, 0.58, filament)) * 0.7;
+  // ═══ COMBINE — fire-dominated intensity ═══
+  float intensity = flame1 * 0.30       // sharp ridged fire (dominant)
+                  + flame2 * 0.20       // secondary fire layer
+                  + tendrils * 0.15     // outward-flowing tendrils
+                  + s1 * 0.15           // slow underlying glow
+                  + heatShimmer * 0.10  // rapid flicker
+                  + darkCrack * 0.10;   // dark structure
 
-  // ═══ COMBINE — layered chaos ═══
-  float intensity = plasma1 * 0.3 + plasma2 * 0.25 + plasma3 * 0.15
-                  + mid1 * 0.15 + fast1 * 0.08 + fast2 * 0.07;
-  // Apply dark filaments
-  intensity *= darkChannel;
-  // Extreme contrast stretch — deep darks to brilliant brights
-  intensity = smoothstep(0.08, 0.92, intensity);
+  // Hard contrast — push darks darker, brights brighter
+  intensity = smoothstep(0.05, 0.85, intensity);
+  // Power curve for more dramatic contrast
+  intensity = pow(intensity, 0.85);
   // Eruption boost
-  intensity = clamp(intensity + eruption * 0.35, 0.0, 1.0);
+  intensity = clamp(intensity + eruptMask * 0.4, 0.0, 1.0);
 
-  // ═══ SDO COLOR RAMP — extreme dynamic range ═══
+  // ═══ INFERNO COLOR RAMP ═══
+  // Near-black → deep red → fiery orange → incandescent yellow → searing white
   vec3 col;
-  if (intensity < 0.1) {
-    // Near-black to deep crimson — sunspot-dark regions
-    col = mix(vec3(0.06, 0.005, 0.0), vec3(0.22, 0.03, 0.0), intensity / 0.1);
-  } else if (intensity < 0.25) {
-    // Deep red — quiet chromosphere
-    col = mix(vec3(0.22, 0.03, 0.0), vec3(0.50, 0.10, 0.01), (intensity - 0.1) / 0.15);
-  } else if (intensity < 0.45) {
-    // Burnt orange — typical surface
-    col = mix(vec3(0.50, 0.10, 0.01), vec3(0.78, 0.28, 0.02), (intensity - 0.25) / 0.2);
-  } else if (intensity < 0.65) {
-    // Amber-orange — warm convection
-    col = mix(vec3(0.78, 0.28, 0.02), vec3(0.92, 0.48, 0.06), (intensity - 0.45) / 0.2);
-  } else if (intensity < 0.82) {
-    // Golden — active regions
-    col = mix(vec3(0.92, 0.48, 0.06), vec3(1.0, 0.68, 0.15), (intensity - 0.65) / 0.17);
+  if (intensity < 0.08) {
+    col = mix(vec3(0.04, 0.002, 0.0), vec3(0.18, 0.015, 0.0), intensity / 0.08);
+  } else if (intensity < 0.22) {
+    col = mix(vec3(0.18, 0.015, 0.0), vec3(0.55, 0.06, 0.0), (intensity - 0.08) / 0.14);
+  } else if (intensity < 0.40) {
+    col = mix(vec3(0.55, 0.06, 0.0), vec3(0.85, 0.20, 0.01), (intensity - 0.22) / 0.18);
+  } else if (intensity < 0.58) {
+    col = mix(vec3(0.85, 0.20, 0.01), vec3(0.95, 0.45, 0.04), (intensity - 0.40) / 0.18);
+  } else if (intensity < 0.76) {
+    col = mix(vec3(0.95, 0.45, 0.04), vec3(1.0, 0.70, 0.12), (intensity - 0.58) / 0.18);
+  } else if (intensity < 0.90) {
+    col = mix(vec3(1.0, 0.70, 0.12), vec3(1.0, 0.88, 0.38), (intensity - 0.76) / 0.14);
   } else {
-    // Brilliant white-gold — eruption peaks
-    col = mix(vec3(1.0, 0.68, 0.15), vec3(1.0, 0.88, 0.45), (intensity - 0.82) / 0.18);
+    col = mix(vec3(1.0, 0.88, 0.38), vec3(1.0, 0.97, 0.72), (intensity - 0.90) / 0.10);
   }
 
-  // Eruption regions push toward searing white
-  col = mix(col, vec3(1.0, 0.9, 0.5), eruption * 0.5);
+  // Eruptions push toward searing white-hot
+  col = mix(col, vec3(1.0, 0.95, 0.7), eruptMask * 0.6);
 
-  // Fine shimmer — adds high-frequency "heat haze" life
-  float shimmer = fast1 * 0.08 + fast2 * 0.06;
-  col += vec3(shimmer * 0.5, shimmer * 0.25, shimmer * 0.05);
+  // Heat shimmer — rapid fine brightness variation
+  col += vec3(0.12, 0.05, 0.01) * (heatShimmer - 0.5) * 0.4;
 
   // ═══ LIMB EFFECTS ═══
   col *= limb;
   col *= limbMask;
 
-  // Chromosphere glow at extreme limb
-  float limbGlow = smoothstep(0.01, 0.05, NdV) * (1.0 - smoothstep(0.05, 0.14, NdV));
-  col += vec3(0.8, 0.3, 0.05) * limbGlow * 0.25;
+  // Chromosphere: bright orange-red ring at the extreme edge
+  float limbGlow = smoothstep(0.01, 0.06, NdV) * (1.0 - smoothstep(0.06, 0.16, NdV));
+  col += vec3(1.0, 0.35, 0.05) * limbGlow * 0.3;
 
   gl_FragColor = vec4(col, 1.0);
 
