@@ -35,7 +35,11 @@ canvas{display:block;cursor:crosshair}
 
 /* ── LOADING ── */
 #loading{position:fixed;inset:0;background:#000;z-index:180;display:none;
-  flex-direction:column;align-items:center;justify-content:center;gap:14px}
+  flex-direction:column;align-items:center;justify-content:center;gap:14px;
+  transition:opacity 1.5s}
+#loading h1{font-size:clamp(18px,3vw,42px);letter-spacing:10px;font-weight:100;
+  text-shadow:0 0 50px rgba(120,180,255,0.8);margin-bottom:8px;color:#fff}
+#loading .sub2{font-size:11px;letter-spacing:4px;color:rgba(255,255,255,0.5);margin-bottom:20px}
 #loading .ltxt{font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.35)}
 #loading-bar-wrap{width:220px;height:1px;background:rgba(255,255,255,0.07)}
 #loading-bar{height:100%;width:0;background:rgba(120,180,255,0.5);transition:width .2s}
@@ -85,8 +89,9 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
   text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 #boost-bar{width:100px;height:2px;background:rgba(255,255,255,0.08);margin-top:6px;overflow:hidden}
 #boost-fill{height:100%;width:100%;background:rgba(120,180,255,0.65);transition:width .1s}
-#music-ui{position:absolute;top:20px;right:20px;pointer-events:all;font-size:12px;
-  letter-spacing:2px;color:rgba(255,255,255,0.5);text-align:right;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+#music-ui{position:absolute;top:52px;right:20px;pointer-events:all;font-size:12px;
+  letter-spacing:2px;color:rgba(255,255,255,0.5);text-align:right;text-shadow:0 1px 4px rgba(0,0,0,0.8);
+  z-index:15}
 #music-btn{background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.6);
   font-family:inherit;font-size:12px;letter-spacing:2px;padding:6px 14px;
   cursor:pointer;transition:all .3s;display:block;margin-left:auto}
@@ -109,7 +114,15 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 
 /* ── Warp streak overlay ── */
 #warp-streaks{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;
-  transition:opacity 0.3s}
+  transition:opacity 0.15s;
+  background:radial-gradient(ellipse at center,
+    transparent 0%,
+    transparent 20%,
+    rgba(180,210,255,0.03) 40%,
+    rgba(150,190,255,0.08) 60%,
+    rgba(120,170,255,0.15) 80%,
+    rgba(100,150,255,0.25) 100%);
+  mix-blend-mode:screen}
 
 /* ── Event horizon flash ── */
 #horizon-flash{position:fixed;inset:0;background:#fff;pointer-events:none;z-index:200;opacity:0}
@@ -203,7 +216,9 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 
 <!-- LOADING -->
 <div id="loading">
-  <div class="ltxt">LOADING TEXTURES</div>
+  <h1>UNIVERSE EXPLORER</h1>
+  <div class="sub2">8K PHOTOREALISTIC · 6DOF FLIGHT · SYMPHONIC</div>
+  <div class="ltxt">LOADING</div>
   <div id="loading-bar-wrap"><div id="loading-bar"></div></div>
   <div id="loading-detail"></div>
 </div>

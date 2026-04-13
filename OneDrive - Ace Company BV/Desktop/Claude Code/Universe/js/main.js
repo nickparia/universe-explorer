@@ -62,136 +62,135 @@ async function boot() {
   initAtmoEffects();
   initGasGiantHud();
 
-  // 10. Hide loading, show overlay with texture status
-  if (loadingEl) loadingEl.style.display = 'none';
+  // 10. Fade out loading screen and auto-start
+  const hudEl = document.getElementById('hud');
+  if (hudEl) hudEl.style.display = 'block';
 
-  const real = Object.entries(textures.status).filter(([k, v]) => v === 'real').length;
-  const proc = Object.entries(textures.status).filter(([k, v]) => v === 'procedural').length;
-  let statusHtml = '';
-  if (real) statusHtml += `<span class="t-ok">\u2713 ${real} real textures loaded</span><br>`;
-  if (proc) statusHtml += `<span class="t-miss">\u26A0 ${proc} procedural fallbacks</span>`;
-  const texStatus = document.getElementById('tex-status');
-  if (texStatus) texStatus.innerHTML = statusHtml;
+  const canvas = document.getElementById('c');
+  if (canvas) canvas.focus();
 
-  const overlayEl = document.getElementById('overlay');
-  if (overlayEl) overlayEl.style.display = 'flex';
-
-  // 11. Start button — launches the experience
-  document.getElementById('start-btn').addEventListener('click', () => {
-    if (overlayEl) overlayEl.style.display = 'none';
-    const hudEl = document.getElementById('hud');
-    if (hudEl) hudEl.style.display = 'block';
-
-    const canvas = document.getElementById('c');
-    if (canvas) canvas.focus();
-
-    // Start music
+  // Defer music start until first user interaction (browser requires gesture for audio)
+  function startMusicOnGesture() {
     music.start();
+    window.removeEventListener('click', startMusicOnGesture);
+    window.removeEventListener('keydown', startMusicOnGesture);
+  }
+  window.addEventListener('click', startMusicOnGesture);
+  window.addEventListener('keydown', startMusicOnGesture);
 
-    // Debug: expose for testing
-    window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };
+  // Debug: expose for testing
+  window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };
 
-    // 12. Main render loop
-    let lastTime = performance.now();
-    const sunLight = getSunLight();
-    const distortionPass = getDistortionPass();
+  // Fade out loading screen
+  if (loadingEl) {
+    loadingEl.style.opacity = '0';
+    setTimeout(() => { loadingEl.style.display = 'none'; }, 1500);
+  }
 
-    function animate() {
-      requestAnimationFrame(animate);
-      const now = performance.now();
-      const dt = Math.min((now - lastTime) / 1000, 0.05);
-      adaptTier(now - lastTime);
-      lastTime = now;
-      const elapsed = now * 0.001;
+  // Hide overlay if it exists
+  const overlayEl = document.getElementById('overlay');
+  if (overlayEl) overlayEl.style.display = 'none';
 
-      // Update orbital mechanics (scaled by time control)
-      const ts = getTimeScale();
-      updateBodies(dt * ts, getCamPos());
+  // 11. Main render loop
+  let lastTime = performance.now();
+  const sunLight = getSunLight();
+  const distortionPass = getDistortionPass();
 
-      // Update deep space (accretion disk rotation etc)
-      updateDeepSpace(dt * ts, getCamPos());
+  function animate() {
+    requestAnimationFrame(animate);
+    const now = performance.now();
+    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    adaptTier(now - lastTime);
+    lastTime = now;
+    const elapsed = now * 0.001;
 
-      // Gather all bodies for physics + HUD
-      const allBodies = getBodies().concat(getDeepSpaceObjects());
+    // Update orbital mechanics (scaled by time control)
+    const ts = getTimeScale();
+    updateBodies(dt * ts, getCamPos());
 
-      // Update flight physics
-      updateFlight(dt, allBodies);
+    // Update deep space (accretion disk rotation etc)
+    updateDeepSpace(dt * ts, getCamPos());
 
-      // Update altitude tracking
-      updateAltitude(getCamPos(), allBodies);
+    // Gather all bodies for physics + HUD
+    const allBodies = getBodies().concat(getDeepSpaceObjects());
 
-      // Update terrain LOD
-      updateTerrain(scene, getCamPos());
+    // Update flight physics
+    updateFlight(dt, allBodies);
 
-      // Update atmosphere — sun is at world origin, camera-relative = -camPos
-      updateAtmosphere(scene, getCamPos(), getCamPos().clone().negate());
+    // Update altitude tracking
+    updateAltitude(getCamPos(), allBodies);
 
-      // Update HUD
-      updateHud(getCamPos(), getSpeed(), allBodies);
+    // Update terrain LOD
+    updateTerrain(scene, getCamPos());
 
-      // Atmospheric entry effects
-      updateAtmoEffects(dt, getCamPos(), getVelocity(), camera, scene);
+    // Update atmosphere — sun is at world origin, camera-relative = -camPos
+    updateAtmosphere(scene, getCamPos(), getCamPos().clone().negate());
 
-      // Gas giant dive system
-      const diveState = updateGasGiantDive(dt, getCamPos(), getVelocity());
+    // Update HUD
+    updateHud(getCamPos(), getSpeed(), allBodies);
 
-      // Update navigation markers
-      updateNavigation(dt, getCamPos(), getSpeed(), allBodies);
+    // Atmospheric entry effects
+    updateAtmoEffects(dt, getCamPos(), getVelocity(), camera, scene);
 
-      // Update music zones
-      updateMusic(getCamPos(), allBodies);
+    // Gas giant dive system
+    const diveState = updateGasGiantDive(dt, getCamPos(), getVelocity());
 
-      // Update film grain time
-      updateFilmGrain(elapsed);
+    // Update navigation markers
+    updateNavigation(dt, getCamPos(), getSpeed(), allBodies);
 
-      // Sun light flicker — subtle variation around base intensity
-      if (sunLight) {
-        sunLight.intensity = 3.0 + Math.sin(elapsed * 6.2) * 0.05 + Math.sin(elapsed * 2.7) * 0.02;
-      }
+    // Update music zones
+    updateMusic(getCamPos(), allBodies);
 
-      // Black hole distortion
-      if (distortionPass) {
-        const bhObjects = getDeepSpaceObjects().filter(o => o.isBlackHole);
-        if (bhObjects.length > 0) {
-          const bh = bhObjects[0];
-          const bhWorldPos = new THREE.Vector3();
-          bh.g.getWorldPosition(bhWorldPos);
-          const bhScreen = bhWorldPos.clone().project(camera);
-          const distToBH = getCamPos().distanceTo(bhWorldPos);
+    // Update film grain time
+    updateFilmGrain(elapsed);
 
-          distortionPass.uniforms.bhScreenPos.value.set(
-            (bhScreen.x + 1) / 2,
-            (-bhScreen.y + 1) / 2
-          );
+    // Sun light flicker — subtle variation around base intensity
+    if (sunLight) {
+      sunLight.intensity = 3.0 + Math.sin(elapsed * 6.2) * 0.05 + Math.sin(elapsed * 2.7) * 0.02;
+    }
 
-          const maxDist = bh.r * 50 * 55;
-          const strength = Math.max(0, 1 - distToBH / maxDist) * 3.0;
-          distortionPass.uniforms.bhStrength.value = (bhScreen.z > 0 && bhScreen.z < 1) ? strength : 0;
+    // Black hole distortion
+    if (distortionPass) {
+      const bhObjects = getDeepSpaceObjects().filter(o => o.isBlackHole);
+      if (bhObjects.length > 0) {
+        const bh = bhObjects[0];
+        const bhWorldPos = new THREE.Vector3();
+        bh.g.getWorldPosition(bhWorldPos);
+        const bhScreen = bhWorldPos.clone().project(camera);
+        const distToBH = getCamPos().distanceTo(bhWorldPos);
 
-          // Event horizon — flash and return home
-          if (distToBH < bh.r * 1.5) {
-            const flash = document.getElementById('horizon-flash');
-            if (flash && flash.style.opacity !== '1') {
-              flash.style.transition = 'opacity 0.3s';
-              flash.style.opacity = '1';
-              setTimeout(() => {
-                flash.style.transition = 'opacity 2s';
-                flash.style.opacity = '0';
-              }, 300);
-              doHome();
-            }
+        distortionPass.uniforms.bhScreenPos.value.set(
+          (bhScreen.x + 1) / 2,
+          (-bhScreen.y + 1) / 2
+        );
+
+        const maxDist = bh.r * 50 * 55;
+        const strength = Math.max(0, 1 - distToBH / maxDist) * 3.0;
+        distortionPass.uniforms.bhStrength.value = (bhScreen.z > 0 && bhScreen.z < 1) ? strength : 0;
+
+        // Event horizon — flash and return home
+        if (distToBH < bh.r * 1.5) {
+          const flash = document.getElementById('horizon-flash');
+          if (flash && flash.style.opacity !== '1') {
+            flash.style.transition = 'opacity 0.3s';
+            flash.style.opacity = '1';
+            setTimeout(() => {
+              flash.style.transition = 'opacity 2s';
+              flash.style.opacity = '0';
+            }, 300);
+            doHome();
           }
         }
       }
-
-      // Camera-relative rendering — shift world so camera is at origin
-      applyCameraRelative(getCamPos());
-
-      renderer.render(scene, camera);
     }
 
-    animate();
-  });
+    // Camera-relative rendering — shift world so camera is at origin
+    applyCameraRelative(getCamPos());
+
+    renderer.render(scene, camera);
+  }
+
+  animate();
 }
 
 // Auto-boot if served via HTTP, otherwise show setup screen

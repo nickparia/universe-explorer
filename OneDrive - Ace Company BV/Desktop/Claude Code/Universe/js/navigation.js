@@ -1,6 +1,6 @@
 // navigation.js — Planet carousel, time control, fly-to coordination
 import { AU } from './constants.js';
-import { flyTo } from './flight.js';
+import { flyTo, isFlyingTo } from './flight.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Time Control
@@ -35,8 +35,8 @@ function updateTimeHud() {
 // Order matches number keys: 0=Sun, 1=Mercury...9=Pluto
 const PLANET_ORDER = ['SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
 const PLANET_LABELS = ['☉ SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
-const SPACECRAFT_ORDER = ['ISS','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
-const SPACECRAFT_LABELS = ['ISS','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
+const SPACECRAFT_ORDER = ['ISS','HUBBLE','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
+const SPACECRAFT_LABELS = ['ISS','HUBBLE','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2'];
 
 let barItems = []; // { el, distEl, name, bodyRef }
 let barContainer = null;
@@ -131,8 +131,8 @@ function updateBar(camPos) {
     }
   }
 
-  // Only auto-highlight nearest after user has interacted
-  if (_userSelected && nearestName !== _currentNearest) {
+  // Only auto-highlight nearest after user has interacted, and not mid-flight
+  if (_userSelected && nearestName !== _currentNearest && !isFlyingTo()) {
     _currentNearest = nearestName;
     for (let i = 0; i < barItems.length; i++) {
       barItems[i].el.classList.toggle('active', barItems[i].name === nearestName);

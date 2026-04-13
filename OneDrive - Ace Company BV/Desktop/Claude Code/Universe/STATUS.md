@@ -9,28 +9,34 @@ Repo: https://github.com/nickparia/universe-explorer
 - Fiery sun shader with ridged plasma, eruptions, limb darkening
 - Coronal mass ejections (particle-based solar flares)
 - 14 moons across 5 planets (Mars, Jupiter, Saturn, Uranus, Neptune)
-- 5 spacecraft (Voyager 1/2, New Horizons, JWST, ISS)
+- 6 spacecraft with NASA glTF 3D models (Voyager 1/2, New Horizons, JWST, Hubble, ISS)
+- Distance-adaptive beacon glows on spacecraft (visible from far, fade when close)
+- Wispy motion trails behind deep-space probes (Voyager 1/2, New Horizons)
 - Planet carousel with scrollable nav bar + spacecraft section
-- Fly-to autopilot (number keys 0-9, click carousel)
+- Fly-to autopilot with speed feeling (FOV widening + blue edge vignette)
 - Orbit mode (auto-enters on arrival, any movement exits)
 - Time control ([ / ] keys, 0.1x to 1000x)
 - Info cards with facts and lore for all planets, moons, spacecraft
 - Symphonic music system with zone-based tracks
 - Deep space objects (black hole, nebulae, landmarks)
-- Asteroid belt + Kuiper belt particle systems
+- Asteroid belt + Kuiper belt particle systems (12K particles)
 - Comets with trails
+- Auto-start loading screen (no Launch button needed)
+- Lensflare occlusion (hidden when planet blocks the Sun)
 
 ## Known Bugs / Outstanding Fixes
-- [ ] Spacecraft beacon glows still show as dark circles (need to remove or fix)
-- [ ] Spacecraft trails not visible (wispy ethereal trails needed)
-- [ ] H key (return home) — may not work reliably in all states
-- [ ] ISS orbit speed too fast (fix committed but not yet deployed)
-- [ ] Kuiper belt not prominently visible when visiting Voyager area
-- [ ] Some info card mismatches between carousel selection and proximity
+- [x] Spacecraft beacon dark circles — fixed with distance-adaptive glow
+- [x] Spacecraft trails not visible — fixed with wispy wake sprites
+- [x] H key unreliable — fixed, now cancels fly-to/orbit mode first
+- [x] ISS orbit speed too fast — slowed to ~6 min per orbit
+- [x] Kuiper belt not visible — increased to 12K brighter particles
+- [x] Info card mismatches — no auto-switch during fly-to
+- [x] JWST inside Earth — repositioned to L2 (200 units past Earth)
+- [x] Music button unclickable — moved below carousel, z-index fix
+- [x] Earth cloud glitch (white arc) — lensflare occlusion + cloud layer fixes
+- [x] Gravity pull/bouncing — removed (black hole only), spacecraft collision disabled
 
 ## Solar System Roadmap (Current Focus)
-- [ ] Fix spacecraft visuals (remove dark beacon spheres, add wispy trails)
-- [ ] Enhanced Kuiper belt visibility near deep space probes
 - [ ] Planet surface detail — enhanced terrain when close to rocky planets
 - [ ] Aurora borealis visible from Earth orbit (partially implemented)
 

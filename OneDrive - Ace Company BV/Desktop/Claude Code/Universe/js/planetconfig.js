@@ -397,6 +397,12 @@ export const PLANET_CONFIGS = {
       facts: ['Altitude: 420 km above Earth', 'Speed: 7.66 km/s (orbits every 90 min)', 'Continuously crewed since Nov 2, 2000'],
       lore: 'A collaboration of 15 nations. The third brightest object in the night sky. Humanity\'s home in orbit.' },
   },
+  'HUBBLE': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: { type: 'SPACE TELESCOPE',
+      facts: ['Launched: April 24, 1990', 'Altitude: 540 km above Earth', '2.4m primary mirror, observes UV/visible/near-IR'],
+      lore: 'Changed our understanding of the universe. The Hubble Deep Field revealed thousands of galaxies in a patch of sky the size of a grain of sand.' },
+  },
 
   // ── Notable moons ──
   'IO': {

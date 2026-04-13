@@ -1,6 +1,8 @@
 // ── bodies.js ── Solar system bodies: Sun, planets, Moon, comets, asteroid & Kuiper belts
 import * as THREE from 'three';
 import { Lensflare, LensflareElement } from 'three/addons/objects/Lensflare.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { getPointTexture } from './textures.js';
 import { setWorldPos, getSunLight } from './engine.js';
 
@@ -29,6 +31,7 @@ let bodies  = [];   // returned by getBodies()
 let comets  = [];   // { g, mesh, trail, trailPositions, a, b, cx, angle, spd }
 let moonRef = null; // reference to Earth's Moon entry
 let earthRef = null;
+let sunLensflare = null;
 let marsRef = null;
 let jupiterRef = null;
 let saturnRef = null;
@@ -257,13 +260,13 @@ export function createSolarSystem(scene, textures) {
     const flareTexOrange = makeFlareTex(128, 'rgba(255,160,60,0.3)', 'rgba(255,100,20,0)');
     const flareTexBlue = makeFlareTex(64, 'rgba(130,180,255,0.2)', 'rgba(80,120,255,0)');
 
-    const lensflare = new Lensflare();
-    lensflare.addElement(new LensflareElement(flareTexture, 200, 0, new THREE.Color(0xffeedd)));
-    lensflare.addElement(new LensflareElement(flareTexOrange, 120, 0.2, new THREE.Color(0xffaa44)));
-    lensflare.addElement(new LensflareElement(flareTexBlue, 80, 0.4, new THREE.Color(0x8899ff)));
+    sunLensflare = new Lensflare();
+    sunLensflare.addElement(new LensflareElement(flareTexture, 200, 0, new THREE.Color(0xffeedd)));
+    sunLensflare.addElement(new LensflareElement(flareTexOrange, 120, 0.2, new THREE.Color(0xffaa44)));
+    sunLensflare.addElement(new LensflareElement(flareTexBlue, 80, 0.4, new THREE.Color(0x8899ff)));
 
     const sunLight = getSunLight();
-    if (sunLight) sunLight.add(lensflare);
+    if (sunLight) sunLight.add(sunLensflare);
   }
 
   // ── Earth material ──
@@ -272,8 +275,7 @@ export function createSolarSystem(scene, textures) {
     map: textures.earth,
     normalMap: textures.earthNormal,
     normalScale: new THREE.Vector2(1.5, 1.5),
-    roughnessMap: roughFromSpec || undefined,
-    roughness: roughFromSpec ? 1 : 0.7,
+    roughness: 0.95,
     metalness: 0,
     emissiveMap: textures.earthNight,
     emissive: new THREE.Color(0xffeeaa),
@@ -337,14 +339,16 @@ export function createSolarSystem(scene, textures) {
     // Cloud layer (Earth)
     if (def.clouds) {
       cloudMesh = new THREE.Mesh(
-        new THREE.SphereGeometry(def.r * 1.018, 72, 72),
+        new THREE.SphereGeometry(def.r * 1.008, 72, 72),
         new THREE.MeshStandardMaterial({
           alphaMap: textures.earthClouds,
           transparent: true,
-          opacity: 0.45,
+          opacity: 0.4,
           depthWrite: false,
-          side: THREE.DoubleSide,
-          color: 0xffffff,
+          side: THREE.FrontSide,
+          color: 0xeeeeee,
+          roughness: 1.0,
+          metalness: 0,
         })
       );
       group.add(cloudMesh);
@@ -444,16 +448,23 @@ export function createSolarSystem(scene, textures) {
 function buildSpacecraft(scene) {
   const craftDefs = [
     { name: 'VOYAGER 1', desc: 'Launched 1977. Farthest human-made object at 24.4 billion km. First to enter interstellar space (2012). Still transmitting.',
-      dist: 163, angle: 1.2, size: 1.5, color: 0xffeedd },
+      dist: 163, angle: 1.2, size: 1.5, color: 0xffeedd, model: 'models/voyager.glb', modelScale: 0.25 },
     { name: 'VOYAGER 2', desc: 'Launched 1977. Only spacecraft to visit all four gas giants. Entered interstellar space 2018. Twin of Voyager 1.',
-      dist: 137, angle: 3.8, size: 1.5, color: 0xffeedd },
+      dist: 137, angle: 3.8, size: 1.5, color: 0xffeedd, model: 'models/voyager.glb', modelScale: 0.25 },
     { name: 'NEW HORIZONS', desc: 'First to fly by Pluto (2015). Revealed a heart-shaped nitrogen glacier. Now exploring the Kuiper Belt.',
-      dist: 60, angle: 5.1, size: 1.2, color: 0xddddff },
+      dist: 60, angle: 5.1, size: 1.2, color: 0xddddff, model: 'models/newhorizons.glb', modelScale: 0.09 },
     { name: 'JWST', desc: 'James Webb Space Telescope at Sun-Earth L2 point. 6.5m gold mirror. Seeing the first galaxies formed after the Big Bang.',
-      dist: 1.01, angle: null, size: 2, color: 0xffdd66 },  // angle=null means follow Earth
+      dist: 1.01, angle: null, size: 2, color: 0xffdd66, model: 'models/jwst.glb', modelScale: 0.25 },
+    { name: 'HUBBLE', desc: 'Hubble Space Telescope. 540 km altitude. Launched 1990. Revolutionized astronomy with deep field images.',
+      dist: null, angle: null, size: 0.6, color: 0xccddff, orbitsEarth: true, model: 'models/hubble.glb', modelScale: 0.25 },
     { name: 'ISS', desc: 'International Space Station. 420 km altitude. Continuously crewed since 2000. Visible from Earth with naked eye.',
-      dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true },
+      dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true, model: 'models/iss.glb', modelScale: 0.2 },
   ];
+
+  const dracoLoader = new DRACOLoader();
+  dracoLoader.setDecoderPath('https://www.gstatic.com/draco/versioned/decoders/1.5.7/');
+  const gltfLoader = new GLTFLoader();
+  gltfLoader.setDRACOLoader(dracoLoader);
 
   const silverMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.6 });
   const goldMat = new THREE.MeshStandardMaterial({ color: 0xddaa33, roughness: 0.3, metalness: 0.7 });
@@ -481,25 +492,27 @@ function buildSpacecraft(scene) {
   function buildVoyager(s) {
     const g = new THREE.Group();
     // Large dish antenna
-    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.5, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.4), silverMat);
+    const dishMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.2, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.4), dishMat);
     dish.rotation.x = -Math.PI / 2;
     g.add(dish);
-    // Central bus
-    const bus = new THREE.Mesh(new THREE.BoxGeometry(s * 0.6, s * 0.4, s * 0.6), foilMat);
-    bus.position.y = -s * 0.3;
+    // Central bus — sits snugly under the dish
+    const bus = new THREE.Mesh(new THREE.BoxGeometry(s * 0.5, s * 0.35, s * 0.5), foilMat);
+    bus.position.y = -s * 0.2;
     g.add(bus);
-    // Boom arms — magnetometer + RTG
-    const boom1 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.03, s * 0.03, s * 4), darkMat);
+    // Magnetometer boom — extends from bus
+    const boom1 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.06, s * 0.06, s * 2), silverMat);
     boom1.rotation.z = Math.PI / 2;
-    boom1.position.set(s * 2, -s * 0.3, 0);
+    boom1.position.set(s * 1.0, -s * 0.2, 0);
     g.add(boom1);
-    const boom2 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.03, s * 0.03, s * 3), darkMat);
-    boom2.rotation.z = Math.PI / 3;
-    boom2.position.set(-s * 1.2, -s * 0.8, 0);
+    // RTG boom — angled down from bus
+    const boom2 = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.06, s * 0.06, s * 1.4), silverMat);
+    boom2.rotation.z = Math.PI / 4;
+    boom2.position.set(-s * 0.5, -s * 0.55, 0);
     g.add(boom2);
-    // RTG (nuclear power) at end of boom
-    const rtg = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.15, s * 0.15, s * 0.6), darkMat);
-    rtg.position.set(-s * 2.5, -s * 1.5, 0);
+    // RTG at end of boom
+    const rtg = new THREE.Mesh(new THREE.CylinderGeometry(s * 0.18, s * 0.18, s * 0.5), darkMat);
+    rtg.position.set(-s * 1.0, -s * 0.9, 0);
     g.add(rtg);
     return g;
   }
@@ -511,7 +524,8 @@ function buildSpacecraft(scene) {
     body.rotation.x = Math.PI / 2;
     g.add(body);
     // Large dish antenna on top
-    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.0, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), silverMat);
+    const nhDishMat = new THREE.MeshStandardMaterial({ color: 0xcccccc, roughness: 0.4, metalness: 0.6, side: THREE.DoubleSide });
+    const dish = new THREE.Mesh(new THREE.SphereGeometry(s * 1.0, 16, 8, 0, Math.PI * 2, 0, Math.PI * 0.35), nhDishMat);
     dish.rotation.x = -Math.PI / 2;
     dish.position.y = s * 0.5;
     g.add(dish);
@@ -545,7 +559,7 @@ function buildSpacecraft(scene) {
   craftDefs.forEach((def) => {
     const group = new THREE.Group();
 
-    // Build craft-specific geometry
+    // Build procedural fallback geometry
     let craftModel;
     if (def.name === 'JWST') craftModel = buildJWST(def.size);
     else if (def.name.startsWith('VOYAGER')) craftModel = buildVoyager(def.size);
@@ -554,55 +568,139 @@ function buildSpacecraft(scene) {
     else craftModel = new THREE.Mesh(new THREE.BoxGeometry(def.size, def.size * 0.5, def.size), silverMat);
     group.add(craftModel);
 
-    // Wispy ethereal trail for deep space probes
-    if (def.dist && def.dist > 5 && def.angle !== null) {
-      const trailCount = 60;
-      const trailGroup = new THREE.Group();
+    // Load NASA glTF model — replaces procedural geometry when ready
+    if (def.model) {
+      gltfLoader.load(def.model, (gltf) => {
+        const model = gltf.scene;
+        model.scale.setScalar(def.modelScale);
+
+        // Enhance materials for visibility in space lighting
+        model.traverse((child) => {
+          if (!child.isMesh) return;
+          const mat = child.material;
+          if (!mat) return;
+          const name = (mat.name || '').toLowerCase();
+
+          if (def.name === 'JWST') {
+            // Gold honeycomb mirrors — make them shine
+            if (name.includes('gold') || name.includes('topreflector') || name.includes('mirror')) {
+              mat.metalness = 0.9;
+              mat.roughness = 0.15;
+              mat.color.set(0xdaa520);
+            }
+            // Solar panel
+            if (name.includes('solarpanel')) {
+              mat.metalness = 0.3;
+              mat.roughness = 0.4;
+              mat.color.set(0x4466aa);
+            }
+            // Sunshield foil layers
+            if (name.includes('foillayer')) {
+              mat.metalness = 0.5;
+              mat.roughness = 0.3;
+              mat.color.set(0xc0c0c0);
+            }
+          }
+
+          if (def.name === 'ISS') {
+            // Solar panels — deep blue
+            if (name.includes('solar') || name.includes('panel') || name.includes('blinn5')) {
+              mat.color.set(0x223366);
+              mat.metalness = 0.4;
+              mat.roughness = 0.3;
+            }
+            // Truss and modules — bright white/silver
+            else if (name.includes('truss') || name.includes('bended')) {
+              mat.color.set(0xe0e0e0);
+              mat.metalness = 0.5;
+              mat.roughness = 0.4;
+            }
+            // Everything else — light gray metallic
+            else {
+              mat.color.set(0xcccccc);
+              mat.metalness = 0.4;
+              mat.roughness = 0.5;
+            }
+          }
+
+          if (def.name === 'HUBBLE') {
+            // Hubble model has all unnamed materials — apply realistic colors
+            mat.side = THREE.DoubleSide;
+            mat.metalness = 0.5;
+            mat.roughness = 0.4;
+            mat.color.set(0xcccccc); // silver body
+          }
+        });
+
+        // Remove procedural fallback
+        group.remove(craftModel);
+        group.add(model);
+        console.log(`[spacecraft] Loaded ${def.name} glTF model`);
+      }, undefined, (err) => {
+        console.warn(`[spacecraft] Failed to load ${def.name} model, using procedural fallback`);
+      });
+    }
+
+    // Motion trail — only for deep-space probes (ISS/JWST don't need trails)
+    if (def.dist && def.angle !== null) {
+      // Short wispy wake behind spacecraft — shows direction of travel
+      const trailCount = 50;
+      const dx = -Math.cos(def.angle); // opposite of travel direction
+      const dz = -Math.sin(def.angle);
       for (let i = 0; i < trailCount; i++) {
-        const t = 0.3 + (i / trailCount) * 0.7; // start 30% out from Sun
-        const r = t * def.dist * AU;
-        // Slight curve/wander for organic look
-        const wobble = Math.sin(i * 0.8) * 30 + Math.cos(i * 1.3) * 20;
-        const x = Math.cos(def.angle) * r + Math.sin(def.angle) * wobble;
-        const y = Math.sin(i * 0.5) * 15;
-        const z = Math.sin(def.angle) * r - Math.cos(def.angle) * wobble;
+        const t = i / trailCount; // 0 = at craft, 1 = tail end
+        const dist = 2 + t * 40; // trail extends 40 units behind craft
+        const fade = (1.0 - t);
+        // Wispy spread increases toward tail
+        const spread = t * 4;
+        const wx = Math.sin(i * 2.3) * spread;
+        const wy = Math.cos(i * 1.7) * spread;
+        const wz = Math.sin(i * 3.1) * spread;
 
         const spriteMat = new THREE.SpriteMaterial({
           map: getPointTexture(),
-          color: new THREE.Color(0.5, 0.6, 0.9),
+          color: new THREE.Color(0.4, 0.55, 0.9),
           transparent: true,
-          opacity: t * t * 0.2, // fade in toward craft
+          opacity: fade * fade * 0.15,
           blending: THREE.AdditiveBlending,
           depthWrite: false,
         });
         const sprite = new THREE.Sprite(spriteMat);
-        sprite.position.set(x, y, z);
-        sprite.scale.setScalar(8 + t * 15); // larger near craft
-        trailGroup.add(sprite);
+        sprite.position.set(dx * dist + wx, wy, dz * dist + wz);
+        sprite.scale.setScalar(0.5 + fade * 2.5);
+        group.add(sprite);
       }
-      scene.add(trailGroup);
-      setWorldPos(trailGroup, new THREE.Vector3(0, 0, 0));
     }
 
-    // Glowing beacon — sprite-based, visible from distance
+    // Glowing beacon — distance-adaptive: visible from far, fades near
     const beaconMat = new THREE.SpriteMaterial({
       map: getPointTexture(),
       color: new THREE.Color(def.color),
       transparent: true,
-      opacity: 0.5,
+      opacity: 0.6,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
+      depthTest: false,
+      alphaTest: 0.01,
     });
     const beacon = new THREE.Sprite(beaconMat);
     beacon.scale.setScalar(def.size * 10);
+    beacon.renderOrder = 999;
     group.add(beacon);
+    group.userData._beacon = beacon;
+    group.userData._beaconBaseSize = def.size * 10;
 
     // Position
     if (def.orbitsEarth && earthRef) {
-      // ISS — very close to Earth
       const ePos = earthRef.g.position;
-      group.position.set(ePos.x + 52, 1, ePos.z);
-      group.userData._isISS = true;
+      if (def.name === 'HUBBLE') {
+        // Hubble orbits at 540km — slightly further than ISS
+        group.position.set(ePos.x + 75, 5, ePos.z + 40);
+        group.userData._isHubble = true;
+      } else {
+        group.position.set(ePos.x + 90, 1, ePos.z);
+        group.userData._isISS = true;
+      }
     } else if (def.angle === null && earthRef) {
       // JWST — follows Earth at L2 (slightly farther from Sun)
       const ePos = earthRef.g.position;
@@ -621,7 +719,12 @@ function buildSpacecraft(scene) {
     scene.add(group);
     setWorldPos(group, group.position);
 
-    bodies.push({ name: def.name, desc: def.desc, g: group, r: def.size * 4 });
+    // Spacecraft orbit camera distance = r * 4.5
+    let bodyR = 3;
+    if (def.name === 'ISS') bodyR = 6;
+    else if (def.name === 'HUBBLE') bodyR = 5;
+    else if (def.name === 'JWST') bodyR = 4;
+    bodies.push({ name: def.name, desc: def.desc, g: group, r: bodyR });
   });
 }
 
@@ -905,22 +1008,22 @@ function buildAsteroidBelt(scene) {
 // ═══════════════════════════════════════════════════════════════
 
 function buildKuiperBelt(scene) {
-  const count = 3000;
+  const count = 12000;
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
 
   for (let i = 0; i < count; i++) {
     const angle = Math.random() * Math.PI * 2;
     const dist = (30 + Math.random() * 20) * AU;
-    const ySpread = (Math.random() - 0.5) * 60;
+    const ySpread = (Math.random() - 0.5) * 300;
     positions[i * 3]     = Math.cos(angle) * dist;
     positions[i * 3 + 1] = ySpread;
     positions[i * 3 + 2] = Math.sin(angle) * dist;
 
-    const shade = 0.15 + Math.random() * 0.2;
+    const shade = 0.3 + Math.random() * 0.35;
     colors[i * 3]     = shade;
     colors[i * 3 + 1] = shade * 0.95;
-    colors[i * 3 + 2] = shade * 1.1;
+    colors[i * 3 + 2] = shade * 1.15;
   }
 
   const geo = new THREE.BufferGeometry();
@@ -928,7 +1031,7 @@ function buildKuiperBelt(scene) {
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
 
   const mat = new THREE.PointsMaterial({
-    size: 0.8, map: getPointTexture(), vertexColors: true, sizeAttenuation: true,
+    size: 12, map: getPointTexture(), vertexColors: true, sizeAttenuation: true,
     transparent: true, opacity: 0.55, depthWrite: false
   });
   const kuiperBeltPoints = new THREE.Points(geo, mat);
@@ -1015,18 +1118,57 @@ export function updateBodies(dt, camWorldPos) {
       const b = bodies[i];
       if (!b.g || !b.g.userData) continue;
       if (b.g.userData._isISS) {
-        // ISS orbits Earth very close
-        const issAngle = elapsed * 0.07; // ~90 second orbit (real ISS: 90 min)
-        b.g.position.set(ePos.x + Math.cos(issAngle) * 52, Math.sin(issAngle * 0.7) * 2, ePos.z + Math.sin(issAngle) * 52);
+        const issAngle = elapsed * 0.017; // ~6 minute orbit
+        b.g.position.set(ePos.x + Math.cos(issAngle) * 90, Math.sin(issAngle * 0.7) * 3, ePos.z + Math.sin(issAngle) * 90);
+        if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
+      }
+      if (b.g.userData._isHubble) {
+        const hubbleAngle = elapsed * 0.013 + 2.0; // offset from ISS, slightly slower
+        b.g.position.set(ePos.x + Math.cos(hubbleAngle) * 78, Math.sin(hubbleAngle * 0.5) * 5, ePos.z + Math.sin(hubbleAngle) * 78);
         if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
       }
       if (b.g.userData._isJWST) {
-        // JWST at L2 — slightly farther from Sun than Earth
+        // JWST at L2 — 1.5M km past Earth, away from Sun
         const dir = ePos.clone().normalize();
-        b.g.position.copy(dir.multiplyScalar(1.01 * AU));
+        b.g.position.copy(ePos).addScaledVector(dir, 200);
         if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
       }
     }
+  }
+
+  // ── Distance-adaptive spacecraft beacons ──
+  for (let i = 0; i < bodies.length; i++) {
+    const b = bodies[i];
+    if (!b.g || !b.g.userData || !b.g.userData._beacon) continue;
+    const bPos = b.g.userData._worldPos || b.g.position;
+    const dist = camWorldPos.distanceTo(bPos);
+    const baseSize = b.g.userData._beaconBaseSize;
+    // Fade in from 50 units out, fully visible at 200+, invisible below 30
+    const fadeStart = 30, fadeFull = 200;
+    const t = Math.max(0, Math.min(1, (dist - fadeStart) / (fadeFull - fadeStart)));
+    b.g.userData._beacon.material.opacity = t * 0.6;
+    b.g.userData._beacon.scale.setScalar(baseSize * (0.5 + t * 0.5));
+    b.g.userData._beacon.visible = t > 0.01;
+  }
+
+  // ── Lensflare occlusion — hide when a planet blocks the Sun ──
+  if (sunLensflare) {
+    const sunPos = new THREE.Vector3(0, 0, 0); // Sun is at origin (camera-relative)
+    const toSun = sunPos.clone().sub(camWorldPos);
+    const sunDist = toSun.length();
+    const sunDir = toSun.normalize();
+    let occluded = false;
+    for (let i = 0; i < planets.length; i++) {
+      const p = planets[i];
+      const bodyPos = p.g.userData._worldPos || p.g.position;
+      const toBody = bodyPos.clone().sub(camWorldPos);
+      const projDist = toBody.dot(sunDir);
+      if (projDist < 0 || projDist > sunDist) continue;
+      const closest = camWorldPos.clone().addScaledVector(sunDir, projDist);
+      const separation = closest.distanceTo(bodyPos);
+      if (separation < p.r * 1.1) { occluded = true; break; }
+    }
+    sunLensflare.visible = !occluded;
   }
 
   // ── Comets ──

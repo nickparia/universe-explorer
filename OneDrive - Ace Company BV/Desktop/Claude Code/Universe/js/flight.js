@@ -279,6 +279,14 @@ export function updateFlight(dt, allBodies) {
         const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
         camQuat.slerpQuaternions(flyFromQ, targetQuat, Math.min(ease * 2.0, 1.0));
         cam.quaternion.copy(camQuat);
+
+        // Speed feeling during fly-to — strongest at midpoint
+        const flySpeed = Math.sin(flyT * Math.PI); // 0 at start/end, 1 at midpoint
+        cam.fov = 70 + flySpeed * 25;
+        cam.updateProjectionMatrix();
+        const streakEl = document.getElementById('warp-streaks');
+        if (streakEl) streakEl.style.opacity = flySpeed * 0.7;
+
         updateHUD();
         return;
     }
@@ -338,6 +346,11 @@ export function updateFlight(dt, allBodies) {
         cam.quaternion.copy(camQuat);
         velocity.set(0, 0, 0);
         angularVelocity.set(0, 0, 0);
+        // Reset FOV and speed lines in orbit mode
+        cam.fov += (70 - cam.fov) * 0.1;
+        cam.updateProjectionMatrix();
+        const streakEl2 = document.getElementById('warp-streaks');
+        if (streakEl2) streakEl2.style.opacity = 0;
         updateHUD();
         return;
     }
@@ -455,21 +468,20 @@ export function updateFlight(dt, allBodies) {
     if (keys['Space']) { velocity.addScaledVector(up, thrustAccel * dt); thrusting = true; }
     if (keys['KeyC'])  { velocity.addScaledVector(up, -thrustAccel * dt); thrusting = true; }
 
-    // ── 9. Gravitational influence ───────────────────────────────────────────
+    // ── 9. Black hole gravity only ──────────────────────────────────────────
     const alt = getAltitude();
-    const skipGravity = alt.body && alt.altitudeNorm < 0.1 && !alt.isGasGiant && alt.nearestBody !== 'SUN';
-    if (allBodies && !skipGravity) {
+    if (allBodies) {
         for (let i = 0; i < allBodies.length; i++) {
             const body = allBodies[i];
-            const gravRange = body.r * (body.isBlackHole ? BH_GRAVITY_RANGE_MULT : GRAVITY_RANGE_MULT);
+            if (!body.isBlackHole) continue;
+            const gravRange = body.r * BH_GRAVITY_RANGE_MULT;
             const bodyPos = (body.g && body.g.userData._worldPos) || (body.g ? body.g.position : body.position);
             if (!bodyPos) continue;
             _dir.copy(bodyPos).sub(camPos);
             const dist = _dir.length();
             if (dist < gravRange && dist > body.r * 1.1) {
                 _dir.normalize();
-                const strength = body.isBlackHole ? 80 : 3;
-                const pull = strength * body.r * body.r / (dist * dist);
+                const pull = 80 * body.r * body.r / (dist * dist);
                 velocity.addScaledVector(_dir, Math.min(pull, 5) * dt);
             }
         }
@@ -493,34 +505,43 @@ export function updateFlight(dt, allBodies) {
         velocity.multiplyScalar(1 - dragDamp);
     }
 
-    // ── 12. Hard bounce — repel from body surface, never get stuck ─────────
-    if (alt.body && alt.altitudeNorm < 0.1 && alt.nearestBody !== 'SUN') {
+    // ── 12. Surface collision — planets only, not spacecraft ───────────────
+    if (alt.body && alt.altitude < 1 && alt.nearestBody !== 'SUN' && alt.bodyRadius > 8) {
         const bodyPos = alt.body.g.userData._worldPos || alt.body.g.position;
         const outward = _dir.copy(camPos).sub(bodyPos).normalize();
-
-        // If actually inside or touching the surface, teleport out and reverse velocity
-        if (alt.altitude < 1) {
-            camPos.copy(bodyPos).addScaledVector(outward, alt.bodyRadius + 2);
-            const inwardSpeed = velocity.dot(outward);
-            if (inwardSpeed < 0) {
-                // Reverse inward velocity component (bounce)
-                velocity.addScaledVector(outward, -inwardSpeed * 1.5);
-            }
-        }
-        // Strong repulsion zone
-        else if (alt.altitudeNorm < 0.05) {
-            const t = 1 - alt.altitudeNorm / 0.05;
-            velocity.addScaledVector(outward, t * 100 * dt);
+        // Push out to just above surface
+        camPos.copy(bodyPos).addScaledVector(outward, alt.bodyRadius + 2);
+        // Kill inward velocity, keep tangential
+        const inwardSpeed = velocity.dot(outward);
+        if (inwardSpeed < 0) {
+            velocity.addScaledVector(outward, -inwardSpeed);
         }
     }
 
     // ── 13. Apply velocity to position ───────────────────────────────────────
     camPos.addScaledVector(velocity, dt * 60);
 
-    // ── 14. Update camera ────────────────────────────────────────────────────
+    // ── 14. Speed feeling — FOV widen + speed lines ────────────────────────
+    {
+      const spd = velocity.length();
+      const speedRatio = Math.min(spd / MAX_BASE_SPEED, 3); // 0-3 range
+      // FOV: 70 at rest, up to 95 at max warp
+      const targetFov = 70 + speedRatio * 8;
+      cam.fov += (targetFov - cam.fov) * 0.05; // smooth lerp
+      cam.updateProjectionMatrix();
+
+      // Speed lines overlay
+      const streakEl = document.getElementById('warp-streaks');
+      if (streakEl) {
+        const lineOpacity = Math.max(0, (speedRatio - 0.3) / 2.7); // fade in above 30% speed
+        streakEl.style.opacity = lineOpacity * 0.6;
+      }
+    }
+
+    // ── 15. Update camera ────────────────────────────────────────────────────
     cam.quaternion.copy(camQuat);
 
-    // ── 15. Update HUD ───────────────────────────────────────────────────────
+    // ── 16. Update HUD ───────────────────────────────────────────────────────
     updateHUD();
 }
 
@@ -543,6 +564,11 @@ function updateHUD() {
 // ── doHome ───────────────────────────────────────────────────────────────────
 
 export function doHome() {
+    // Cancel any active fly-to or orbit mode
+    flyTarget = null;
+    orbitMode = false;
+    orbitBody = null;
+
     const alt = getAltitude();
 
     if (alt && alt.body && alt.altitudeNorm < 2) {
