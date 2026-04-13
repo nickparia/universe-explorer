@@ -418,6 +418,8 @@ export function updateFlight(dt, allBodies) {
       for (let i = 0; i < allBodies.length; i++) {
         const body = allBodies[i];
         if (!body.g || !body.r) continue;
+        // Skip Sun and small spacecraft for approach speed limiting
+        if (body.name === 'SUN' || body.r < 8) continue;
         const bodyPos = body.g.userData._worldPos || body.g.position;
         const dist = camPos.distanceTo(bodyPos);
         const angDeg = 2 * Math.atan(body.r / Math.max(dist, 0.001)) * (180 / Math.PI);
