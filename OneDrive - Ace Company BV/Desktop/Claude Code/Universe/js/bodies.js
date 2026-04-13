@@ -554,32 +554,34 @@ function buildSpacecraft(scene) {
     else craftModel = new THREE.Mesh(new THREE.BoxGeometry(def.size, def.size * 0.5, def.size), silverMat);
     group.add(craftModel);
 
-    // Trajectory trail for deep space probes
+    // Wispy ethereal trail for deep space probes
     if (def.dist && def.dist > 5 && def.angle !== null) {
-      const trailPts = [];
-      const trailColors = [];
-      const segments = 80;
-      for (let i = 0; i <= segments; i++) {
-        const t = i / segments;
-        // Trail from Sun (origin) to current position
+      const trailCount = 60;
+      const trailGroup = new THREE.Group();
+      for (let i = 0; i < trailCount; i++) {
+        const t = 0.3 + (i / trailCount) * 0.7; // start 30% out from Sun
         const r = t * def.dist * AU;
-        trailPts.push(new THREE.Vector3(
-          Math.cos(def.angle) * r,
-          (Math.random() - 0.5) * 20 * t, // slight vertical wander
-          Math.sin(def.angle) * r
-        ));
-        // Fade: dim near Sun, bright near craft
-        const brightness = t * t; // quadratic fade-in
-        trailColors.push(brightness * 0.3, brightness * 0.4, brightness * 0.6);
+        // Slight curve/wander for organic look
+        const wobble = Math.sin(i * 0.8) * 30 + Math.cos(i * 1.3) * 20;
+        const x = Math.cos(def.angle) * r + Math.sin(def.angle) * wobble;
+        const y = Math.sin(i * 0.5) * 15;
+        const z = Math.sin(def.angle) * r - Math.cos(def.angle) * wobble;
+
+        const spriteMat = new THREE.SpriteMaterial({
+          map: getPointTexture(),
+          color: new THREE.Color(0.5, 0.6, 0.9),
+          transparent: true,
+          opacity: t * t * 0.2, // fade in toward craft
+          blending: THREE.AdditiveBlending,
+          depthWrite: false,
+        });
+        const sprite = new THREE.Sprite(spriteMat);
+        sprite.position.set(x, y, z);
+        sprite.scale.setScalar(8 + t * 15); // larger near craft
+        trailGroup.add(sprite);
       }
-      const trailGeo = new THREE.BufferGeometry().setFromPoints(trailPts);
-      trailGeo.setAttribute('color', new THREE.Float32BufferAttribute(trailColors, 3));
-      const trailMat = new THREE.LineBasicMaterial({
-        vertexColors: true, transparent: true, opacity: 0.35, depthWrite: false
-      });
-      const trail = new THREE.Line(trailGeo, trailMat);
-      scene.add(trail);
-      setWorldPos(trail, new THREE.Vector3(0, 0, 0));
+      scene.add(trailGroup);
+      setWorldPos(trailGroup, new THREE.Vector3(0, 0, 0));
     }
 
     // Glowing beacon — sprite-based, visible from distance
@@ -1014,7 +1016,7 @@ export function updateBodies(dt, camWorldPos) {
       if (!b.g || !b.g.userData) continue;
       if (b.g.userData._isISS) {
         // ISS orbits Earth very close
-        const issAngle = elapsed * 2.0; // fast orbit
+        const issAngle = elapsed * 0.07; // ~90 second orbit (real ISS: 90 min)
         b.g.position.set(ePos.x + Math.cos(issAngle) * 52, Math.sin(issAngle * 0.7) * 2, ePos.z + Math.sin(issAngle) * 52);
         if (b.g.userData._worldPos) b.g.userData._worldPos.copy(b.g.position);
       }
