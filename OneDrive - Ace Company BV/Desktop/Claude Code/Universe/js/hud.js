@@ -4,6 +4,7 @@ import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getApproachInfo } from './flight.js';
+import { getActivePlanet } from './navigation.js';
 
 let speedEl, tNameEl, tDistEl, angEl, infoPanel, infoPanelDesc;
 let infoCard, infoCardName, infoCardType, infoCardFacts, infoCardLore, infoCardLine;
@@ -53,42 +54,40 @@ export function updateHud(camPos, speed, allBodies) {
     }
   }
 
-  /* 2. Find nearest body ------------------------------------------------ */
-  let nb   = null;
+  /* 2. Find the active body — use carousel selection -------------------- */
+  const activeName = getActivePlanet();
+  let nb = null;
   let dist = Infinity;
 
+  // Prefer the carousel's active planet
   for (let i = 0; i < allBodies.length; i++) {
     const b = allBodies[i];
-    const bPos = b.g.userData._worldPos || b.g.position;
-    const d = camPos.distanceTo(bPos) - b.r;
-    if (d < dist) { dist = d; nb = b; }
+    if (b.name === activeName) {
+      nb = b;
+      const bPos = b.g.userData._worldPos || b.g.position;
+      dist = camPos.distanceTo(bPos) - b.r;
+      break;
+    }
+  }
+
+  // Fallback: nearest body
+  if (!nb) {
+    for (let i = 0; i < allBodies.length; i++) {
+      const b = allBodies[i];
+      const bPos = b.g.userData._worldPos || b.g.position;
+      const d = camPos.distanceTo(bPos) - b.r;
+      if (d < dist) { dist = d; nb = b; }
+    }
   }
 
   if (!nb) return;
 
-  /* 3. Target name, distance, angular size ------------------------------ */
-  if (tNameEl) tNameEl.textContent = nb.name;
-
-  const auDist = Math.max(0, dist) / AU;
-  const km     = auDist * 1.496e8;
-
-  if (tDistEl) {
-    tDistEl.textContent =
-      auDist.toFixed(3) + ' AU \u00b7 ' + formatKm(km) + ' km';
-  }
-
-  if (angEl) {
-    const rawDist = camPos.distanceTo(nb.g.userData._worldPos || nb.g.position);
-    const ang     = 2 * Math.atan(nb.r / Math.max(nb.r + 0.001, rawDist))
-                      * (180 / Math.PI);
-    angEl.textContent = '\u2205 ' + ang.toFixed(3) + '\u00b0';
-  }
-
-  /* 4. Rich info card — fades in as you approach ----------------------- */
+  /* 3. Rich info card — only shows after user selects a planet --------- */
   const approach = getApproachInfo();
   const config = getPlanetConfig(nb.name);
+  const hasSelection = getActivePlanet() !== null;
 
-  if (infoCard && config && config.info) {
+  if (infoCard && config && config.info && hasSelection) {
     const ang = approach.angularSize;
 
     if (ang > 2) {

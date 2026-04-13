@@ -149,24 +149,21 @@ export function initEngine() {
   );
 
   // ── Lights ──
-  // Gentler decay (1.6) so distant planets stay visible.
-  // Mercury (1161 units): 800000 / 1161^1.6 ≈ 15 (bright but ACES handles it)
-  // Earth (3000 units): 800000 / 3000^1.6 ≈ 2.2 (natural)
-  // Saturn (28611 units): 800000 / 28611^1.6 ≈ 0.06 (ambient fills in)
-  sunLight = new THREE.PointLight(0xfff8e8, 800000);
-  sunLight.decay = 1.6;
+  // No distance decay — all planets get equal brightness on the sunward side.
+  // Light still radiates FROM the Sun position, so each planet gets correct
+  // sun-side / dark-side shading. Just no dimming with distance.
+  sunLight = new THREE.PointLight(0xfff8e8, 3.0);
+  sunLight.decay = 0;
   scene.add(sunLight);
   setWorldPos(sunLight, sunLight.position);
 
-  // Ambient fill — ensures even distant planets (Saturn, Neptune) are
-  // visible rather than pitch black. Without this, inverse-square falloff
-  // makes anything past Jupiter nearly invisible.
-  const ambient = new THREE.AmbientLight(0x303040, 0.6);
+  // Subtle ambient so dark sides aren't pitch black
+  const ambient = new THREE.AmbientLight(0x202030, 0.2);
   scene.add(ambient);
   setWorldPos(ambient, ambient.position);
 
-  // Hemisphere light — warm from sun-lit side, cool from space side
-  const hemi = new THREE.HemisphereLight(0x554433, 0x111122, 0.5);
+  // Hemisphere light — warm from above, cool from below
+  const hemi = new THREE.HemisphereLight(0x444433, 0x111122, 0.15);
   scene.add(hemi);
   setWorldPos(hemi, hemi.position);
 

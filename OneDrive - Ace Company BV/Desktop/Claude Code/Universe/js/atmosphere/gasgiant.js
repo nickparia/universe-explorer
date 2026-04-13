@@ -33,7 +33,7 @@ export function initGasGiantHud() {
 export function updateGasGiantDive(dt, camPos, velocity) {
   const alt = getAltitude();
 
-  if (!alt.isGasGiant || alt.altitudeNorm > 1.5) {
+  if (!alt.isGasGiant || alt.altitudeNorm > 2.5) {
     // Not in a gas giant
     if (divePhase !== 'none') {
       divePhase = 'none';

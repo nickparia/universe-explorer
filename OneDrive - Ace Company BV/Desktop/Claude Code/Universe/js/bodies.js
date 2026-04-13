@@ -365,9 +365,13 @@ export function createSolarSystem(scene, textures) {
     // Saturn rings
     if (def.rings) {
       group.add(makeSaturnRing(def.r, textures.saturnRing));
-      // Saturn ring shimmer — ice crystal glints
       group.add(makeSaturnRingShimmer(def.r));
     }
+
+    // Axial tilts — applied to the whole group so rings tilt with the planet
+    if (def.name === 'SATURN')  group.rotation.z = 26.7 * Math.PI / 180;  // 26.7°
+    if (def.name === 'URANUS')  group.rotation.z = 97.8 * Math.PI / 180;  // 97.8° — on its side
+    if (def.name === 'EARTH')   group.rotation.z = 23.4 * Math.PI / 180;  // 23.4°
 
     // Random starting angle
     const angle = Math.random() * Math.PI * 2;

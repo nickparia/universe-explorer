@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
+import { setActivePlanet } from './navigation.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const THRUST_ACCEL       = 12;      // gentler initial acceleration
@@ -55,6 +56,33 @@ let returning = false;
 let retT      = 0;
 const retFromP = new THREE.Vector3();
 const retFromQ = new THREE.Quaternion();
+
+// Fly-to autopilot state
+let flyTarget = null; // { bodyRef, targetPos }
+let flyT = 0;
+let flyDuration = 0;
+const flyFromP = new THREE.Vector3();
+const flyFromQ = new THREE.Quaternion();
+const flyTargetP = new THREE.Vector3();
+const _lookMat = new THREE.Matrix4();
+const _upVec = new THREE.Vector3(0, 1, 0);
+
+// Orbit camera state
+let orbitMode = false;
+let orbitBody = null;
+let orbitDistance = 0;
+let orbitTheta = 0;
+let orbitPhi = Math.PI / 3; // start 60 degrees from pole
+let orbitTransition = false;
+let orbitTransT = 0;
+const orbitFromP = new THREE.Vector3();
+const orbitFromQ = new THREE.Quaternion();
+
+// Stored reference to allBodies for number key access
+let _allBodies = null;
+
+// Planet order for number keys
+const PLANET_KEYS = ['SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
 
 // Input state
 const keys = {};
@@ -119,6 +147,25 @@ export function initFlight(camera) {
         }
 
         if (e.code === 'KeyH') doHome();
+        if (e.code === 'KeyO') toggleOrbit();
+        if (e.code === 'KeyI') {
+          const h = document.getElementById('ctrl-hint');
+          if (h) {
+            const vis = h.style.opacity !== '0';
+            h.style.opacity = vis ? '0' : '1';
+            h.style.pointerEvents = vis ? 'none' : 'auto';
+          }
+        }
+
+        // Number keys 1-9,0 for fly-to planets (1=Mercury...9=Pluto, 0=Sun)
+        if (e.code.match(/^Digit\d$/) && _allBodies) {
+          const digit = parseInt(e.code.charAt(5));
+          const name = PLANET_KEYS[digit];
+          if (name) {
+            flyTo(name);
+            e.preventDefault();
+          }
+        }
     });
 
     window.addEventListener('keyup', (e) => {
@@ -194,7 +241,108 @@ export function initFlight(camera) {
 export function updateFlight(dt, allBodies) {
     if (!cam) return;
 
-    // ── 1. Return-home animation ─────────────────────────────────────────────
+    // Store reference for number key fly-to
+    _allBodies = allBodies;
+
+    // ── 1a. Fly-to autopilot ─────────────────────────────────────────────────
+    if (flyTarget) {
+        flyT += dt / flyDuration;
+        if (flyT >= 1) {
+            flyT = 1;
+            // Auto-enter orbit mode on arrival
+            const arrivedBody = flyTarget.bodyRef;
+            flyTarget = null;
+            orbitBody = arrivedBody;
+            orbitDistance = arrivedBody.r * 4.5;
+            orbitMode = true;
+            const bodyPos = arrivedBody.g.userData._worldPos || arrivedBody.g.position;
+            const offset = camPos.clone().sub(bodyPos);
+            const d = offset.length();
+            orbitTheta = Math.atan2(offset.z, offset.x);
+            orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / d)));
+            orbitTransition = false;
+            velocity.set(0, 0, 0);
+            angularVelocity.set(0, 0, 0);
+            updateHUD();
+            return;
+        }
+        const ease = easeInOutQuad(Math.min(flyT, 1));
+        // Use locked target position (set at start of fly-to)
+        const bodyPos = flyTarget.bodyRef.g.userData._worldPos || flyTarget.bodyRef.g.position;
+
+        // Interpolate position
+        camPos.lerpVectors(flyFromP, flyTargetP, ease);
+
+        // Camera orientation: start with original, quickly rotate to face destination,
+        // end looking at the body
+        _lookMat.lookAt(camPos, bodyPos, _upVec);
+        const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
+        camQuat.slerpQuaternions(flyFromQ, targetQuat, Math.min(ease * 2.0, 1.0));
+        cam.quaternion.copy(camQuat);
+        updateHUD();
+        return;
+    }
+
+    // ── 1b. Orbit camera mode ────────────────────────────────────────────────
+    if (orbitMode && orbitBody) {
+        // Any movement input breaks orbit
+        if (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] ||
+            keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'] ||
+            keys['Space'] || keys['KeyC'] || keys['KeyQ'] || keys['KeyE']) {
+            orbitMode = false;
+            orbitBody = null;
+        }
+    }
+    if (orbitMode && orbitBody) {
+        const bodyPos = orbitBody.g.userData._worldPos || orbitBody.g.position;
+
+        // Smooth transition into orbit
+        if (orbitTransition) {
+            orbitTransT += dt * 1.5;
+            if (orbitTransT >= 1) { orbitTransT = 1; orbitTransition = false; }
+        }
+
+        // Mouse adjusts orbit angles (always, not just right-click in orbit mode)
+        orbitTheta += mouseDX * 0.003;
+        orbitPhi -= mouseDY * 0.003;
+        orbitPhi = Math.max(0.15, Math.min(Math.PI - 0.15, orbitPhi));
+        mouseDX = 0;
+        mouseDY = 0;
+
+        // W/S zoom in/out
+        if (keys['KeyW'] || keys['ArrowUp'])    orbitDistance = Math.max(orbitBody.r * 1.5, orbitDistance - orbitBody.r * 2 * dt);
+        if (keys['KeyS'] || keys['ArrowDown'])  orbitDistance += orbitBody.r * 2 * dt;
+
+        // Auto-rotation — steady cinematic orbit
+        orbitTheta += dt * 0.21;
+
+        // Compute orbit position
+        const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+        const y = orbitDistance * Math.cos(orbitPhi);
+        const z = orbitDistance * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+        const orbitPos = bodyPos.clone().add(new THREE.Vector3(x, y, z));
+
+        // Look at body
+        _lookMat.lookAt(orbitPos, bodyPos, _upVec);
+        const orbitQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
+
+        if (orbitTransition) {
+            const ease = easeInOutQuad(orbitTransT);
+            camPos.lerpVectors(orbitFromP, orbitPos, ease);
+            camQuat.slerpQuaternions(orbitFromQ, orbitQuat, ease);
+        } else {
+            camPos.copy(orbitPos);
+            camQuat.copy(orbitQuat);
+        }
+
+        cam.quaternion.copy(camQuat);
+        velocity.set(0, 0, 0);
+        angularVelocity.set(0, 0, 0);
+        updateHUD();
+        return;
+    }
+
+    // ── 1c. Return-home animation ────────────────────────────────────────────
     if (returning) {
         retT += dt * 0.5;
         if (retT >= 1) {
@@ -207,6 +355,14 @@ export function updateFlight(dt, allBodies) {
         cam.quaternion.copy(camQuat);
         updateHUD();
         return;
+    }
+
+    // Cancel fly-to on manual input
+    if (flyTarget) {
+      const anyKey = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'] || keys['KeyC'];
+      if (anyKey || (rightDown && (mouseDX !== 0 || mouseDY !== 0))) {
+        flyTarget = null;
+      }
     }
 
     // ── 2. Angular momentum from mouse ───────────────────────────────────────
@@ -377,8 +533,10 @@ function updateHUD() {
     if (elWarpActive) {
         elWarpActive.style.display = warpActive ? 'block' : 'none';
     }
-    if (elHomeBtn) {
-        elHomeBtn.style.display = camPos.length() > 8000 ? 'block' : 'none';
+    // Home button removed from UI — control hints cover it
+    const orbitEl = document.getElementById('orbit-indicator');
+    if (orbitEl) {
+        orbitEl.style.display = orbitMode ? 'block' : 'none';
     }
 }
 
@@ -410,6 +568,100 @@ export function doHome() {
 
     if (elHomeBtn) elHomeBtn.style.display = 'none';
 }
+
+// ── flyTo ────────────────────────────────────────────────────────────────────
+
+export function flyTo(bodyName) {
+    if (!_allBodies) return;
+    const body = _allBodies.find(b => b.name === bodyName);
+    if (!body) return;
+
+    // Cancel orbit mode if active
+    orbitMode = false;
+    orbitBody = null;
+    returning = false;
+
+    const bodyPos = body.g.userData._worldPos || body.g.position;
+    const dist = camPos.distanceTo(bodyPos);
+
+    // Approach from the sunward side (sun is at origin) so the lit face is visible
+    const sunDir = new THREE.Vector3().copy(bodyPos).negate().normalize();
+    // Offset slightly upward for a cinematic angle
+    sunDir.y += 0.3;
+    sunDir.normalize();
+    // Distance: further for large bodies so they frame nicely
+    const arrivalDist = body.r * 4.5;
+    flyTargetP.copy(bodyPos).addScaledVector(sunDir, arrivalDist);
+
+    flyFromP.copy(camPos);
+    flyFromQ.copy(camQuat);
+    flyTarget = { bodyRef: body };
+    flyT = 0;
+    setActivePlanet(bodyName);
+    // Duration based on distance: 2-6 seconds
+    flyDuration = Math.max(2, Math.min(6, dist / 6000));
+    velocity.set(0, 0, 0);
+    angularVelocity.set(0, 0, 0);
+}
+
+export function isFlyingTo() { return !!flyTarget; }
+
+// ── toggleOrbit ──────────────────────────────────────────────────────────────
+
+function toggleOrbit() {
+    if (orbitMode) {
+        // Exit orbit — transfer position/orientation to flight mode
+        orbitMode = false;
+        orbitBody = null;
+        return;
+    }
+
+    // Find nearest body
+    if (!_allBodies) return;
+    let nearest = null;
+    let nearestDist = Infinity;
+    for (let i = 0; i < _allBodies.length; i++) {
+        const b = _allBodies[i];
+        if (!b.g || !b.r) continue;
+        const bodyPos = b.g.userData._worldPos || b.g.position;
+        const d = camPos.distanceTo(bodyPos);
+        if (d < b.r * 10 && d < nearestDist) {
+            nearestDist = d;
+            nearest = b;
+        }
+    }
+
+    if (!nearest) return;
+
+    const bodyPos = nearest.g.userData._worldPos || nearest.g.position;
+    orbitBody = nearest;
+    orbitDistance = nearestDist;
+    orbitMode = true;
+
+    // Compute initial angles from current camera position
+    const offset = camPos.clone().sub(bodyPos);
+    orbitTheta = Math.atan2(offset.z, offset.x);
+    orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / nearestDist)));
+
+    // Smooth transition
+    orbitTransition = true;
+    orbitTransT = 0;
+    orbitFromP.copy(camPos);
+    orbitFromQ.copy(camQuat);
+
+    velocity.set(0, 0, 0);
+    angularVelocity.set(0, 0, 0);
+
+    // Cancel fly-to if active
+    flyTarget = null;
+    returning = false;
+
+    // Show orbit indicator
+    const el = document.getElementById('orbit-indicator');
+    if (el) el.style.display = 'block';
+}
+
+export function isOrbiting() { return orbitMode; }
 
 // ── Getters ──────────────────────────────────────────────────────────────────
 

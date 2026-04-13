@@ -68,12 +68,8 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 .brk::before{width:1px;height:100%}.brk::after{height:1px;width:100%;top:0}
 .tl{top:12px;left:12px}.tr{top:12px;right:12px;transform:scaleX(-1)}
 .bl{bottom:12px;left:12px;transform:scaleY(-1)}.br{bottom:12px;right:12px;transform:scale(-1)}
-#target-info{position:absolute;top:18px;left:50%;transform:translateX(-50%);text-align:center}
-#target-name{font-size:24px;letter-spacing:8px;color:rgba(255,255,255,0.95);display:block;
-  font-weight:300;text-shadow:0 1px 8px rgba(0,0,0,0.9)}
-#target-dist{margin-top:5px;font-size:14px;color:rgba(255,255,255,0.55);display:block;letter-spacing:3px;
-  text-shadow:0 1px 6px rgba(0,0,0,0.9)}
-#ang-size{font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+/* Target info hidden — carousel covers this */
+#target-info{display:none!important}
 #nav{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);text-align:center}
 #speed-val{font-size:30px;letter-spacing:5px;color:rgba(120,180,255,0.95);display:block;
   font-weight:300;text-shadow:0 1px 8px rgba(0,0,0,0.9)}
@@ -81,8 +77,10 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 #warp-active{font-size:15px;letter-spacing:5px;color:rgba(255,180,80,0.9);display:none;margin-top:4px;
   text-shadow:0 0 12px rgba(255,150,50,0.5)}
 #ctrl-hint{position:absolute;bottom:20px;right:20px;font-size:13px;letter-spacing:1.5px;
-  line-height:2.2;text-align:right;color:rgba(255,255,255,0.45);text-shadow:0 1px 6px rgba(0,0,0,0.9)}
+  line-height:2.2;text-align:right;color:rgba(255,255,255,0.45);text-shadow:0 1px 6px rgba(0,0,0,0.9);
+  transition:opacity 0.3s}
 #ctrl-hint span{color:rgba(120,180,255,0.75)}
+#ctrl-hint-icon:hover{border-color:rgba(120,180,255,0.5);color:rgba(120,180,255,0.8)}
 #boost-wrap{position:absolute;bottom:24px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.5);
   text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 #boost-bar{width:100px;height:2px;background:rgba(255,255,255,0.08);margin-top:6px;overflow:hidden}
@@ -115,6 +113,31 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 
 /* ── Event horizon flash ── */
 #horizon-flash{position:fixed;inset:0;background:#fff;pointer-events:none;z-index:200;opacity:0}
+/* ── Planet carousel ── */
+#planet-bar{position:absolute;top:0;left:0;right:0;display:flex;justify-content:center;
+  gap:0;pointer-events:all;z-index:12;
+  background:linear-gradient(to bottom, rgba(0,0,0,0.5) 0%, transparent 100%);
+  padding:8px 10px 14px}
+.pb-item{padding:5px 12px;cursor:pointer;text-align:center;transition:all 0.25s;
+  border-bottom:2px solid transparent;opacity:0.5}
+.pb-item:hover{opacity:0.85}
+.pb-item.active{opacity:1;border-bottom-color:rgba(120,180,255,0.7)}
+.pb-name{font-size:10px;letter-spacing:2.5px;color:rgba(255,255,255,0.8);
+  text-shadow:0 1px 4px rgba(0,0,0,0.9);white-space:nowrap}
+.pb-item.active .pb-name{color:rgba(120,180,255,0.95)}
+.pb-dist{font-size:7px;letter-spacing:1px;color:rgba(255,255,255,0.3);margin-top:2px;
+  text-shadow:0 1px 3px rgba(0,0,0,0.8)}
+
+/* ── Time scale indicator ── */
+#time-scale{position:absolute;bottom:55px;left:50%;transform:translateX(-50%);
+  font-size:16px;letter-spacing:4px;color:rgba(255,200,80,0.85);display:none;
+  text-shadow:0 0 12px rgba(255,150,50,0.4),0 1px 6px rgba(0,0,0,0.9)}
+
+/* ── Orbit mode indicator ── */
+#orbit-indicator{position:absolute;top:85px;left:50%;transform:translateX(-50%);
+  font-size:13px;letter-spacing:5px;color:rgba(120,220,180,0.8);display:none;
+  text-shadow:0 0 10px rgba(80,200,150,0.3),0 1px 6px rgba(0,0,0,0.9)}
+
 #reentry-glow{position:fixed;inset:0;pointer-events:none;z-index:6;opacity:0;
   transition:opacity 0.2s;
   background:radial-gradient(ellipse at center, transparent 40%, rgba(255,120,20,0.4) 70%, rgba(255,60,10,0.7) 100%)}
@@ -192,6 +215,9 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     <tr><td>Q / E</td><td>Roll</td></tr>
     <tr><td>SHIFT</td><td>Warp Drive ×25</td></tr>
     <tr><td>H</td><td>Return Home</td></tr>
+    <tr><td>1-9, 0</td><td>Fly To (1=Merc ... 0=Sun)</td></tr>
+    <tr><td>O</td><td>Orbit Mode</td></tr>
+    <tr><td>[ / ]</td><td>Time Speed</td></tr>
     <tr><td>RIGHT-DRAG</td><td>Look (Y inverted)</td></tr>
   </table>
   <button id="start-btn">LAUNCH</button>
@@ -207,13 +233,16 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     <span id="target-dist">—</span>
     <span id="ang-size"></span>
   </div>
-  <button id="home-btn">⌂ RETURN HOME</button>
+  <button id="home-btn" style="display:none!important">⌂ RETURN HOME</button>
+  <div id="orbit-indicator" style="display:none!important"></div>
+  <div id="time-scale">1x</div>
+  <div id="planet-bar"></div>
   <div id="nav">
     <span id="speed-val">0.0</span>
     <span id="speed-unit">U/S</span>
     <div id="warp-active">⚡ WARP</div>
   </div>
-  <div id="boost-wrap">WARP<div id="boost-bar"><div id="boost-fill"></div></div></div>
+  <div id="boost-wrap" style="display:none!important"></div>
   <div id="atmo-hud" style="position:absolute;bottom:70px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.4)">
     <div id="atmo-pressure" style="display:none"></div>
     <div id="atmo-temperature" style="display:none;margin-top:3px"></div>
@@ -230,32 +259,38 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     <div id="surface-temp" style="margin-top:3px"></div>
     <div id="surface-pressure" style="margin-top:3px"></div>
   </div>
-  <div id="info-card" style="position:absolute;bottom:0;left:0;right:0;
-    text-align:center;pointer-events:none;display:none;opacity:0;
-    padding:40px 20px 50px;
-    background:linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%)">
-    <div id="info-card-name" style="font-size:clamp(26px,4vw,52px);letter-spacing:14px;
-      color:rgba(255,255,255,0.95);font-weight:200;
-      text-shadow:0 0 40px rgba(120,180,255,0.5),0 2px 10px rgba(0,0,0,0.9)"></div>
-    <div id="info-card-type" style="font-size:clamp(10px,1.2vw,14px);letter-spacing:8px;
-      color:rgba(120,180,255,0.85);margin-top:10px;opacity:0;
-      transition:opacity 1.5s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.8)"></div>
-    <div style="width:60px;height:1px;background:rgba(120,180,255,0.2);margin:16px auto;opacity:0;
+  <div id="info-card" style="position:absolute;bottom:20px;left:24px;max-width:420px;
+    text-align:left;pointer-events:none;display:none;opacity:0;
+    padding:20px 24px">
+    <div id="info-card-name" style="font-size:22px;letter-spacing:10px;
+      color:rgba(255,255,255,0.95);font-weight:300;
+      text-shadow:0 0 20px rgba(120,180,255,0.4),0 1px 6px rgba(0,0,0,0.9)"></div>
+    <div id="info-card-type" style="font-size:10px;letter-spacing:6px;
+      color:rgba(120,180,255,0.8);margin-top:6px;opacity:0;
+      transition:opacity 1s ease-in;text-shadow:0 1px 4px rgba(0,0,0,0.8)"></div>
+    <div style="width:40px;height:1px;background:rgba(120,180,255,0.2);margin:10px 0;opacity:0;
       transition:opacity 2s ease-in" id="info-card-line"></div>
     <div id="info-card-facts" style="font-size:clamp(11px,1.1vw,15px);letter-spacing:2px;
       color:rgba(255,255,255,0.7);line-height:2.2;opacity:0;
       transition:opacity 2s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.9)"></div>
-    <div id="info-card-lore" style="font-size:clamp(11px,1.1vw,15px);letter-spacing:1.5px;
-      color:rgba(255,255,255,0.55);margin-top:16px;font-style:italic;
-      max-width:600px;margin-left:auto;margin-right:auto;line-height:1.8;
-      opacity:0;transition:opacity 2.5s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.9)"></div>
+    <div id="info-card-lore" style="font-size:11px;letter-spacing:1px;
+      color:rgba(255,255,255,0.45);margin-top:10px;font-style:italic;
+      line-height:1.7;opacity:0;transition:opacity 2s ease-in;
+      text-shadow:0 1px 4px rgba(0,0,0,0.9)"></div>
   </div>
-  <div id="ctrl-hint">
+  <div id="ctrl-hint" style="opacity:0;pointer-events:none">
     <span>W/S</span> THRUST · <span>A/D</span> STRAFE<br>
     <span>Q/E</span> ROLL · <span>SPC/C</span> UP/DN<br>
     <span>SHIFT</span> WARP · <span>H</span> HOME<br>
-    <span>R-DRAG</span> LOOK (Y INV)
+    <span>0-9</span> FLY TO · <span>O</span> ORBIT<br>
+    <span>[/]</span> TIME · <span>R-DRAG</span> LOOK<br>
+    <span>I</span> TOGGLE THIS
   </div>
+  <div id="ctrl-hint-icon" style="position:absolute;bottom:22px;right:22px;width:22px;height:22px;
+    border-radius:50%;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.35);
+    font-size:13px;font-style:italic;text-align:center;line-height:22px;cursor:pointer;
+    pointer-events:all;transition:all 0.2s;text-shadow:0 1px 3px rgba(0,0,0,0.8)"
+    onclick="document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyI',bubbles:true}))">i</div>
   <div id="music-ui">
     <button id="music-btn">♪ MUSIC</button>
     <div id="track-lbl">MOONLIGHT SONATA</div>
@@ -289,6 +324,6 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 document.getElementById('c').addEventListener('contextmenu', e => e.preventDefault());
 </script>
 
-<script type="module" src="js/main.js?v=35"></script>
+<script type="module" src="js/main.js?v=36"></script>
 </body>
 </html>
