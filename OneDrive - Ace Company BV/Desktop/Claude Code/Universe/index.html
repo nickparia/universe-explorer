@@ -5,7 +5,7 @@
 <title>Universe Explorer</title>
 <style>
 *{margin:0;padding:0;box-sizing:border-box}
-html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Courier New',monospace}
+html,body{width:100%;height:100%;background:#000;overflow:hidden;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif}
 canvas{display:block;cursor:crosshair}
 
 /* ── SETUP SCREEN ── */
@@ -28,10 +28,10 @@ canvas{display:block;cursor:crosshair}
   border:1px solid rgba(255,255,255,0.06);padding:12px 16px;margin-top:10px;border-radius:2px}
 .files span{color:rgba(120,220,120,0.6)}
 .note{font-size:9px;color:rgba(255,200,80,0.5);letter-spacing:1px;margin-bottom:24px;text-align:center}
-#proceed-btn{padding:11px 44px;background:transparent;border:1px solid rgba(120,180,255,0.35);
-  color:rgba(120,180,255,0.8);font-family:'Courier New',monospace;font-size:10px;letter-spacing:6px;
+#proceed-btn{padding:12px 44px;background:rgba(120,180,255,0.06);border:1px solid rgba(120,180,255,0.4);
+  color:rgba(120,180,255,0.9);font-family:inherit;font-size:12px;letter-spacing:6px;
   cursor:pointer;transition:all .3s}
-#proceed-btn:hover{background:rgba(120,180,255,0.07);box-shadow:0 0 24px rgba(120,180,255,0.2)}
+#proceed-btn:hover{background:rgba(120,180,255,0.12);box-shadow:0 0 24px rgba(120,180,255,0.3)}
 
 /* ── LOADING ── */
 #loading{position:fixed;inset:0;background:#000;z-index:180;display:none;
@@ -46,16 +46,16 @@ canvas{display:block;cursor:crosshair}
   display:none;flex-direction:column;align-items:center;justify-content:center}
 #overlay h1{font-size:clamp(18px,3vw,42px);letter-spacing:10px;font-weight:100;
   text-shadow:0 0 50px rgba(120,180,255,0.8);margin-bottom:8px}
-.sub2{font-size:9px;letter-spacing:4px;color:rgba(255,255,255,0.3);margin-bottom:28px}
-#tex-status{font-size:8px;letter-spacing:2px;margin-bottom:24px;text-align:center;line-height:2}
-.t-ok{color:rgba(80,220,120,0.7)}.t-miss{color:rgba(255,140,80,0.6)}
-table{font-size:10px;letter-spacing:1.5px;border-collapse:collapse;margin-bottom:24px}
-td{padding:3px 14px;color:rgba(255,255,255,0.55)}
-td:first-child{color:rgba(120,180,255,0.7);text-align:right}
-#start-btn{padding:11px 44px;background:transparent;border:1px solid rgba(120,180,255,0.35);
-  color:rgba(120,180,255,0.8);font-family:'Courier New',monospace;font-size:10px;letter-spacing:6px;
+.sub2{font-size:11px;letter-spacing:4px;color:rgba(255,255,255,0.5);margin-bottom:28px}
+#tex-status{font-size:10px;letter-spacing:2px;margin-bottom:24px;text-align:center;line-height:2}
+.t-ok{color:rgba(80,220,120,0.85)}.t-miss{color:rgba(255,140,80,0.75)}
+table{font-size:13px;letter-spacing:1.5px;border-collapse:collapse;margin-bottom:24px}
+td{padding:5px 16px;color:rgba(255,255,255,0.7)}
+td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
+#start-btn{padding:12px 44px;background:rgba(120,180,255,0.06);border:1px solid rgba(120,180,255,0.4);
+  color:rgba(120,180,255,0.9);font-family:inherit;font-size:12px;letter-spacing:6px;
   cursor:pointer;transition:all .3s}
-#start-btn:hover{background:rgba(120,180,255,0.07);box-shadow:0 0 24px rgba(120,180,255,0.2)}
+#start-btn:hover{background:rgba(120,180,255,0.12);box-shadow:0 0 24px rgba(120,180,255,0.3)}
 
 /* ── HUD ── */
 #hud{position:fixed;inset:0;pointer-events:none;z-index:10;display:none}
@@ -69,34 +69,39 @@ td:first-child{color:rgba(120,180,255,0.7);text-align:right}
 .tl{top:12px;left:12px}.tr{top:12px;right:12px;transform:scaleX(-1)}
 .bl{bottom:12px;left:12px;transform:scaleY(-1)}.br{bottom:12px;right:12px;transform:scale(-1)}
 #target-info{position:absolute;top:18px;left:50%;transform:translateX(-50%);text-align:center}
-#target-name{font-size:22px;letter-spacing:8px;color:rgba(255,255,255,0.78);display:block}
-#target-dist{margin-top:5px;font-size:13px;color:rgba(255,255,255,0.3);display:block;letter-spacing:3px}
-#ang-size{font-size:11px;color:rgba(255,255,255,0.18);letter-spacing:1px}
+#target-name{font-size:24px;letter-spacing:8px;color:rgba(255,255,255,0.95);display:block;
+  font-weight:300;text-shadow:0 1px 8px rgba(0,0,0,0.9)}
+#target-dist{margin-top:5px;font-size:14px;color:rgba(255,255,255,0.55);display:block;letter-spacing:3px;
+  text-shadow:0 1px 6px rgba(0,0,0,0.9)}
+#ang-size{font-size:12px;color:rgba(255,255,255,0.4);letter-spacing:1px;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 #nav{position:absolute;bottom:24px;left:50%;transform:translateX(-50%);text-align:center}
-#speed-val{font-size:28px;letter-spacing:5px;color:rgba(120,180,255,0.85);display:block}
-#speed-unit{font-size:12px;letter-spacing:3px;color:rgba(255,255,255,0.2)}
-#warp-active{font-size:14px;letter-spacing:5px;color:rgba(255,180,80,0.75);display:none;margin-top:4px}
+#speed-val{font-size:30px;letter-spacing:5px;color:rgba(120,180,255,0.95);display:block;
+  font-weight:300;text-shadow:0 1px 8px rgba(0,0,0,0.9)}
+#speed-unit{font-size:13px;letter-spacing:3px;color:rgba(255,255,255,0.45);text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+#warp-active{font-size:15px;letter-spacing:5px;color:rgba(255,180,80,0.9);display:none;margin-top:4px;
+  text-shadow:0 0 12px rgba(255,150,50,0.5)}
 #ctrl-hint{position:absolute;bottom:20px;right:20px;font-size:13px;letter-spacing:1.5px;
-  line-height:2.2;text-align:right;color:rgba(255,255,255,0.18)}
-#ctrl-hint span{color:rgba(120,180,255,0.42)}
-#boost-wrap{position:absolute;bottom:24px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.25)}
+  line-height:2.2;text-align:right;color:rgba(255,255,255,0.45);text-shadow:0 1px 6px rgba(0,0,0,0.9)}
+#ctrl-hint span{color:rgba(120,180,255,0.75)}
+#boost-wrap{position:absolute;bottom:24px;left:24px;font-size:12px;letter-spacing:2px;color:rgba(255,255,255,0.5);
+  text-shadow:0 1px 4px rgba(0,0,0,0.8)}
 #boost-bar{width:100px;height:2px;background:rgba(255,255,255,0.08);margin-top:6px;overflow:hidden}
 #boost-fill{height:100%;width:100%;background:rgba(120,180,255,0.65);transition:width .1s}
 #music-ui{position:absolute;top:20px;right:20px;pointer-events:all;font-size:12px;
-  letter-spacing:2px;color:rgba(255,255,255,0.25);text-align:right}
-#music-btn{background:transparent;border:1px solid rgba(255,255,255,0.12);color:rgba(255,255,255,0.38);
-  font-family:'Courier New',monospace;font-size:12px;letter-spacing:2px;padding:6px 14px;
+  letter-spacing:2px;color:rgba(255,255,255,0.5);text-align:right;text-shadow:0 1px 4px rgba(0,0,0,0.8)}
+#music-btn{background:rgba(0,0,0,0.3);border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.6);
+  font-family:inherit;font-size:12px;letter-spacing:2px;padding:6px 14px;
   cursor:pointer;transition:all .3s;display:block;margin-left:auto}
-#music-btn:hover{border-color:rgba(120,180,255,0.3);color:rgba(120,180,255,0.65)}
-#track-lbl{font-size:10px;color:rgba(255,255,255,0.18);margin-top:4px}
+#music-btn:hover{border-color:rgba(120,180,255,0.5);color:rgba(120,180,255,0.85);background:rgba(120,180,255,0.08)}
+#track-lbl{font-size:11px;color:rgba(255,255,255,0.4);margin-top:4px}
 #vol-row{display:flex;align-items:center;gap:6px;margin-top:5px;justify-content:flex-end}
 #vol-slider{-webkit-appearance:none;width:70px;height:2px;background:rgba(255,255,255,0.12);outline:none;cursor:pointer}
 #vol-slider::-webkit-slider-thumb{-webkit-appearance:none;width:10px;height:10px;border-radius:50%;background:rgba(120,180,255,0.7);cursor:pointer}
 #home-btn{position:absolute;top:60px;left:50%;transform:translateX(-50%);pointer-events:all;
-  background:transparent;border:1px solid rgba(255,100,70,0.22);color:rgba(255,140,110,0.45);
-  font-family:'Courier New',monospace;font-size:12px;letter-spacing:3px;padding:6px 18px;
+  background:rgba(0,0,0,0.3);border:1px solid rgba(255,100,70,0.35);color:rgba(255,140,110,0.7);
+  font-family:inherit;font-size:12px;letter-spacing:3px;padding:6px 18px;
   cursor:pointer;display:none;transition:all .3s}
-#home-btn:hover{border-color:rgba(255,100,70,0.5);color:rgba(255,170,140,0.8)}
+#home-btn:hover{border-color:rgba(255,100,70,0.6);color:rgba(255,170,140,0.95);background:rgba(255,100,70,0.08)}
 
 /* ── Info panel for planet descriptions ── */
 #info-panel{position:fixed;bottom:70px;left:50%;transform:translateX(-50%);
@@ -229,21 +234,21 @@ td:first-child{color:rgba(120,180,255,0.7);text-align:right}
     text-align:center;pointer-events:none;display:none;opacity:0;
     padding:40px 20px 50px;
     background:linear-gradient(to top, rgba(0,0,0,0.7) 0%, rgba(0,0,0,0.3) 60%, transparent 100%)">
-    <div id="info-card-name" style="font-size:clamp(24px,4vw,48px);letter-spacing:14px;
-      color:rgba(255,255,255,0.9);font-weight:100;
-      text-shadow:0 0 40px rgba(120,180,255,0.4)"></div>
-    <div id="info-card-type" style="font-size:clamp(9px,1.2vw,13px);letter-spacing:8px;
-      color:rgba(120,180,255,0.7);margin-top:10px;opacity:0;
-      transition:opacity 1.5s ease-in"></div>
+    <div id="info-card-name" style="font-size:clamp(26px,4vw,52px);letter-spacing:14px;
+      color:rgba(255,255,255,0.95);font-weight:200;
+      text-shadow:0 0 40px rgba(120,180,255,0.5),0 2px 10px rgba(0,0,0,0.9)"></div>
+    <div id="info-card-type" style="font-size:clamp(10px,1.2vw,14px);letter-spacing:8px;
+      color:rgba(120,180,255,0.85);margin-top:10px;opacity:0;
+      transition:opacity 1.5s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.8)"></div>
     <div style="width:60px;height:1px;background:rgba(120,180,255,0.2);margin:16px auto;opacity:0;
       transition:opacity 2s ease-in" id="info-card-line"></div>
-    <div id="info-card-facts" style="font-size:clamp(10px,1.1vw,14px);letter-spacing:2px;
-      color:rgba(255,255,255,0.5);line-height:2.2;opacity:0;
-      transition:opacity 2s ease-in"></div>
-    <div id="info-card-lore" style="font-size:clamp(10px,1.1vw,14px);letter-spacing:1.5px;
-      color:rgba(255,255,255,0.35);margin-top:16px;font-style:italic;
+    <div id="info-card-facts" style="font-size:clamp(11px,1.1vw,15px);letter-spacing:2px;
+      color:rgba(255,255,255,0.7);line-height:2.2;opacity:0;
+      transition:opacity 2s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.9)"></div>
+    <div id="info-card-lore" style="font-size:clamp(11px,1.1vw,15px);letter-spacing:1.5px;
+      color:rgba(255,255,255,0.55);margin-top:16px;font-style:italic;
       max-width:600px;margin-left:auto;margin-right:auto;line-height:1.8;
-      opacity:0;transition:opacity 2.5s ease-in"></div>
+      opacity:0;transition:opacity 2.5s ease-in;text-shadow:0 1px 6px rgba(0,0,0,0.9)"></div>
   </div>
   <div id="ctrl-hint">
     <span>W/S</span> THRUST · <span>A/D</span> STRAFE<br>
@@ -284,6 +289,6 @@ td:first-child{color:rgba(120,180,255,0.7);text-align:right}
 document.getElementById('c').addEventListener('contextmenu', e => e.preventDefault());
 </script>
 
-<script type="module" src="js/main.js?v=34"></script>
+<script type="module" src="js/main.js?v=35"></script>
 </body>
 </html>

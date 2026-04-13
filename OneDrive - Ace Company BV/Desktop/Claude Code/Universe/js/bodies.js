@@ -161,8 +161,9 @@ function makeSaturnRing(r, tex) {
     const u = (dist - r * 1.3) / (r * 2.6 - r * 1.3);
     uv.setXY(i, u, 0.5);
   }
-  const mat = new THREE.MeshBasicMaterial({
-    map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false, opacity: 0.9
+  const mat = new THREE.MeshStandardMaterial({
+    map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false, opacity: 0.9,
+    roughness: 0.8, metalness: 0
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI * 0.5;
@@ -276,7 +277,7 @@ export function createSolarSystem(scene, textures) {
       mat: new THREE.MeshStandardMaterial({ map: textures.mercury, roughness: .9, metalness: 0 }) },
 
     { name: 'VENUS', desc: 'Hottest planet at 465\u00B0C. Thick sulphuric acid cloud cover.',
-      r: 47, orb: .723, spd: 1.62, atmC: [52, 0xffcc55, .62, 4.2],
+      r: 47, orb: .723, spd: 1.62, atmC: [52, 0xffcc55, .62, 4.2], venusClouds: true,
       mat: new THREE.MeshStandardMaterial({ map: textures.venus, roughness: .75, metalness: 0 }) },
 
     { name: 'EARTH', desc: 'Our home. 71% ocean. City lights visible on the dark side.',
@@ -335,6 +336,23 @@ export function createSolarSystem(scene, textures) {
         })
       );
       group.add(cloudMesh);
+    }
+
+    // Venus thick atmosphere cloud layer
+    if (def.venusClouds && textures.venusAtmo) {
+      const venusCloudMesh = new THREE.Mesh(
+        new THREE.SphereGeometry(def.r * 1.03, 72, 72),
+        new THREE.MeshStandardMaterial({
+          map: textures.venusAtmo,
+          transparent: true,
+          opacity: 0.85,
+          depthWrite: false,
+          side: THREE.FrontSide,
+          roughness: 0.6,
+          metalness: 0,
+        })
+      );
+      group.add(venusCloudMesh);
     }
 
     // Atmosphere shells removed — the Fresnel shader created dark disk

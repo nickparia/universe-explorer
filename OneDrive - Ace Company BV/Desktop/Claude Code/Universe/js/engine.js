@@ -154,12 +154,14 @@ export function initEngine() {
   scene.add(sunLight);
   setWorldPos(sunLight, sunLight.position);
 
-  const ambient = new THREE.AmbientLight(0x404040, 0.8);
+  // Subtle ambient so the dark side isn't pure black —
+  // simulates indirect light (reflected moonlight, dust scatter)
+  const ambient = new THREE.AmbientLight(0x202030, 0.15);
   scene.add(ambient);
   setWorldPos(ambient, ambient.position);
 
-  // Hemisphere light — warm neutral fill
-  const hemi = new THREE.HemisphereLight(0x666655, 0x333322, 0.5);
+  // Hemisphere light — warm from above (sun-lit dust), cool from below (space)
+  const hemi = new THREE.HemisphereLight(0x444433, 0x111122, 0.3);
   scene.add(hemi);
   setWorldPos(hemi, hemi.position);
 
