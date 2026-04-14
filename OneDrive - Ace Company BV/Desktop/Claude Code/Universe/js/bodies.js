@@ -265,6 +265,7 @@ export function createSolarSystem(scene, textures) {
     sunLensflare.addElement(new LensflareElement(flareTexOrange, 120, 0.2, new THREE.Color(0xffaa44)));
     sunLensflare.addElement(new LensflareElement(flareTexBlue, 80, 0.4, new THREE.Color(0x8899ff)));
 
+    sunLensflare.userData._solarSystemOnly = true;
     const sunLight = getSunLight();
     if (sunLight) sunLight.add(sunLensflare);
   }
@@ -716,6 +717,7 @@ function buildSpacecraft(scene) {
       );
     }
 
+    group.userData._solarSystemOnly = true;
     scene.add(group);
     setWorldPos(group, group.position);
 
@@ -954,6 +956,8 @@ function buildComets(scene) {
     setWorldPos(trail, new THREE.Vector3(0, 0, 0));
 
     group.rotation.z = cd.tilt;
+    group.userData._solarSystemOnly = true;
+    trail.userData._solarSystemOnly = true;
     scene.add(group);
     setWorldPos(group, group.position);
 
