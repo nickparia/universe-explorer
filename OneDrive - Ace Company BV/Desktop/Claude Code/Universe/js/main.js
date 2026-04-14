@@ -10,6 +10,7 @@ import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, doHome } fr
 import { initMusic, updateMusic } from './music.js';
 import { initHud, updateHud } from './hud.js';
 import { initNavigation, updateNavigation, getTimeScale } from './navigation.js';
+import { initStarMap, updateStarMap, isStarMapOpen } from './starmap.js';
 import { initAtmoEffects, updateAtmoEffects } from './atmosphere/effects.js';
 import { initGasGiantHud, updateGasGiantDive } from './atmosphere/gasgiant.js';
 import { updateAtmosphere } from './atmosphere/scatter.js';
@@ -59,6 +60,7 @@ async function boot() {
   // 9. Initialize HUD
   initHud();
   initNavigation(camera);
+  initStarMap();
   initAtmoEffects();
   initGasGiantHud();
 
@@ -137,6 +139,9 @@ async function boot() {
 
     // Update navigation markers
     updateNavigation(dt, getCamPos(), getSpeed(), allBodies);
+
+    // Update star map overlay
+    updateStarMap();
 
     // Update music zones
     updateMusic(getCamPos(), allBodies);
