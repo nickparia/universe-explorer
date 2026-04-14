@@ -3,7 +3,7 @@
 
 import * as THREE from 'three';
 import { getLandmarks } from './deepspace.js';
-import { flyTo } from './flight.js';
+import { warpTo, flyTo } from './flight.js';
 
 // ── State ────────────────────────────────────────────────────────────────
 let mapActive = false;
@@ -308,10 +308,9 @@ function onMapClick(e) {
       toggleStarMap();
       // Warp to the destination
       if (name === 'SOL') {
-        // flyTo expects 'SUN' for Sol
         flyTo('SUN');
       } else {
-        flyTo(name);
+        warpTo(name);
       }
     }
   }
