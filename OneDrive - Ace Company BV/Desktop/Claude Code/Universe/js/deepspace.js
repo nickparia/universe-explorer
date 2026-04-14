@@ -5,6 +5,7 @@ import { setWorldPos } from './engine.js';
 import { AU, INTERSTELLAR_SCALE, INTERGALACTIC_SCALE } from './constants.js';
 import { createPillars, createCrabNebula, createCarinaNebula, createHorsehead } from './visuals/nebulae.js';
 import { createHypergiant, createRingNebula, createEtaCarinae, createMagnetar } from './visuals/stellar.js';
+import { createSupermassiveBH, createSpiralGalaxy, createSombreroGalaxy, createBootesVoid } from './visuals/galaxies.js';
 
 // ── Landmark definitions ──────────────────────────────────────────────
 const LANDMARK_DEFS = [
@@ -72,6 +73,12 @@ registerVisualRenderer('hypergiant', createHypergiant);
 registerVisualRenderer('ring', createRingNebula);
 registerVisualRenderer('eta_carinae', createEtaCarinae);
 registerVisualRenderer('magnetar', createMagnetar);
+
+// Register galaxy & void visual renderers
+registerVisualRenderer('supermassive_bh', createSupermassiveBH);
+registerVisualRenderer('spiral_galaxy', createSpiralGalaxy);
+registerVisualRenderer('sombrero_galaxy', createSombreroGalaxy);
+registerVisualRenderer('void', createBootesVoid);
 
 // ── Nebula cloud definitions ──────────────────────────────────────────
 const NEBULA_CLOUD_DEFS = [
