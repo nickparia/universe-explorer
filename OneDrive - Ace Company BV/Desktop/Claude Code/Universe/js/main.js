@@ -151,17 +151,27 @@ async function boot() {
     // Bootes Void star fade — stars disappear inside the void
     if (bootesVoidLandmark) {
       const distToVoid = getCamPos().distanceTo(bootesVoidLandmark.pos);
-      const fadeOuterR = bootesVoidLandmark.radius * 4;  // start fading at 4x radius
-      const fadeInnerR = bootesVoidLandmark.radius * 1.5; // fully faded at 1.5x radius
+      const fadeOuterR = bootesVoidLandmark.radius * 6;  // start fading well before arrival
+      const fadeInnerR = bootesVoidLandmark.radius * 1.0; // fully dark at center
       if (distToVoid < fadeOuterR) {
-        // Map distance to opacity: outer edge = 1.0, inner = 0.05
         const t = Math.max(0, Math.min(1, (distToVoid - fadeInnerR) / (fadeOuterR - fadeInnerR)));
-        setStarFieldOpacity(0.05 + t * 0.95);
+        setStarFieldOpacity(t * t * 0.8); // quadratic falloff, max 0.8, min 0 (total darkness)
       } else {
         setStarFieldOpacity(1.0);
       }
     }
     updateStarFieldOpacity(dt);
+
+    // Hide distant landmark groups — only show landmarks within reasonable range
+    {
+      const camP = getCamPos();
+      const allLandmarks = getLandmarks();
+      for (const lm of allLandmarks) {
+        const d = camP.distanceTo(lm.pos);
+        const showRange = lm.radius * 12; // visible when within 12x radius
+        lm.anchor.visible = d < showRange;
+      }
+    }
 
     // Update film grain time
     updateFilmGrain(elapsed);

@@ -253,6 +253,7 @@ function createNebulaClouds(scene) {
     });
 
     const points = new THREE.Points(geom, mat);
+    points.userData._solarSystemOnly = true;
     scene.add(points);
     setWorldPos(points, new THREE.Vector3(0, 0, 0));
   }
@@ -348,6 +349,7 @@ function createBlackHole(scene) {
     blackHoleGroup.add(mesh);
   }
 
+  blackHoleGroup.userData._solarSystemOnly = true;
   scene.add(blackHoleGroup);
   setWorldPos(blackHoleGroup, blackHoleGroup.position);
 }

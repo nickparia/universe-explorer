@@ -223,13 +223,17 @@ export function updateFilmGrain(time) {
 // Skybox
 // ═══════════════════════════════════════════════════════════════
 
+let _skyboxMat = null;
 export function createSkybox(starmapTexture) {
   const geo = new THREE.SphereGeometry(5000000, 64, 64);
   const mat = new THREE.MeshBasicMaterial({
     map: starmapTexture,
     side: THREE.BackSide,
-    depthWrite: false
+    depthWrite: false,
+    transparent: true,
+    opacity: 1.0,
   });
+  _skyboxMat = mat;
   const skybox = new THREE.Mesh(geo, mat);
   scene.add(skybox);
   return skybox;
@@ -428,6 +432,10 @@ export function updateStarFieldOpacity(dt) {
   // Apply to all star layer materials
   for (const entry of _starBaseOpacities) {
     entry.material.opacity = entry.baseOpacity * _starCurrentOpacity;
+  }
+  // Also fade the skybox texture
+  if (_skyboxMat) {
+    _skyboxMat.opacity = _starCurrentOpacity;
   }
 }
 
