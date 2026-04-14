@@ -5,6 +5,9 @@ import { setActivePlanet } from './navigation.js';
 import { getLandmarks } from './deepspace.js';
 import { isStarMapOpen } from './starmap.js';
 
+// ── Warp state flag (read by music.js to avoid circular imports) ─────────────
+window._isWarping = false;
+
 // ── Constants ────────────────────────────────────────────────────────────────
 const THRUST_ACCEL       = 12;      // gentler initial acceleration
 const WARP_MULTIPLIER    = 40;
@@ -274,6 +277,7 @@ export function updateFlight(dt, allBodies) {
                 if (vignetteCancel) vignetteCancel.style.opacity = 0;
                 warpTarget = null;
                 warpPhase = 'none';
+                window._isWarping = false;
                 updateHUD();
                 // Fall through to normal flight
             }
@@ -334,6 +338,7 @@ export function updateFlight(dt, allBodies) {
                 if (vignetteEl) vignetteEl.style.opacity = 0;
                 warpTarget = null;
                 warpPhase = 'none';
+                window._isWarping = false;
                 velocity.set(0, 0, 0);
                 angularVelocity.set(0, 0, 0);
             }
@@ -787,6 +792,7 @@ export function warpTo(targetName) {
   warpT = 0;
   warpPhase = 'accelerating';
   _arrivalShown = false;
+  window._isWarping = true;
 
   // Clear velocity
   velocity.set(0, 0, 0);

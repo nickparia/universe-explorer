@@ -341,6 +341,12 @@ function makeMilkyWay() {
   return new THREE.Points(geo, mat);
 }
 
+// ── Star field state (for opacity fading, e.g. Bootes Void) ──
+let _starGroup = null;
+const _starBaseOpacities = []; // stores { material, baseOpacity } for each star child
+let _starTargetOpacity = 1.0;
+let _starCurrentOpacity = 1.0;
+
 export function createStars() {
   const group = new THREE.Group();
   group.renderOrder = -10; // render before all planets
@@ -384,7 +390,45 @@ export function createStars() {
   group.add(innerCore);
 
   scene.add(group);
+
+  // Store references for opacity control
+  _starGroup = group;
+  for (const child of group.children) {
+    if (child.material) {
+      _starBaseOpacities.push({ material: child.material, baseOpacity: child.material.opacity });
+    }
+  }
+
   return group;
+}
+
+/**
+ * Set the target opacity multiplier for the star field (0-1).
+ * Smoothly lerped each frame via updateStarFieldOpacity().
+ */
+export function setStarFieldOpacity(opacity) {
+  _starTargetOpacity = Math.max(0, Math.min(1, opacity));
+}
+
+/**
+ * Lerp star field opacity toward target each frame.
+ * Call once per frame from the render loop.
+ */
+export function updateStarFieldOpacity(dt) {
+  if (!_starGroup || _starBaseOpacities.length === 0) return;
+
+  // Smooth lerp toward target
+  const lerpSpeed = 1.5; // opacity units per second
+  if (Math.abs(_starCurrentOpacity - _starTargetOpacity) < 0.001) {
+    _starCurrentOpacity = _starTargetOpacity;
+  } else {
+    _starCurrentOpacity += (_starTargetOpacity - _starCurrentOpacity) * Math.min(1, lerpSpeed * dt);
+  }
+
+  // Apply to all star layer materials
+  for (const entry of _starBaseOpacities) {
+    entry.material.opacity = entry.baseOpacity * _starCurrentOpacity;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════

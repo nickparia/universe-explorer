@@ -1,11 +1,11 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
-import { initEngine, getSunLight, getDistortionPass, updateFilmGrain, createSkybox, createStars, applyCameraRelative } from './engine.js';
+import { initEngine, getSunLight, getDistortionPass, updateFilmGrain, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
-import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects } from './deepspace.js';
+import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
 import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, doHome } from './flight.js';
 import { initMusic, updateMusic } from './music.js';
 import { initHud, updateHud } from './hud.js';
@@ -98,6 +98,7 @@ async function boot() {
   let lastTime = performance.now();
   const sunLight = getSunLight();
   const distortionPass = getDistortionPass();
+  const bootesVoidLandmark = getLandmarks().find(lm => lm.name === 'BOOTES VOID');
 
   function animate() {
     requestAnimationFrame(animate);
@@ -146,6 +147,21 @@ async function boot() {
 
     // Update music zones
     updateMusic(getCamPos(), allBodies);
+
+    // Bootes Void star fade — stars disappear inside the void
+    if (bootesVoidLandmark) {
+      const distToVoid = getCamPos().distanceTo(bootesVoidLandmark.pos);
+      const fadeOuterR = bootesVoidLandmark.radius * 4;  // start fading at 4x radius
+      const fadeInnerR = bootesVoidLandmark.radius * 1.5; // fully faded at 1.5x radius
+      if (distToVoid < fadeOuterR) {
+        // Map distance to opacity: outer edge = 1.0, inner = 0.05
+        const t = Math.max(0, Math.min(1, (distToVoid - fadeInnerR) / (fadeOuterR - fadeInnerR)));
+        setStarFieldOpacity(0.05 + t * 0.95);
+      } else {
+        setStarFieldOpacity(1.0);
+      }
+    }
+    updateStarFieldOpacity(dt);
 
     // Update film grain time
     updateFilmGrain(elapsed);

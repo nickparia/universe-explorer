@@ -2,7 +2,6 @@
 
 import { AU } from './constants.js';
 import { getLandmarks } from './deepspace.js';
-import { isWarpTraveling } from './flight.js';
 
 // ── Track catalog ──────────────────────────────────────────────
 const TRACKS = {
@@ -36,7 +35,7 @@ function nearAny(pos, bodies, names, maxDist) {
 // ── Zone definitions (priority order) ─────────────────────────
 const ZONES = [
   { name: 'blackhole', check: (pos, bodies) => distTo(pos, bodies, 'BLACK HOLE') < 200 * AU },
-  { name: 'sun',       check: (pos, bodies) => distTo(pos, bodies, 'SOL') < 30 * AU },
+  { name: 'sun',       check: (pos, bodies) => distTo(pos, bodies, 'SUN') < 30 * AU },
   { name: 'giants',    check: (pos, bodies) => nearAny(pos, bodies, ['JUPITER','SATURN','URANUS','NEPTUNE'], 80 * AU) },
   { name: 'inner',     check: (pos, bodies) => nearAny(pos, bodies, ['MERCURY','VENUS','EARTH','MARS','MOON'], 40 * AU) },
   { name: 'deep',      check: () => true },
@@ -44,8 +43,9 @@ const ZONES = [
 
 // ── Zone detection with landmark & warp support ──────────────
 function detectZone(pos, allBodies) {
-  // Warp travel overrides all zones
-  if (isWarpTraveling()) {
+  // Warp travel overrides all zones — uses window flag set by flight.js
+  // to avoid tight import coupling between music and flight modules
+  if (window._isWarping) {
     return { name: 'warp', track: 'audio/bach_chaconne.mp3' };
   }
 
@@ -60,7 +60,7 @@ function detectZone(pos, allBodies) {
 
   // Fall through to existing zone checks
   if (distTo(pos, allBodies, 'BLACK HOLE') < 200 * AU) return { name: 'blackhole', track: null };
-  if (distTo(pos, allBodies, 'SOL') < 30 * AU) return { name: 'sun', track: null };
+  if (distTo(pos, allBodies, 'SUN') < 30 * AU) return { name: 'sun', track: null };
   if (nearAny(pos, allBodies, ['JUPITER','SATURN','URANUS','NEPTUNE'], 80 * AU)) return { name: 'giants', track: null };
   if (nearAny(pos, allBodies, ['MERCURY','VENUS','EARTH','MARS','MOON'], 40 * AU)) return { name: 'inner', track: null };
 
@@ -79,6 +79,7 @@ let lastFrameTime  = 0;
 let usingSynth     = false;
 let audioFailed    = false;
 let failCount      = 0;
+let _currentTrackPath = null;  // track path for landmark/warp zones (for replay)
 
 // Per-zone track index rotation
 const trackIdx = {};
@@ -136,6 +137,7 @@ function crossfadeTo(zone) {
 
   const track = getNextTrack(zone);
   if (!track) return;
+  _currentTrackPath = null;
 
   // Fade out current
   fadeOut(getActiveEl());
@@ -169,6 +171,7 @@ function crossfadeTo(zone) {
 
 function crossfadeToTrack(trackPath, zoneName) {
   if (audioFailed || usingSynth) return;
+  _currentTrackPath = trackPath;
   fadeOut(getActiveEl());
   activeChannel = activeChannel === 'A' ? 'B' : 'A';
   const next = getActiveEl();
@@ -191,7 +194,14 @@ function crossfadeToTrack(trackPath, zoneName) {
 
 function playNextInZone() {
   if (!currentZone || paused || audioFailed || usingSynth) return;
-  crossfadeTo(currentZone);
+  // If current zone is a landmark or warp (not in TRACKS), store the track
+  // so we can replay it when the track ends
+  if (TRACKS[currentZone]) {
+    crossfadeTo(currentZone);
+  } else if (_currentTrackPath) {
+    // Replay the landmark/warp track
+    crossfadeToTrack(_currentTrackPath, currentZone);
+  }
 }
 
 // ── initMusic ─────────────────────────────────────────────────
