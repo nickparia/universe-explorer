@@ -3,7 +3,6 @@
 import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { getPlanetConfig } from './planetconfig.js';
-import { getApproachInfo } from './flight.js';
 import { getActivePlanet } from './navigation.js';
 
 let speedEl, tNameEl, tDistEl, angEl, infoPanel, infoPanelDesc;
@@ -83,12 +82,14 @@ export function updateHud(camPos, speed, allBodies) {
   if (!nb) return;
 
   /* 3. Rich info card — only shows after user selects a planet --------- */
-  const approach = getApproachInfo();
   const config = getPlanetConfig(nb.name);
   const hasSelection = getActivePlanet() !== null;
 
   if (infoCard && config && config.info && hasSelection) {
-    const ang = approach.angularSize;
+    // Compute angular size of the selected body (not the approach-speed body)
+    const bPos = nb.g.userData._worldPos || nb.g.position;
+    const bDist = camPos.distanceTo(bPos);
+    const ang = 2 * Math.atan(nb.r / Math.max(bDist, 0.001)) * (180 / Math.PI);
 
     if (ang > 2) {
       infoCard.style.display = 'block';
