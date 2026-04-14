@@ -3,6 +3,7 @@ import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { setActivePlanet } from './navigation.js';
 import { getLandmarks } from './deepspace.js';
+import { isStarMapOpen } from './starmap.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const THRUST_ACCEL       = 12;      // gentler initial acceleration
@@ -251,6 +252,7 @@ export function initFlight(camera) {
 
 export function updateFlight(dt, allBodies) {
     if (!cam) return;
+    if (isStarMapOpen()) return; // freeze flight when map is open
 
     // Store reference for number key fly-to
     _allBodies = allBodies;

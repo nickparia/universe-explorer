@@ -19,6 +19,11 @@ Repo: https://github.com/nickparia/universe-explorer
 - Info cards with facts and lore for all planets, moons, spacecraft
 - Symphonic music system with zone-based tracks
 - Deep space objects (black hole, nebulae, landmarks)
+- 12 cosmic landmarks with procedural visuals (nebulae, stellar objects, galaxies, voids)
+- Warp travel system (15-30 sec interstellar journeys)
+- 3D star map (M key) with click-to-warp navigation
+- Per-landmark classical music with crossfading
+- Landmark info cards and carousel integration
 - Asteroid belt + Kuiper belt particle systems (12K particles)
 - Comets with trails
 - Auto-start loading screen (no Launch button needed)
@@ -40,12 +45,16 @@ Repo: https://github.com/nickparia/universe-explorer
 - [ ] Planet surface detail — enhanced terrain when close to rocky planets
 - [ ] Aurora borealis visible from Earth orbit (partially implemented)
 
-## Milky Way Expansion (Next Phase)
+## Milky Way Expansion (Phase 1 — Partially Complete)
+- [x] Cosmic landmarks — 12 interstellar destinations with procedural visuals
+- [x] Warp travel — interstellar journeys with speed feeling and particle effects
+- [x] 3D star map — M key toggle, click-to-warp, camera orbit controls
+- [x] Per-landmark music — classical tracks with crossfade system
+- [x] Nebulae — Orion, Eagle (Pillars of Creation), Carina as procedural volumetric visuals
+- [~] Nearby star systems — Alpha Centauri, Sirius, Betelgeuse (as landmarks, not full systems)
+- [~] Stellar types — neutron stars, black holes (as landmarks with procedural visuals)
 - [ ] Zoom out transition — seamless scale shift from solar system to galactic view
-- [ ] Nearby star systems — Alpha Centauri, Sirius, Betelgeuse with accurate positions
-- [ ] Stellar types — red dwarfs, blue giants, white dwarfs, neutron stars
 - [ ] Exoplanet systems — Trappist-1, Kepler-452 with hypothetical planet visuals
-- [ ] Nebulae — Orion, Eagle (Pillars of Creation), Carina as volumetric clouds
 - [ ] Milky Way spiral arms — flyable galactic structure with dust lanes
 
 ## Deep Universe (Future)
@@ -54,6 +63,12 @@ Repo: https://github.com/nickparia/universe-explorer
 - [ ] Cosmic web — large-scale filament structure
 - [ ] Quasars
 - [ ] CMB — cosmic microwave background at the edge
+
+## Phase 2 — The Ship (Next)
+- [ ] First-person cockpit with HUD overlay
+- [ ] Ship systems (shields, fuel, navigation computer)
+- [ ] Ship customization and upgrades
+- [ ] See design spec for full details
 
 ## Experience Features (Future)
 - [ ] Guided tours — narrated journeys
