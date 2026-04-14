@@ -350,6 +350,27 @@ function createBlackHole(scene) {
   setWorldPos(blackHoleGroup, blackHoleGroup.position);
 }
 
+// ── Landmark animations ──────────────────────────────────────────────
+function updateLandmarks(dt) {
+  for (const lm of landmarks) {
+    const group = lm.anchor;
+    for (const child of group.children) {
+      // Pulsar beams: fast spin around Y axis
+      if (child.userData._isPulsarBeam) {
+        child.rotation.y += dt * 30;
+      }
+      // Pulsar glow: pulsing opacity
+      if (child.userData._isPulsar) {
+        child.material.opacity = 0.5 + Math.sin(performance.now() * 0.03) * 0.4;
+      }
+      // Accretion disks: slow Y rotation
+      if (child.userData._isAccretion) {
+        child.rotation.y += dt * 0.5;
+      }
+    }
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // updateDeepSpace
 // ═══════════════════════════════════════════════════════════════════════
@@ -360,6 +381,7 @@ export function updateDeepSpace(dt, camPos) {
   if (accretionDiskMesh) {
     accretionDiskMesh.rotation.z += dt * 0.3;
   }
+  updateLandmarks(dt);
 }
 
 // ═══════════════════════════════════════════════════════════════════════
