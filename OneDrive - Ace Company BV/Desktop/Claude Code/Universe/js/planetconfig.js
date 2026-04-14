@@ -433,6 +433,104 @@ export const PLANET_CONFIGS = {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
     info: { type: 'NEPTUNIAN MOON', facts: ['Diameter: 2,707 km', 'Retrograde orbit (orbits backwards)', 'Nitrogen geysers erupt 8 km high'], lore: 'A captured Kuiper Belt object. Orbiting backwards, it is slowly spiraling inward and will one day be torn apart by Neptune.' },
   },
+
+  // ── Deep Space Landmarks ──
+  'PILLARS OF CREATION': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Emission Nebula',
+      facts: ['6,500 light-years from Earth', 'Part of the Eagle Nebula (M16)', 'Columns about 5 light-years tall', 'First photographed by Hubble in 1995'],
+      lore: 'Towers of gas and dust where new stars are born at their tips. The pillars may have already been destroyed by a supernova, but the light showing their destruction won\'t reach us for another 1,000 years.',
+    },
+  },
+  'CRAB NEBULA': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Supernova Remnant',
+      facts: ['6,500 light-years from Earth', 'Remnant of supernova observed in 1054 AD', 'Central pulsar spins 30 times per second', 'Expanding at 1,500 km/s'],
+      lore: 'Chinese and Arab astronomers recorded a "guest star" so bright it was visible in daylight for weeks. What they witnessed was the violent death of a massive star, leaving behind this ghostly, pulsating nebula.',
+    },
+  },
+  'UY SCUTI': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Red Supergiant Star',
+      facts: ['9,500 light-years from Earth', 'Radius: ~1,700 times the Sun', 'Would engulf Jupiter\'s orbit if placed at the Sun', 'Surface temperature: ~3,365 K'],
+      lore: 'One of the largest known stars, so vast that light itself takes over five hours to circumnavigate it. A dying colossus, bloated and reddened, exhaling its outer layers into the void.',
+    },
+  },
+  'CARINA NEBULA': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Emission Nebula',
+      facts: ['8,500 light-years from Earth', 'Four times larger than the Orion Nebula', 'Contains over 14,000 known stars', 'Home to Eta Carinae and the Keyhole Nebula'],
+      lore: 'A churning stellar nursery where massive stars are born, burn furiously, and die in spectacular explosions. JWST revealed hundreds of previously hidden newborn stars embedded in its dusty pillars.',
+    },
+  },
+  'RING NEBULA': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Planetary Nebula',
+      facts: ['2,300 light-years from Earth', 'Located in the constellation Lyra', 'About 1 light-year in diameter', 'Central white dwarf temperature: 120,000 K'],
+      lore: 'The glowing shroud of a Sun-like star that exhausted its fuel. Its central white dwarf, smaller than Earth but denser than lead, illuminates the expanding shell of gas it once called its atmosphere.',
+    },
+  },
+  'HORSEHEAD NEBULA': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Dark Nebula',
+      facts: ['1,375 light-years from Earth', 'Located in the constellation Orion', 'About 3.5 light-years tall', 'Silhouetted against IC 434 emission nebula'],
+      lore: 'A pillar of cold, dense dust sculpted by stellar winds into the unmistakable profile of a horse\'s head. Within its dark interior, new stars are secretly forming, hidden from view until they burn their way free.',
+    },
+  },
+  'ETA CARINAE': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Luminous Blue Variable',
+      facts: ['7,500 light-years from Earth', 'Mass: ~100 times the Sun', 'Luminosity: 5 million times the Sun', 'Great Eruption of 1843 made it the 2nd brightest star'],
+      lore: 'A titanic binary star system teetering on the edge of annihilation. When it finally detonates as a hypernova, it will outshine its entire galaxy for weeks and may produce a gamma-ray burst visible across the universe.',
+    },
+  },
+  'MAGNETAR': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Neutron Star',
+      facts: ['Magnetic field: 10^15 gauss', 'Diameter: ~20 km', 'Density: 1 teaspoon weighs ~1 billion tons', 'Starquakes release more energy than the Sun emits in 100,000 years'],
+      lore: 'The compressed corpse of a massive star, spinning and crackling with the strongest magnetic fields in the universe. At half the distance to the Moon, its field would erase every credit card on Earth.',
+    },
+  },
+  'SAGITTARIUS A*': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Supermassive Black Hole',
+      facts: ['26,000 light-years from Earth', 'Mass: 4 million times the Sun', 'Event horizon diameter: ~24 million km', 'First imaged by Event Horizon Telescope in 2022'],
+      lore: 'The dark heart of our galaxy. Stars orbit it at thousands of kilometers per second, their paths tracing the invisible geometry of warped spacetime. Nothing that crosses its boundary will ever return.',
+    },
+  },
+  'ANDROMEDA GALAXY': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Spiral Galaxy',
+      facts: ['2.5 million light-years from Earth', 'Contains roughly 1 trillion stars', 'Approaching the Milky Way at 110 km/s', 'Diameter: ~220,000 light-years'],
+      lore: 'The nearest large galaxy and our inevitable future partner. In 4.5 billion years, it will collide and merge with the Milky Way, reshaping both galaxies into a single elliptical giant sometimes called Milkomeda.',
+    },
+  },
+  'SOMBRERO GALAXY': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Spiral Galaxy',
+      facts: ['31 million light-years from Earth', 'Diameter: ~50,000 light-years', 'Prominent dust lane and bright nucleus', 'Contains ~100 billion stars'],
+      lore: 'Named for its resemblance to a wide-brimmed hat, this galaxy\'s brilliant white core is surrounded by a dramatic ring of dust. A supermassive black hole one billion times the Sun\'s mass lurks at its center.',
+    },
+  },
+  'BOOTES VOID': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'Cosmic Void',
+      facts: ['700 million light-years from Earth', '330 million light-years in diameter', 'Contains only ~60 galaxies', 'Discovered in 1981 by Robert Kirshner et al.'],
+      lore: 'A sphere of almost perfect emptiness in the cosmic web. If the Milky Way were at its center, we would not have discovered other galaxies until the 1960s. Its existence challenges our understanding of how the universe\'s largest structures form.',
+    },
+  },
 };
 
 /**

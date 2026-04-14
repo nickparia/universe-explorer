@@ -1,6 +1,7 @@
 // navigation.js — Planet carousel, time control, fly-to coordination
 import { AU } from './constants.js';
 import { flyTo, isFlyingTo } from './flight.js';
+import { getDeepSpaceObjects } from './deepspace.js';
 
 // ═══════════════════════════════════════════════════════════════
 // Time Control
@@ -98,6 +99,27 @@ function createBar(allBodies) {
 
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
   }
+
+  // Divider before landmarks
+  const divider2 = document.createElement('div');
+  divider2.className = 'pb-divider';
+  divider2.textContent = '|';
+  barContainer.appendChild(divider2);
+
+  // Landmarks
+  const landmarks = getDeepSpaceObjects().filter(o => o.isLandmark);
+  for (const lm of landmarks) {
+    const el = document.createElement('div');
+    el.className = 'pb-item pb-landmark';
+    el.innerHTML = `<div class="pb-name">${lm.name}</div><div class="pb-dist"></div>`;
+    el.addEventListener('click', () => {
+      setActivePlanet(lm.name);
+      import('./flight.js').then(m => m.warpTo(lm.name));
+    });
+    barContainer.appendChild(el);
+
+    barItems.push({ el, distEl: el.querySelector('.pb-dist'), name: lm.name, bodyRef: lm });
+  }
 }
 
 function updateBar(camPos) {
@@ -118,15 +140,26 @@ function updateBar(camPos) {
 
     // Update distance text
     if (item.distEl) {
-      const distAU = dist / AU;
-      if (distAU > 10) {
-        item.distEl.textContent = distAU.toFixed(0) + ' AU';
-      } else if (distAU > 0.1) {
-        item.distEl.textContent = distAU.toFixed(1) + ' AU';
+      if (item.bodyRef.isLandmark) {
+        const distLY = dist / (AU * 63241);
+        if (distLY > 1000000) {
+          item.distEl.textContent = (distLY / 1000000).toFixed(1) + 'M LY';
+        } else if (distLY > 1000) {
+          item.distEl.textContent = (distLY / 1000).toFixed(1) + 'K LY';
+        } else {
+          item.distEl.textContent = distLY.toFixed(0) + ' LY';
+        }
       } else {
-        const km = dist * 50000;
-        if (km > 1000000) item.distEl.textContent = (km / 1000000).toFixed(1) + 'M km';
-        else item.distEl.textContent = (km / 1000).toFixed(0) + 'K km';
+        const distAU = dist / AU;
+        if (distAU > 10) {
+          item.distEl.textContent = distAU.toFixed(0) + ' AU';
+        } else if (distAU > 0.1) {
+          item.distEl.textContent = distAU.toFixed(1) + ' AU';
+        } else {
+          const km = dist * 50000;
+          if (km > 1000000) item.distEl.textContent = (km / 1000000).toFixed(1) + 'M km';
+          else item.distEl.textContent = (km / 1000).toFixed(0) + 'K km';
+        }
       }
     }
   }
