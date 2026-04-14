@@ -4,6 +4,7 @@ import { getAltitude } from './altitude.js';
 import { setActivePlanet } from './navigation.js';
 import { getLandmarks } from './deepspace.js';
 import { isStarMapOpen } from './starmap.js';
+import { setStarFieldOpacity } from './engine.js';
 
 // ── Warp state flag (read by music.js to avoid circular imports) ─────────────
 window._isWarping = false;
@@ -278,6 +279,7 @@ export function updateFlight(dt, allBodies) {
                 warpTarget = null;
                 warpPhase = 'none';
                 window._isWarping = false;
+                setStarFieldOpacity(1.0); // restore stars on cancel
                 updateHUD();
                 // Fall through to normal flight
             }
@@ -316,13 +318,22 @@ export function updateFlight(dt, allBodies) {
             camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
             cam.quaternion.copy(camQuat);
 
-            // Speed feeling: FOV, warp streaks, and vignette
+            // Speed feeling: FOV, warp streaks, vignette, and star fade
             cam.fov = 70 + speedFeeling * 40;
             cam.updateProjectionMatrix();
             const streakEl = document.getElementById('warp-streaks');
             if (streakEl) streakEl.style.opacity = speedFeeling * 1.0;
             const vignetteEl = document.getElementById('warp-vignette');
             if (vignetteEl) vignetteEl.style.opacity = (warpPhase === 'cruising') ? 0.7 : speedFeeling * 0.5;
+
+            // Fade stars to black during warp — creates sense of entering hyperspace
+            if (warpPhase === 'accelerating') {
+              setStarFieldOpacity(1.0 - speedFeeling); // fade out as we accelerate
+            } else if (warpPhase === 'cruising') {
+              setStarFieldOpacity(0); // total darkness during cruise
+            } else {
+              setStarFieldOpacity(speedFeeling < 0.3 ? 1.0 - speedFeeling : 0); // stay dark until nearly stopped
+            }
 
             // Arrival notification at 95%
             if (warpT >= 0.95) {
@@ -779,9 +790,11 @@ export function warpTo(targetName) {
   warpFromP.copy(camPos);
   warpFromQ.copy(camQuat);
 
-  // Compute target position: offset by landmark.radius * 2 along approach direction
+  // Compute target position: arrive close to the landmark center
+  // For voids, arrive at center. For everything else, offset by radius * 0.5 so you're inside.
   const approachDir = new THREE.Vector3().copy(landmark.pos).sub(camPos).normalize();
-  warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -landmark.radius * 2);
+  const arrivalOffset = landmark.visualType === 'void' ? 0 : landmark.radius * 0.5;
+  warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -arrivalOffset);
 
   // Duration: 15-30 seconds based on distance
   const dist = camPos.distanceTo(landmark.pos);
