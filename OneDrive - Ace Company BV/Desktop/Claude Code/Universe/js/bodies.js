@@ -150,9 +150,12 @@ function makeOrbitLine(radiusAU) {
     pts.push(new THREE.Vector3(Math.cos(a) * r, 0, Math.sin(a) * r));
   }
   const geo = new THREE.BufferGeometry().setFromPoints(pts);
-  const mat = new THREE.LineBasicMaterial({ color: 0x334466, transparent: true, opacity: 0.18, depthWrite: false, depthTest: false });
+  const mat = new THREE.LineBasicMaterial({
+    color: 0x334466, transparent: true, opacity: 0.18,
+    depthWrite: false, depthTest: false
+  });
   const line = new THREE.Line(geo, mat);
-  line.renderOrder = -5; // render early so planets draw on top
+  line.renderOrder = 1; // render after skybox and stars, before planets
   return line;
 }
 

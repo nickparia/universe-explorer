@@ -35,7 +35,7 @@ function getGlowTex() {
 // 1. Sagittarius A* — Supermassive Black Hole
 // ═══════════════════════════════════════════════════════════════════════
 export function createSupermassiveBH(group, def) {
-  const scale = def.size * (def._scaleUnit || 3000);
+  const scale = def.size * 3000;
   const tex = getGlowTex();
   const bhRadius = scale * 0.05;
 
@@ -156,7 +156,7 @@ export function createSupermassiveBH(group, def) {
 // 2. Andromeda — Spiral Galaxy
 // ═══════════════════════════════════════════════════════════════════════
 export function createSpiralGalaxy(group, def) {
-  const scale = def.size * (def._scaleUnit || 3000);
+  const scale = def.size * 3000;
   const tex = getGlowTex();
 
   const armCount = 4;
@@ -241,7 +241,7 @@ export function createSpiralGalaxy(group, def) {
 // 3. Sombrero Galaxy
 // ═══════════════════════════════════════════════════════════════════════
 export function createSombreroGalaxy(group, def) {
-  const scale = def.size * (def._scaleUnit || 3000);
+  const scale = def.size * 3000;
   const tex = getGlowTex();
 
   // 1. Bright elliptical bulge — 15000 particles
@@ -348,7 +348,7 @@ export function createSombreroGalaxy(group, def) {
 // 4. Bootes Void
 // ═══════════════════════════════════════════════════════════════════════
 export function createBootesVoid(group, def) {
-  const scale = def.size * (def._scaleUnit || 3000);
+  const scale = def.size * 3000;
   const tex = getGlowTex();
 
   // 1. Scattered galaxy sprites inside the void (very faint) — 60 total
