@@ -4,6 +4,7 @@ import { setWorldPos } from './engine.js';
 
 import { AU, INTERSTELLAR_SCALE, INTERGALACTIC_SCALE } from './constants.js';
 import { createPillars, createCrabNebula, createCarinaNebula, createHorsehead } from './visuals/nebulae.js';
+import { createHypergiant, createRingNebula, createEtaCarinae, createMagnetar } from './visuals/stellar.js';
 
 // ── Landmark definitions ──────────────────────────────────────────────
 const LANDMARK_DEFS = [
@@ -65,6 +66,12 @@ registerVisualRenderer('pillars', createPillars);
 registerVisualRenderer('crab', createCrabNebula);
 registerVisualRenderer('carina', createCarinaNebula);
 registerVisualRenderer('horsehead', createHorsehead);
+
+// Register stellar visual renderers
+registerVisualRenderer('hypergiant', createHypergiant);
+registerVisualRenderer('ring', createRingNebula);
+registerVisualRenderer('eta_carinae', createEtaCarinae);
+registerVisualRenderer('magnetar', createMagnetar);
 
 // ── Nebula cloud definitions ──────────────────────────────────────────
 const NEBULA_CLOUD_DEFS = [
