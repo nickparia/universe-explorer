@@ -41,7 +41,7 @@ function getNebulaParticleTex() {
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
 export function createPillars(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getNebulaParticleTex();
 
   // Three pillars: left (tallest), center, right (shortest)
@@ -120,7 +120,7 @@ export function createPillars(group, def) {
 // 2. Crab Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createCrabNebula(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getNebulaParticleTex();
 
   // Spherical shell of filamentary particles
@@ -234,7 +234,7 @@ export function createCrabNebula(group, def) {
 // 3. Carina Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createCarinaNebula(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getNebulaParticleTex();
 
   // "Cosmic cliffs" — wide in X, tall in Y, thin in Z
@@ -302,7 +302,7 @@ export function createCarinaNebula(group, def) {
 // 4. Horsehead Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createHorsehead(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getNebulaParticleTex();
 
   // Background: red hydrogen emission glow (flat backdrop)

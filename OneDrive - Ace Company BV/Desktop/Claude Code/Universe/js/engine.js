@@ -421,9 +421,9 @@ export function setStarFieldOpacity(opacity) {
 export function updateStarFieldOpacity(dt) {
   if (!_starGroup || _starBaseOpacities.length === 0) return;
 
-  // Smooth lerp toward target
-  const lerpSpeed = 1.5; // opacity units per second
-  if (Math.abs(_starCurrentOpacity - _starTargetOpacity) < 0.001) {
+  // Smooth lerp toward target — fast enough to complete during warp approach
+  const lerpSpeed = 3.0;
+  if (Math.abs(_starCurrentOpacity - _starTargetOpacity) < 0.005) {
     _starCurrentOpacity = _starTargetOpacity;
   } else {
     _starCurrentOpacity += (_starTargetOpacity - _starCurrentOpacity) * Math.min(1, lerpSpeed * dt);

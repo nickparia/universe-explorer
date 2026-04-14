@@ -123,6 +123,9 @@ function createLandmarks(scene, textures) {
     scene.add(group);
     setWorldPos(group, group.position);
 
+    // Attach scaleUnit so renderers can use correct scale
+    def._scaleUnit = scaleUnit;
+
     // Dispatch to custom visual renderer if available, else default glow
     if (VISUAL_RENDERERS[def.visualType]) {
       VISUAL_RENDERERS[def.visualType](group, def);

@@ -35,7 +35,7 @@ function gaussRandom() {
 // 1. UY Scuti — Hypergiant star
 // ═══════════════════════════════════════════════════════════════════════
 export function createHypergiant(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const starRadius = scale * 0.4;
 
   // Main red star sphere
@@ -86,7 +86,7 @@ export function createHypergiant(group, def) {
 // 2. Ring Nebula — Planetary nebula with dying white dwarf
 // ═══════════════════════════════════════════════════════════════════════
 export function createRingNebula(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getGlowTex();
 
   const ringRadius = scale * 0.3;
@@ -164,7 +164,7 @@ export function createRingNebula(group, def) {
 // 3. Eta Carinae — Bipolar homunculus nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createEtaCarinae(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getGlowTex();
 
   // Two bipolar lobes (5000 particles each, one +Y, one -Y)
@@ -248,7 +248,7 @@ export function createEtaCarinae(group, def) {
 // 4. Magnetar — Neutron star with extreme magnetic field
 // ═══════════════════════════════════════════════════════════════════════
 export function createMagnetar(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 3000);
   const tex = getGlowTex();
 
   // Tiny neutron star sphere

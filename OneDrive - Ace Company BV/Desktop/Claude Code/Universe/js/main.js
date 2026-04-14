@@ -162,13 +162,13 @@ async function boot() {
     }
     updateStarFieldOpacity(dt);
 
-    // Hide distant landmark groups — only show landmarks within reasonable range
+    // Hide distant landmark groups — only show the one you're near
     {
       const camP = getCamPos();
       const allLandmarks = getLandmarks();
       for (const lm of allLandmarks) {
         const d = camP.distanceTo(lm.pos);
-        const showRange = lm.radius * 12; // visible when within 12x radius
+        const showRange = lm.radius * 5; // only visible when approaching
         lm.anchor.visible = d < showRange;
       }
     }
