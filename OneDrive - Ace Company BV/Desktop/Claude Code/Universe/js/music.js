@@ -1,6 +1,8 @@
 /* music.js -- Zone-based classical music system with crossfading & synth fallback */
 
 import { AU } from './constants.js';
+import { getLandmarks } from './deepspace.js';
+import { isWarpTraveling } from './flight.js';
 
 // ── Track catalog ──────────────────────────────────────────────
 const TRACKS = {
@@ -22,17 +24,6 @@ function distTo(pos, bodies, name) {
   return Infinity;
 }
 
-function nearestLandmark(pos, bodies) {
-  let min = Infinity;
-  for (let i = 0; i < bodies.length; i++) {
-    if (bodies[i].isLandmark) {
-      const d = pos.distanceTo(bodies[i].g.userData._worldPos || bodies[i].g.position);
-      if (d < min) min = d;
-    }
-  }
-  return min;
-}
-
 function nearAny(pos, bodies, names, maxDist) {
   for (let i = 0; i < bodies.length; i++) {
     if (names.indexOf(bodies[i].name) !== -1) {
@@ -46,11 +37,35 @@ function nearAny(pos, bodies, names, maxDist) {
 const ZONES = [
   { name: 'blackhole', check: (pos, bodies) => distTo(pos, bodies, 'BLACK HOLE') < 200 * AU },
   { name: 'sun',       check: (pos, bodies) => distTo(pos, bodies, 'SOL') < 30 * AU },
-  { name: 'nebula',    check: (pos, bodies) => nearestLandmark(pos, bodies) < 500 * AU },
   { name: 'giants',    check: (pos, bodies) => nearAny(pos, bodies, ['JUPITER','SATURN','URANUS','NEPTUNE'], 80 * AU) },
   { name: 'inner',     check: (pos, bodies) => nearAny(pos, bodies, ['MERCURY','VENUS','EARTH','MARS','MOON'], 40 * AU) },
   { name: 'deep',      check: () => true },
 ];
+
+// ── Zone detection with landmark & warp support ──────────────
+function detectZone(pos, allBodies) {
+  // Warp travel overrides all zones
+  if (isWarpTraveling()) {
+    return { name: 'warp', track: 'audio/bach_chaconne.mp3' };
+  }
+
+  // Check landmark-specific zones first
+  const landmarks = getLandmarks();
+  for (const lm of landmarks) {
+    const d = pos.distanceTo(lm.pos);
+    if (d < lm.radius * 3) {
+      return { name: lm.name, track: lm.musicTrack };
+    }
+  }
+
+  // Fall through to existing zone checks
+  if (distTo(pos, allBodies, 'BLACK HOLE') < 200 * AU) return { name: 'blackhole', track: null };
+  if (distTo(pos, allBodies, 'SOL') < 30 * AU) return { name: 'sun', track: null };
+  if (nearAny(pos, allBodies, ['JUPITER','SATURN','URANUS','NEPTUNE'], 80 * AU)) return { name: 'giants', track: null };
+  if (nearAny(pos, allBodies, ['MERCURY','VENUS','EARTH','MARS','MOON'], 40 * AU)) return { name: 'inner', track: null };
+
+  return { name: 'deep', track: null };
+}
 
 // ── Module state ──────────────────────────────────────────────
 let channelA, channelB;
@@ -152,6 +167,28 @@ function crossfadeTo(zone) {
   }
 }
 
+function crossfadeToTrack(trackPath, zoneName) {
+  if (audioFailed || usingSynth) return;
+  fadeOut(getActiveEl());
+  activeChannel = activeChannel === 'A' ? 'B' : 'A';
+  const next = getActiveEl();
+  next.src = trackPath;
+  next.load();
+  const playPromise = next.play();
+  if (playPromise && playPromise.catch) {
+    playPromise.catch(err => {
+      console.warn('[music] Audio play failed:', err.message);
+      failCount++;
+      if (failCount >= 2 && !usingSynth) activateSynthFallback();
+    });
+  }
+  fadeIn(next, masterVol);
+  if (trackLbl) {
+    const label = zoneName.split(' ').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
+    trackLbl.textContent = label;
+  }
+}
+
 function playNextInZone() {
   if (!currentZone || paused || audioFailed || usingSynth) return;
   crossfadeTo(currentZone);
@@ -242,18 +279,14 @@ export function updateMusic(camPos, allBodies) {
   zoneCheckAccum = 0;
 
   // Detect zone
-  let detectedZone = 'deep';
-  for (let i = 0; i < ZONES.length; i++) {
-    if (ZONES[i].check(camPos, allBodies)) {
-      detectedZone = ZONES[i].name;
-      break;
-    }
-  }
+  const zone = detectZone(camPos, allBodies);
 
-  if (detectedZone !== currentZone) {
-    currentZone = detectedZone;
+  if (zone.name !== currentZone) {
+    currentZone = zone.name;
     if (usingSynth) {
       updateSynthZone(currentZone);
+    } else if (zone.track) {
+      crossfadeToTrack(zone.track, zone.name);
     } else {
       crossfadeTo(currentZone);
     }
@@ -263,7 +296,12 @@ export function updateMusic(camPos, allBodies) {
   if (!usingSynth && !audioFailed && currentZone) {
     const a = channelA, b = channelB;
     if (a.paused && b.paused) {
-      crossfadeTo(currentZone);
+      const restartZone = detectZone(camPos, allBodies);
+      if (restartZone.track) {
+        crossfadeToTrack(restartZone.track, restartZone.name);
+      } else {
+        crossfadeTo(currentZone);
+      }
     }
   }
 }
