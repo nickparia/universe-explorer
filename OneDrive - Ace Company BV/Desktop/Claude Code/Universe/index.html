@@ -124,6 +124,18 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     rgba(100,150,255,0.25) 100%);
   mix-blend-mode:screen}
 
+/* ── Warp vignette overlay ── */
+#warp-vignette{position:fixed;inset:0;pointer-events:none;z-index:5;opacity:0;
+  transition:opacity 0.3s;
+  background:radial-gradient(ellipse at center,
+    transparent 0%,
+    transparent 30%,
+    rgba(40,80,180,0.06) 50%,
+    rgba(30,60,160,0.15) 70%,
+    rgba(20,40,140,0.35) 85%,
+    rgba(10,20,120,0.55) 100%);
+  mix-blend-mode:screen}
+
 /* ── Event horizon flash ── */
 #horizon-flash{position:fixed;inset:0;background:#fff;pointer-events:none;z-index:200;opacity:0}
 /* ── Planet carousel ── */
@@ -313,6 +325,7 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 <!-- New overlay elements -->
 <div id="info-panel"><span class="desc"></span></div>
 <div id="warp-streaks"></div>
+<div id="warp-vignette"></div>
 <div id="horizon-flash"></div>
 <div id="reentry-glow"></div>
 <div id="atmo-fog" style="position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;

@@ -16,6 +16,7 @@ import { initGasGiantHud, updateGasGiantDive } from './atmosphere/gasgiant.js';
 import { updateAtmosphere } from './atmosphere/scatter.js';
 import { updateAltitude, getAltitude } from './altitude.js';
 import { updateTerrain } from './terrain/manager.js';
+import { AU } from './constants.js';
 import * as THREE from 'three';
 
 async function boot() {
@@ -191,6 +192,15 @@ async function boot() {
 
     // Camera-relative rendering — shift world so camera is at origin
     applyCameraRelative(getCamPos());
+
+    // Hide solar-system-only particles (asteroid/Kuiper belts) when far from origin
+    const distFromOrigin = getCamPos().length();
+    const solarSystemThreshold = 200 * AU;
+    scene.traverse((child) => {
+      if (child.userData._solarSystemOnly) {
+        child.visible = distFromOrigin < solarSystemThreshold;
+      }
+    });
 
     renderer.render(scene, camera);
   }

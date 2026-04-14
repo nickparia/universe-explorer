@@ -265,11 +265,13 @@ export function updateFlight(dt, allBodies) {
         if (warpT > 0.1) {
             const anyMove = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
             if (anyMove) {
-                // Cancel warp — reset FOV and streaks
+                // Cancel warp — reset FOV, streaks, and vignette
                 cam.fov = 70;
                 cam.updateProjectionMatrix();
                 const streakEl = document.getElementById('warp-streaks');
                 if (streakEl) streakEl.style.opacity = 0;
+                const vignetteCancel = document.getElementById('warp-vignette');
+                if (vignetteCancel) vignetteCancel.style.opacity = 0;
                 warpTarget = null;
                 warpPhase = 'none';
                 updateHUD();
@@ -310,11 +312,13 @@ export function updateFlight(dt, allBodies) {
             camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
             cam.quaternion.copy(camQuat);
 
-            // Speed feeling: FOV and warp streaks
-            cam.fov = 70 + speedFeeling * 30;
+            // Speed feeling: FOV, warp streaks, and vignette
+            cam.fov = 70 + speedFeeling * 40;
             cam.updateProjectionMatrix();
             const streakEl = document.getElementById('warp-streaks');
-            if (streakEl) streakEl.style.opacity = speedFeeling * 0.8;
+            if (streakEl) streakEl.style.opacity = speedFeeling * 1.0;
+            const vignetteEl = document.getElementById('warp-vignette');
+            if (vignetteEl) vignetteEl.style.opacity = (warpPhase === 'cruising') ? 0.7 : speedFeeling * 0.5;
 
             // Arrival notification at 95%
             if (warpT >= 0.95) {
@@ -327,6 +331,7 @@ export function updateFlight(dt, allBodies) {
                 cam.fov = 70;
                 cam.updateProjectionMatrix();
                 if (streakEl) streakEl.style.opacity = 0;
+                if (vignetteEl) vignetteEl.style.opacity = 0;
                 warpTarget = null;
                 warpPhase = 'none';
                 velocity.set(0, 0, 0);

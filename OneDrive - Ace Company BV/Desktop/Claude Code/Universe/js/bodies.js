@@ -997,6 +997,7 @@ function buildAsteroidBelt(scene) {
     transparent: true, opacity: 0.5, depthWrite: false
   });
   const asteroidBeltPoints = new THREE.Points(geo, mat);
+  asteroidBeltPoints.userData._solarSystemOnly = true;
   scene.add(asteroidBeltPoints);
   setWorldPos(asteroidBeltPoints, new THREE.Vector3(0, 0, 0));
 
@@ -1035,6 +1036,7 @@ function buildKuiperBelt(scene) {
     transparent: true, opacity: 0.55, depthWrite: false
   });
   const kuiperBeltPoints = new THREE.Points(geo, mat);
+  kuiperBeltPoints.userData._solarSystemOnly = true;
   scene.add(kuiperBeltPoints);
   setWorldPos(kuiperBeltPoints, new THREE.Vector3(0, 0, 0));
 }
