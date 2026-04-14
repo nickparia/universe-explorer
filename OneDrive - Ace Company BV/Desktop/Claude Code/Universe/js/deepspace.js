@@ -2,19 +2,62 @@ import * as THREE from 'three';
 import { getPointTexture } from './textures.js';
 import { setWorldPos } from './engine.js';
 
-import { AU } from './constants.js';
+import { AU, INTERSTELLAR_SCALE, INTERGALACTIC_SCALE } from './constants.js';
 
 // ── Landmark definitions ──────────────────────────────────────────────
 const LANDMARK_DEFS = [
-  { name: 'ORION NEBULA',        texKey: 'landmarkOrion',    dist: 2500, angle: 0.3,  size: 400, color: 0x6688ff,
-    desc: 'Stellar nursery 1,344 light-years away. Over 700 stars forming.' },
-  { name: 'PILLARS OF CREATION', texKey: 'landmarkPillars',  dist: 4000, angle: 1.8,  size: 500, color: 0xffaa44,
-    desc: 'Columns of interstellar gas in the Eagle Nebula. 6,500 light-years distant.' },
-  { name: 'CRAB NEBULA',         texKey: 'landmarkCrab',     dist: 5000, angle: 3.5,  size: 350, color: 0xff6644,
-    desc: 'Supernova remnant from 1054 AD. Pulsar at its heart spins 30x per second.' },
-  { name: 'ANDROMEDA GALAXY',    texKey: 'landmarkAndromeda', dist: 8000, angle: 5.2,  size: 800, color: 0x8899dd,
-    desc: '2.5 million light-years away. One trillion stars. Approaching us at 110 km/s.' },
+  // ─── Interstellar tier (stellar neighborhood) ───
+  { name: 'PILLARS OF CREATION', tier: 'interstellar', dist: 4000, angle: 1.8, elevation: 150,
+    size: 500, color: 0xffaa44, visualType: 'pillars', musicTrack: 'audio/bach_air.mp3',
+    desc: 'Towering columns of interstellar gas in the Eagle Nebula, 6,500 light-years distant. Star-forming region immortalized by Hubble.' },
+  { name: 'CRAB NEBULA', tier: 'interstellar', dist: 5000, angle: 3.5, elevation: -120,
+    size: 350, color: 0xff6644, visualType: 'crab', musicTrack: 'audio/vivaldi_winter_largo.mp3',
+    desc: 'Supernova remnant from 1054 AD. A pulsar at its heart spins 30 times per second, powering the expanding filaments.' },
+  { name: 'UY SCUTI', tier: 'interstellar', dist: 6000, angle: 0.8, elevation: 80,
+    size: 600, color: 0xff4422, visualType: 'hypergiant', musicTrack: 'audio/barber_adagio.mp3',
+    desc: 'One of the largest known stars. If placed at the Sun, its surface would engulf Jupiter\'s orbit.' },
+  { name: 'CARINA NEBULA', tier: 'interstellar', dist: 5500, angle: 4.8, elevation: 250,
+    size: 550, color: 0xff8855, visualType: 'carina', musicTrack: 'audio/inner_clair_de_lune.mp3',
+    desc: 'A vast star-forming region four times larger than the Orion Nebula. Home to Eta Carinae and the Keyhole Nebula.' },
+  { name: 'RING NEBULA', tier: 'interstellar', dist: 3500, angle: 2.5, elevation: -200,
+    size: 300, color: 0x44aaff, visualType: 'ring', musicTrack: 'audio/albinoni_adagio.mp3',
+    desc: 'A planetary nebula in Lyra, the glowing shell of gas expelled by a dying Sun-like star 2,300 light-years away.' },
+  { name: 'HORSEHEAD NEBULA', tier: 'interstellar', dist: 4500, angle: 5.5, elevation: -50,
+    size: 400, color: 0xcc4422, visualType: 'horsehead', musicTrack: 'audio/satie_gymnopedie.mp3',
+    desc: 'An iconic dark nebula in Orion, its silhouette shaped by dense dust blocking the glow of emission nebula IC 434.' },
+  { name: 'ETA CARINAE', tier: 'interstellar', dist: 5800, angle: 1.2, elevation: 300,
+    size: 450, color: 0xffcc33, visualType: 'eta_carinae', musicTrack: 'audio/grieg_mountain_king.mp3',
+    desc: 'A massive binary star system on the brink of supernova. Its Great Eruption in 1843 briefly made it the second-brightest star.' },
+  { name: 'MAGNETAR', tier: 'interstellar', dist: 3000, angle: 0.3, elevation: -280,
+    size: 200, color: 0xcc66ff, visualType: 'magnetar', musicTrack: 'audio/paganini_caprice24.mp3',
+    desc: 'A neutron star with a magnetic field a quadrillion times stronger than Earth\'s. Occasional starquakes release enormous gamma-ray bursts.' },
+  // ─── Intergalactic tier (galaxy scale) ───
+  { name: 'SAGITTARIUS A*', tier: 'intergalactic', dist: 8000, angle: 4.0, elevation: -100,
+    size: 700, color: 0xff8800, visualType: 'supermassive_bh', musicTrack: 'audio/moonlight_sonata.mp3',
+    desc: 'The supermassive black hole at the center of the Milky Way. Four million solar masses warping spacetime.' },
+  { name: 'ANDROMEDA GALAXY', tier: 'intergalactic', dist: 12000, angle: 5.2, elevation: 200,
+    size: 800, color: 0x8899dd, visualType: 'spiral_galaxy', musicTrack: 'audio/vivaldi_spring_largo.mp3',
+    desc: '2.5 million light-years away with one trillion stars. Approaching us at 110 km/s for a collision in 4.5 billion years.' },
+  { name: 'SOMBRERO GALAXY', tier: 'intergalactic', dist: 14000, angle: 2.0, elevation: -250,
+    size: 750, color: 0xddaa66, visualType: 'sombrero_galaxy', musicTrack: 'audio/pachelbel_canon.mp3',
+    desc: 'A striking spiral galaxy with a bright nucleus and prominent dust lane, 31 million light-years away in Virgo.' },
+  { name: 'BOOTES VOID', tier: 'intergalactic', dist: 18000, angle: 3.2, elevation: 100,
+    size: 1200, color: 0x112233, visualType: 'void', musicTrack: 'audio/part_spiegel.mp3',
+    desc: 'A supervoid 330 million light-years across containing almost no galaxies. One of the emptiest regions in the observable universe.' },
 ];
+
+// ── Visual renderer registry ─────────────────────────────────────────
+// Maps visualType string to a render function: fn(group, def) => void
+const VISUAL_RENDERERS = {};
+
+/**
+ * Register a custom visual renderer for a landmark visualType.
+ * @param {string} type - The visualType key (e.g. 'pillars', 'crab')
+ * @param {function} fn - Renderer function receiving (THREE.Group, landmarkDef)
+ */
+export function registerVisualRenderer(type, fn) {
+  VISUAL_RENDERERS[type] = fn;
+}
 
 // ── Nebula cloud definitions ──────────────────────────────────────────
 const NEBULA_CLOUD_DEFS = [
@@ -44,52 +87,57 @@ export function createDeepSpace(scene, textures) {
 // ── Landmarks ─────────────────────────────────────────────────────────
 function createLandmarks(scene, textures) {
   for (const def of LANDMARK_DEFS) {
+    const scaleUnit = def.tier === 'intergalactic' ? INTERGALACTIC_SCALE : INTERSTELLAR_SCALE;
     const x = Math.cos(def.angle) * def.dist * AU;
     const z = Math.sin(def.angle) * def.dist * AU;
-    const y = (Math.random() - 0.5) * 200;
+    const y = def.elevation || 0;
 
-    const tex = textures[def.texKey];
-    const s = def.size * AU;
+    const s = def.size * scaleUnit;
 
-    // Soft glow background sprite (always visible from far)
-    const glowMat = new THREE.SpriteMaterial({
-      map: getNebulaTex(),
-      color: def.color || 0xaaccff,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.4,
-      depthWrite: false,
-    });
-    const glowSprite = new THREE.Sprite(glowMat);
-    glowSprite.position.set(x, y, z);
-    glowSprite.scale.set(s * 2.0, s * 2.0, 1); // larger for backdrop visibility
-    scene.add(glowSprite);
-    setWorldPos(glowSprite, glowSprite.position);
+    // Create a group for this landmark
+    const group = new THREE.Group();
+    group.position.set(x, y, z);
+    scene.add(group);
+    setWorldPos(group, group.position);
 
-    // NOTE: NASA texture sprites removed — JPGs without alpha channels
-    // create visible rectangular edges. The procedural glow sprites above
-    // provide a cleaner look at all distances.
+    // Dispatch to custom visual renderer if available, else default glow
+    if (VISUAL_RENDERERS[def.visualType]) {
+      VISUAL_RENDERERS[def.visualType](group, def);
+    } else {
+      // Default: soft glow sprite
+      const glowMat = new THREE.SpriteMaterial({
+        map: getNebulaTex(),
+        color: def.color || 0xaaccff,
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.4,
+        depthWrite: false,
+      });
+      const glowSprite = new THREE.Sprite(glowMat);
+      glowSprite.scale.set(s * 2.0, s * 2.0, 1);
+      group.add(glowSprite);
+    }
 
     // Subtle point light
     const light = new THREE.PointLight(def.color || 0xaaccff, 1.5, s * 3);
-    light.position.set(x, y, z);
-    scene.add(light);
-    setWorldPos(light, light.position);
-
-    // Position anchor for HUD/gravity lookups
-    const anchor = new THREE.Object3D();
-    anchor.position.set(x, y, z);
-    scene.add(anchor);
-    setWorldPos(anchor, anchor.position);
+    group.add(light);
 
     landmarks.push({
       name: def.name,
       desc: def.desc,
-      anchor,
+      anchor: group,
       pos: new THREE.Vector3(x, y, z),
       radius: s * 0.3,
+      musicTrack: def.musicTrack,
+      tier: def.tier,
+      visualType: def.visualType,
     });
   }
+}
+
+// ── Public accessor for landmarks ────────────────────────────────────
+export function getLandmarks() {
+  return landmarks;
 }
 
 // ── Luminance-to-alpha helper ─────────────────────────────────────────
