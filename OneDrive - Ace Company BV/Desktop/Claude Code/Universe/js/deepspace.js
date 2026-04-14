@@ -3,6 +3,7 @@ import { getPointTexture } from './textures.js';
 import { setWorldPos } from './engine.js';
 
 import { AU, INTERSTELLAR_SCALE, INTERGALACTIC_SCALE } from './constants.js';
+import { createPillars, createCrabNebula, createCarinaNebula, createHorsehead } from './visuals/nebulae.js';
 
 // ── Landmark definitions ──────────────────────────────────────────────
 const LANDMARK_DEFS = [
@@ -58,6 +59,12 @@ const VISUAL_RENDERERS = {};
 export function registerVisualRenderer(type, fn) {
   VISUAL_RENDERERS[type] = fn;
 }
+
+// Register nebula visual renderers
+registerVisualRenderer('pillars', createPillars);
+registerVisualRenderer('crab', createCrabNebula);
+registerVisualRenderer('carina', createCarinaNebula);
+registerVisualRenderer('horsehead', createHorsehead);
 
 // ── Nebula cloud definitions ──────────────────────────────────────────
 const NEBULA_CLOUD_DEFS = [
