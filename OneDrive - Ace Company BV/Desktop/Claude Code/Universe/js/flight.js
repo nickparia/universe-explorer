@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { setActivePlanet } from './navigation.js';
+import { getLandmarks } from './deepspace.js';
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const THRUST_ACCEL       = 12;      // gentler initial acceleration
@@ -66,6 +67,16 @@ const flyFromQ = new THREE.Quaternion();
 const flyTargetP = new THREE.Vector3();
 const _lookMat = new THREE.Matrix4();
 const _upVec = new THREE.Vector3(0, 1, 0);
+
+// Warp travel state (interstellar journeys)
+let warpTarget = null;
+let warpT = 0;
+let warpDuration = 0;
+const warpFromP = new THREE.Vector3();
+const warpFromQ = new THREE.Quaternion();
+const warpTargetP = new THREE.Vector3();
+let warpPhase = 'none'; // 'none' | 'accelerating' | 'cruising' | 'decelerating'
+let _arrivalShown = false;
 
 // Orbit camera state
 let orbitMode = false;
@@ -243,6 +254,87 @@ export function updateFlight(dt, allBodies) {
 
     // Store reference for number key fly-to
     _allBodies = allBodies;
+
+    // ── 1w. Warp travel (interstellar journeys) ─────────────────────────────
+    if (warpTarget) {
+        warpT += dt / warpDuration;
+
+        // Allow cancel on WASD input after initial acceleration
+        if (warpT > 0.1) {
+            const anyMove = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+            if (anyMove) {
+                // Cancel warp — reset FOV and streaks
+                cam.fov = 70;
+                cam.updateProjectionMatrix();
+                const streakEl = document.getElementById('warp-streaks');
+                if (streakEl) streakEl.style.opacity = 0;
+                warpTarget = null;
+                warpPhase = 'none';
+                updateHUD();
+                // Fall through to normal flight
+            }
+        }
+
+        if (warpTarget) {
+            // Three-phase easing
+            let eased;
+            let speedFeeling;
+            if (warpT < 0.15) {
+                // Accelerating: quadratic ease-in (0-15%)
+                const p = warpT / 0.15;
+                eased = 0.15 * (p * p);
+                speedFeeling = p * p;
+                warpPhase = 'accelerating';
+            } else if (warpT < 0.85) {
+                // Cruising: linear (15-85%)
+                const p = (warpT - 0.15) / 0.70;
+                eased = 0.15 + 0.70 * p;
+                speedFeeling = 1.0;
+                warpPhase = 'cruising';
+            } else {
+                // Decelerating: quadratic ease-out (85-100%)
+                const p = (warpT - 0.85) / 0.15;
+                eased = 0.85 + 0.15 * (1 - (1 - p) * (1 - p));
+                speedFeeling = (1 - p) * (1 - p);
+                warpPhase = 'decelerating';
+            }
+
+            // Interpolate position
+            camPos.lerpVectors(warpFromP, warpTargetP, Math.min(eased, 1));
+
+            // Look toward destination — snap quickly
+            _lookMat.lookAt(camPos, warpTargetP, _upVec);
+            const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
+            camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
+            cam.quaternion.copy(camQuat);
+
+            // Speed feeling: FOV and warp streaks
+            cam.fov = 70 + speedFeeling * 30;
+            cam.updateProjectionMatrix();
+            const streakEl = document.getElementById('warp-streaks');
+            if (streakEl) streakEl.style.opacity = speedFeeling * 0.8;
+
+            // Arrival notification at 95%
+            if (warpT >= 0.95) {
+                showArrivalNotification(warpTarget.name, warpTarget.desc);
+            }
+
+            // Complete at 100%
+            if (warpT >= 1) {
+                camPos.copy(warpTargetP);
+                cam.fov = 70;
+                cam.updateProjectionMatrix();
+                if (streakEl) streakEl.style.opacity = 0;
+                warpTarget = null;
+                warpPhase = 'none';
+                velocity.set(0, 0, 0);
+                angularVelocity.set(0, 0, 0);
+            }
+
+            updateHUD();
+            return;
+        }
+    }
 
     // ── 1a. Fly-to autopilot ─────────────────────────────────────────────────
     if (flyTarget) {
@@ -633,6 +725,68 @@ export function flyTo(bodyName) {
 }
 
 export function isFlyingTo() { return !!flyTarget; }
+
+// ── Arrival notification ────────────────────────────────────────────────
+
+function showArrivalNotification(name, desc) {
+  if (_arrivalShown) return;
+  _arrivalShown = true;
+  let el = document.getElementById('arrival-notification');
+  if (!el) {
+    el = document.createElement('div');
+    el.id = 'arrival-notification';
+    el.style.cssText = 'position:fixed;top:15%;left:50%;transform:translateX(-50%);font-family:"Segoe UI",sans-serif;text-align:center;z-index:50;pointer-events:none;opacity:0;transition:opacity 2s;';
+    document.body.appendChild(el);
+  }
+  el.innerHTML = '<div style="font-size:9px;letter-spacing:6px;color:rgba(140,180,255,0.5);margin-bottom:8px">ENTERING</div>' +
+    '<div style="font-size:22px;letter-spacing:4px;color:rgba(255,255,255,0.9);font-weight:100;margin-bottom:6px">' + name + '</div>' +
+    '<div style="font-size:10px;letter-spacing:1px;color:rgba(255,255,255,0.35);max-width:400px;line-height:1.8">' + desc + '</div>';
+  el.style.opacity = '1';
+  setTimeout(() => { el.style.opacity = '0'; _arrivalShown = false; }, 6000);
+}
+
+// ── warpTo (interstellar travel) ────────────────────────────────────────
+
+export function warpTo(targetName) {
+  const allLandmarks = getLandmarks();
+  const landmark = allLandmarks.find(lm => lm.name === targetName);
+
+  if (!landmark) {
+    // Fall back to regular fly-to for solar system bodies
+    flyTo(targetName);
+    return;
+  }
+
+  // Cancel any active orbit/fly-to/return modes
+  orbitMode = false;
+  orbitBody = null;
+  flyTarget = null;
+  returning = false;
+
+  // Set warp origin
+  warpFromP.copy(camPos);
+  warpFromQ.copy(camQuat);
+
+  // Compute target position: offset by landmark.radius * 2 along approach direction
+  const approachDir = new THREE.Vector3().copy(landmark.pos).sub(camPos).normalize();
+  warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -landmark.radius * 2);
+
+  // Duration: 15-30 seconds based on distance
+  const dist = camPos.distanceTo(landmark.pos);
+  warpDuration = Math.max(15, Math.min(30, dist / 2000));
+
+  // Set warp target
+  warpTarget = { name: landmark.name, desc: landmark.desc, pos: landmark.pos };
+  warpT = 0;
+  warpPhase = 'accelerating';
+  _arrivalShown = false;
+
+  // Clear velocity
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+}
+
+export function isWarpTraveling() { return !!warpTarget; }
 
 // ── toggleOrbit ──────────────────────────────────────────────────────────────
 
