@@ -286,6 +286,12 @@ void main() {
   float limbGlow = smoothstep(0.01, 0.06, NdV) * (1.0 - smoothstep(0.06, 0.16, NdV));
   col += vec3(1.0, 0.35, 0.05) * limbGlow * 0.3;
 
+  // Minimum brightness floor — the surface-chasms zone at the top of
+  // the palette would otherwise let a pixel land on near-black, and at
+  // small angular sizes (a few screen pixels) the whole sun could read
+  // as a black square. Guarantee a warm orange glow on the visible face.
+  col = max(col, vec3(0.42, 0.16, 0.02) * limbMask);
+
   gl_FragColor = vec4(col, 1.0);
 
   #include <logdepthbuf_fragment>

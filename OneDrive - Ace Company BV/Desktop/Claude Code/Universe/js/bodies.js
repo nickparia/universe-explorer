@@ -333,12 +333,39 @@ export function createSolarSystem(scene, textures) {
       mat: new THREE.MeshStandardMaterial({ map: textures.pluto, roughness: .85, metalness: 0 }) },
   ];
 
+  // Planet halo colors — used for the distant soft-dot sprite. Picked
+  // to match each planet's characteristic appearance.
+  const HALO_COLORS = {
+    MERCURY: 0xb0a090, VENUS: 0xe0c888, EARTH: 0x6ab0ff, MOON: 0xcccccc,
+    MARS: 0xd57050, JUPITER: 0xddb880, SATURN: 0xe8cc88,
+    URANUS: 0x99ccdd, NEPTUNE: 0x4477d0, PLUTO: 0xc8b8a0,
+  };
+
   // ── Build each planet ──
   defs.forEach((def) => {
     const group = new THREE.Group();
     const mesh = new THREE.Mesh(new THREE.SphereGeometry(def.r, 72, 72), def.mat);
     mesh.renderOrder = 10; // render after stars to ensure depth occlusion
     group.add(mesh);
+
+    // Distant-view halo — a soft additive glow sprite sized a little
+    // larger than the planet. At close range it reads as a gentle edge
+    // glow; at far distances it dominates the visual (a clean coloured
+    // dot) so the planet no longer appears as a pixelated red/brown box
+    // when it's only a few screen pixels across.
+    if (HALO_COLORS[def.name]) {
+      const haloMat = new THREE.SpriteMaterial({
+        map: getPointTexture(),
+        color: new THREE.Color(HALO_COLORS[def.name]),
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        opacity: 0.35,
+        depthWrite: false,
+      });
+      const halo = new THREE.Sprite(haloMat);
+      halo.scale.setScalar(def.r * 1.8);
+      group.add(halo);
+    }
 
     let cloudMesh = null;
 
@@ -565,14 +592,22 @@ function buildSpacecraft(scene) {
   craftDefs.forEach((def) => {
     const group = new THREE.Group();
 
-    // Build procedural fallback geometry
+    // Build procedural fallback geometry, but keep it HIDDEN by default.
+    // If a glTF model is specified, the glTF load path replaces it when
+    // it arrives. Showing the procedural fallback during loading produced
+    // harsh backlit black rectangles against the Sun (notably JWST's
+    // flat sunshield) — we'd rather show nothing briefly than that.
     let craftModel;
     if (def.name === 'JWST') craftModel = buildJWST(def.size);
     else if (def.name.startsWith('VOYAGER')) craftModel = buildVoyager(def.size);
     else if (def.name === 'NEW HORIZONS') craftModel = buildNewHorizons(def.size);
     else if (def.name === 'ISS') craftModel = buildISS(def.size);
     else craftModel = new THREE.Mesh(new THREE.BoxGeometry(def.size, def.size * 0.5, def.size), silverMat);
-    group.add(craftModel);
+    // Only show the procedural geometry if there's no glTF at all.
+    // When a glTF is specified, we wait for it (or for its load error).
+    if (!def.model) {
+      group.add(craftModel);
+    }
 
     // Load NASA glTF model — replaces procedural geometry when ready
     if (def.model) {
@@ -638,12 +673,15 @@ function buildSpacecraft(scene) {
           }
         });
 
-        // Remove procedural fallback
+        // Remove procedural fallback (if it was ever added) and show glTF
         group.remove(craftModel);
         group.add(model);
         console.log(`[spacecraft] Loaded ${def.name} glTF model`);
       }, undefined, (err) => {
         console.warn(`[spacecraft] Failed to load ${def.name} model, using procedural fallback`);
+        // glTF failed — fall back to the procedural geometry we built
+        // but initially left hidden.
+        if (craftModel.parent !== group) group.add(craftModel);
       });
     }
 
@@ -678,23 +716,23 @@ function buildSpacecraft(scene) {
       }
     }
 
-    // Glowing beacon — distance-adaptive: visible from far, fades near
+    // Tiny pin-prick beacon — just enough to spot a spacecraft against
+    // the dark, not a glowing halo. depthTest on (so planets properly
+    // occlude it), much smaller base size, lower peak opacity, and it
+    // also fades out at long range so it doesn't dominate wide views.
     const beaconMat = new THREE.SpriteMaterial({
       map: getPointTexture(),
       color: new THREE.Color(def.color),
       transparent: true,
-      opacity: 0.6,
+      opacity: 0.0,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
-      depthTest: false,
-      alphaTest: 0.01,
     });
     const beacon = new THREE.Sprite(beaconMat);
-    beacon.scale.setScalar(def.size * 10);
-    beacon.renderOrder = 999;
+    beacon.scale.setScalar(def.size * 2.2);
     group.add(beacon);
     group.userData._beacon = beacon;
-    group.userData._beaconBaseSize = def.size * 10;
+    group.userData._beaconBaseSize = def.size * 2.2;
 
     // Position
     if (def.orbitsEarth && earthRef) {
@@ -1148,17 +1186,35 @@ export function updateBodies(dt, camWorldPos) {
   }
 
   // ── Distance-adaptive spacecraft beacons ──
+  // Visible only in a mid-range band: invisible when very close (the
+  // spacecraft model itself takes over) and invisible when very far
+  // (would otherwise dominate wide views as a coloured glow). The
+  // beacon is small and subtle — a pin-prick, not a halo.
   for (let i = 0; i < bodies.length; i++) {
     const b = bodies[i];
     if (!b.g || !b.g.userData || !b.g.userData._beacon) continue;
     const bPos = b.g.userData._worldPos || b.g.position;
     const dist = camWorldPos.distanceTo(bPos);
     const baseSize = b.g.userData._beaconBaseSize;
-    // Fade in from 50 units out, fully visible at 200+, invisible below 30
-    const fadeStart = 30, fadeFull = 200;
-    const t = Math.max(0, Math.min(1, (dist - fadeStart) / (fadeFull - fadeStart)));
-    b.g.userData._beacon.material.opacity = t * 0.6;
-    b.g.userData._beacon.scale.setScalar(baseSize * (0.5 + t * 0.5));
+
+    // Triangular opacity profile:
+    //   0..30      → 0 (too close, ship model visible)
+    //   30..120    → fade in
+    //   120..800   → full
+    //   800..3000  → fade out
+    //   3000+      → 0 (too far to matter)
+    let t = 0;
+    if (dist >= 30 && dist <= 3000) {
+      if (dist < 120) t = (dist - 30) / 90;
+      else if (dist < 800) t = 1;
+      else t = 1 - (dist - 800) / 2200;
+    }
+    t = Math.max(0, Math.min(1, t));
+
+    b.g.userData._beacon.material.opacity = t * 0.35;
+    // Size stays near base — don't grow with distance, growth is what
+    // created the giant-orb look. Subtle pulse only.
+    b.g.userData._beacon.scale.setScalar(baseSize);
     b.g.userData._beacon.visible = t > 0.01;
   }
 

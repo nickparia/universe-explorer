@@ -1,16 +1,17 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
-import { initEngine, getSunLight, getDistortionPass, updateFilmGrain, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity } from './engine.js';
+import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
-import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, doHome } from './flight.js';
+import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, doHome, startIntro, beginIntroAnimation, isIntroPlaying, flyTo, warpTo } from './flight.js';
+import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic } from './music.js';
 import { initHud, updateHud } from './hud.js';
 import { initNavigation, updateNavigation, getTimeScale } from './navigation.js';
-import { initStarMap, updateStarMap, isStarMapOpen } from './starmap.js';
+import { initStarMap, updateStarMap, isStarMapOpen, toggleStarMap } from './starmap.js';
 import { initAtmoEffects, updateAtmoEffects } from './atmosphere/effects.js';
 import { initGasGiantHud, updateGasGiantDive } from './atmosphere/gasgiant.js';
 import { updateAtmosphere } from './atmosphere/scatter.js';
@@ -20,27 +21,25 @@ import { AU } from './constants.js';
 import * as THREE from 'three';
 
 async function boot() {
-  // 1. Hide setup, show loading
+  // 1. Hide setup — the loading screen is intentionally left hidden.
+  // Texture loading happens behind a plain black canvas, then the hero
+  // landing page (just "solace" over the Milky Way) appears when ready.
+  // No "UNIVERSE EXPLORER / 8K PHOTOREALISTIC / LOADING" splash to break
+  // the vibe.
   const setupEl = document.getElementById('setup');
-  const loadingEl = document.getElementById('loading');
-  const barEl = document.getElementById('loading-bar');
-  const detailEl = document.getElementById('loading-detail');
-
   if (setupEl) setupEl.style.display = 'none';
-  if (loadingEl) loadingEl.style.display = 'flex';
 
   // 2. Initialize renderer + post-processing
   const { scene, camera, composer, renderer } = initEngine();
+  // 'renderer' is still destructured for perf benchmarking below; composer is
+  // what we actually render through each frame.
 
   // 2b. GPU performance benchmark
   const perfTier = runBenchmark(renderer);
   console.log(`[boot] Performance tier: ${perfTier}`, getConfig());
 
-  // 3. Load all textures
-  const textures = await loadAllTextures((progress, detail) => {
-    if (barEl) barEl.style.width = (progress * 100) + '%';
-    if (detailEl) detailEl.textContent = detail;
-  });
+  // 3. Load all textures (no progress UI — keeps the experience quiet)
+  const textures = await loadAllTextures(() => {});
 
   // 4. Create skybox and stars
   createSkybox(textures.starmap);
@@ -65,6 +64,33 @@ async function boot() {
   initAtmoEffects();
   initGasGiantHud();
 
+  // Wire the left-rail nav tab → opens the destinations drawer
+  const navTab = document.getElementById('nav-rail-tab');
+  if (navTab) {
+    navTab.addEventListener('click', (e) => {
+      e.stopPropagation();
+      toggleStarMap();
+    });
+  }
+
+  // Click-in-world navigation — hover any celestial body to see its name,
+  // click to travel there. Suppressed during cinematic / map / hero.
+  initHoverSelect({
+    camera,
+    getBodies: () => getBodies().concat(getDeepSpaceObjects()),
+    getCamPos,
+    flyTo,
+    warpTo,
+    suppress: () => {
+      if (isIntroPlaying()) return true;
+      if (isStarMapOpen()) return true;
+      // Hero page is visible when #hero has display:flex and is not fading
+      const hero = document.getElementById('hero');
+      if (hero && hero.style.display !== 'none' && hero.style.opacity !== '0') return true;
+      return false;
+    },
+  });
+
   // 10. Fade out loading screen and auto-start
   const hudEl = document.getElementById('hud');
   if (hudEl) hudEl.style.display = 'block';
@@ -84,20 +110,46 @@ async function boot() {
   // Debug: expose for testing
   window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };
 
-  // Fade out loading screen
-  if (loadingEl) {
-    loadingEl.style.opacity = '0';
-    setTimeout(() => { loadingEl.style.display = 'none'; }, 1500);
+  // Make sure any legacy loading/overlay screens never show
+  const legacyIds = ['loading', 'overlay'];
+  for (const id of legacyIds) {
+    const el = document.getElementById(id);
+    if (el) el.style.display = 'none';
   }
 
-  // Hide overlay if it exists
-  const overlayEl = document.getElementById('overlay');
-  if (overlayEl) overlayEl.style.display = 'none';
+  // Kick off the cinematic intro — but pause it at the starting camera
+  // position so the landing page can sit on top with the Milky Way visible
+  // behind it. Any key or click un-pauses and begins the zoom.
+  startIntro({ paused: true });
+
+  // Show the hero landing page
+  const heroEl = document.getElementById('hero');
+  if (heroEl) {
+    heroEl.style.display = 'flex';
+    heroEl.style.opacity = '1';
+  }
+
+  // Any keypress or mouse click starts the journey
+  let heroDismissed = false;
+  function dismissHero() {
+    if (heroDismissed) return;
+    heroDismissed = true;
+    window.removeEventListener('keydown', dismissHero);
+    window.removeEventListener('mousedown', dismissHero);
+    window.removeEventListener('touchstart', dismissHero);
+    if (heroEl) heroEl.style.opacity = '0';
+    setTimeout(() => {
+      if (heroEl) heroEl.style.display = 'none';
+      beginIntroAnimation();
+    }, 1400);
+  }
+  window.addEventListener('keydown', dismissHero);
+  window.addEventListener('mousedown', dismissHero);
+  window.addEventListener('touchstart', dismissHero);
 
   // 11. Main render loop
   let lastTime = performance.now();
   const sunLight = getSunLight();
-  const distortionPass = getDistortionPass();
   const bootesVoidLandmark = getLandmarks().find(lm => lm.name === 'BOOTES VOID');
 
   function animate() {
@@ -148,14 +200,22 @@ async function boot() {
     // Update music zones
     updateMusic(getCamPos(), allBodies);
 
-    // Bootes Void star fade — stars disappear inside the void
-    if (bootesVoidLandmark) {
+    // Bootes Void — when you're inside the supervoid everything around
+    // you should go dark: star particles, the equirectangular Milky Way
+    // skybox (which is an "Earth-view" image and doesn't belong 330Mly
+    // away), and the 3D particle galaxy. Outside the void, all restore.
+    if (bootesVoidLandmark && !isIntroPlaying()) {
       const distToVoid = getCamPos().distanceTo(bootesVoidLandmark.pos);
-      const fadeOuterR = bootesVoidLandmark.radius * 6;  // start fading well before arrival
-      const fadeInnerR = bootesVoidLandmark.radius * 1.0; // fully dark at center
+      const fadeOuterR = bootesVoidLandmark.radius * 6;
+      const fadeInnerR = bootesVoidLandmark.radius * 1.0;
       if (distToVoid < fadeOuterR) {
         const t = Math.max(0, Math.min(1, (distToVoid - fadeInnerR) / (fadeOuterR - fadeInnerR)));
-        setStarFieldOpacity(t * t * 0.8); // quadratic falloff, max 0.8, min 0 (total darkness)
+        const smoothed = t * t;  // quadratic falloff
+        setStarFieldOpacity(smoothed * 0.8);
+        // Also fade the skybox — this is the key fix for "the void has
+        // more stars than anywhere else." The starmap image was wrapping
+        // the camera even at the void, showing the Milky Way band.
+        setSkyboxOpacity(smoothed * 0.4);
       } else {
         setStarFieldOpacity(1.0);
       }
@@ -173,34 +233,23 @@ async function boot() {
       }
     }
 
-    // Update film grain time
-    updateFilmGrain(elapsed);
+    // Milky Way rotation — noticeable sweep while the landing page /
+    // intro is up, near-imperceptible once the user is free-flying.
+    updateMilkyWayRotation(dt, isIntroPlaying() ? 4 : 0.5);
 
     // Sun light flicker — subtle variation around base intensity
     if (sunLight) {
       sunLight.intensity = 3.0 + Math.sin(elapsed * 6.2) * 0.05 + Math.sin(elapsed * 2.7) * 0.02;
     }
 
-    // Black hole distortion
-    if (distortionPass) {
+    // Black hole event horizon — flash + return home when too close
+    {
       const bhObjects = getDeepSpaceObjects().filter(o => o.isBlackHole);
       if (bhObjects.length > 0) {
         const bh = bhObjects[0];
         const bhWorldPos = new THREE.Vector3();
         bh.g.getWorldPosition(bhWorldPos);
-        const bhScreen = bhWorldPos.clone().project(camera);
         const distToBH = getCamPos().distanceTo(bhWorldPos);
-
-        distortionPass.uniforms.bhScreenPos.value.set(
-          (bhScreen.x + 1) / 2,
-          (-bhScreen.y + 1) / 2
-        );
-
-        const maxDist = bh.r * 50 * 55;
-        const strength = Math.max(0, 1 - distToBH / maxDist) * 3.0;
-        distortionPass.uniforms.bhStrength.value = (bhScreen.z > 0 && bhScreen.z < 1) ? strength : 0;
-
-        // Event horizon — flash and return home
         if (distToBH < bh.r * 1.5) {
           const flash = document.getElementById('horizon-flash');
           if (flash && flash.style.opacity !== '1') {
@@ -219,6 +268,11 @@ async function boot() {
     // Camera-relative rendering — shift world so camera is at origin
     applyCameraRelative(getCamPos());
 
+    // Click-in-world hover: raycast against current (camera-relative)
+    // scene transforms. Must run AFTER applyCameraRelative and BEFORE
+    // render so the cursor always matches what you see.
+    updateHoverSelect();
+
     // Hide solar-system-only particles (asteroid/Kuiper belts) when far from origin
     const distFromOrigin = getCamPos().length();
     const solarSystemThreshold = 200 * AU;
@@ -228,7 +282,7 @@ async function boot() {
       }
     });
 
-    renderer.render(scene, camera);
+    composer.render();
   }
 
   animate();

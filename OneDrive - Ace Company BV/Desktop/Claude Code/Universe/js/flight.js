@@ -4,7 +4,7 @@ import { getAltitude } from './altitude.js';
 import { setActivePlanet } from './navigation.js';
 import { getLandmarks } from './deepspace.js';
 import { isStarMapOpen } from './starmap.js';
-import { setStarFieldOpacity } from './engine.js';
+import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GALACTIC_CENTER } from './engine.js';
 
 // ── Warp state flag (read by music.js to avoid circular imports) ─────────────
 window._isWarping = false;
@@ -26,6 +26,13 @@ const ANGULAR_SLOW_START  = 5;    // degrees — planet becomes noticeable, star
 const ANGULAR_SLOW_FULL   = 60;   // degrees — planet fills view, crawling speed
 const ANGULAR_WARP_CUTOFF = 15;   // degrees — warp disabled
 const MIN_APPROACH_SPEED  = 5;    // u/s — minimum speed near a body
+// Effective radius floor used ONLY for angular-size approach-speed limiting.
+// Real-world spacecraft in this scene have r=3..6 so at any reasonable viewing
+// distance their true angular size stays near 0 and the braking never kicks
+// in — you blow straight past them. Treating them as if they had a ~25-unit
+// hitbox for approach purposes gives a braking zone ~4x their visual size,
+// which makes small objects approachable without overshoot.
+const MIN_APPROACH_RADIUS = 25;
 
 // ── Home position / orientation ──────────────────────────────────────────────
 const homePos  = new THREE.Vector3(0, 1500, 4000);
@@ -82,6 +89,17 @@ const warpFromQ = new THREE.Quaternion();
 const warpTargetP = new THREE.Vector3();
 let warpPhase = 'none'; // 'none' | 'accelerating' | 'cruising' | 'decelerating'
 let _arrivalShown = false;
+
+// Cinematic intro state — plays once on boot, skippable
+let introActive = false;
+let introPaused = false;   // held paused while the landing page is visible
+let introT = 0;
+let introDuration = 13;    // seconds
+const introFromP = new THREE.Vector3();
+const introFromQ = new THREE.Quaternion();
+// The point we aim at during the paused/early-intro phase — offset from
+// the galactic center to compose the galaxy off-center in the frame.
+const introInitialLookAt = new THREE.Vector3();
 
 // Orbit camera state
 let orbitMode = false;
@@ -261,6 +279,111 @@ export function updateFlight(dt, allBodies) {
     // Store reference for number key fly-to
     _allBodies = allBodies;
 
+    // ── 0. Cinematic intro (plays once on boot) ─────────────────────────────
+    if (introActive) {
+        // While paused (landing page showing), hold camera at start pose and
+        // render the scene — we want the Milky Way visible behind the hero UI.
+        if (introPaused) {
+            camPos.copy(introFromP);
+            cam.quaternion.copy(camQuat);
+            updateHUD();
+            return;
+        }
+        // The intro plays through to completion — no skip. Input during
+        // the cinematic is ignored so the user can't shortcut the journey.
+        {
+            introT += dt / introDuration;
+            if (introT >= 1) {
+                endIntro();
+            } else {
+                // ease-in-out cubic — slow at both ends, fast through the
+                // middle. Previously ease-out-cubic started at max speed
+                // and made the zoom look jerky.
+                const p = introT;
+                const ease = p < 0.5 ? 4 * p * p * p : 1 - Math.pow(-2 * p + 2, 3) / 2;
+                camPos.lerpVectors(introFromP, homePos, ease);
+
+                // Crossfade between the 3D particle galaxy (which reads as a
+                // distinct spiral object when seen from outside) and the
+                // equirectangular skybox (which reads as the Milky Way band
+                // we see from inside, near Earth). Early: 3D galaxy dominates.
+                // Late: skybox carries the "inside the Milky Way" view.
+                const SKYBOX_PEAK = 0.9;
+                setSkyboxOpacity(Math.max(0.05, Math.min(SKYBOX_PEAK, ease * SKYBOX_PEAK * 1.1)));
+                // Galaxy particles fade over the last 40% of the journey so
+                // at arrival they're essentially invisible — the skybox is
+                // the Milky Way from here on.
+                const mwFade = 1 - Math.max(0, Math.min(1, (ease - 0.6) / 0.4));
+                setMilkyWayOpacity(mwFade);
+
+                // Look target lerps from the composed landing-page aim
+                // (just off the galactic core) to the Sun at origin. Easing
+                // is ease-in-cubic so we linger on the galaxy early and
+                // swing toward the Sun in the final third.
+                const lookShift = p * p; // slow shift early, fast late
+                const lookTarget = new THREE.Vector3().lerpVectors(
+                  introInitialLookAt,
+                  new THREE.Vector3(0, 0, 0),
+                  lookShift
+                );
+                _lookMat.lookAt(camPos, lookTarget, _upVec);
+                const aimQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
+                // Slerp toward final home orientation in the last 25% so we land cleanly
+                if (p > 0.75) {
+                    const blend = (p - 0.75) / 0.25;
+                    const smooth = blend * blend * (3 - 2 * blend);
+                    aimQuat.slerp(homeQuat, smooth);
+                }
+                camQuat.copy(aimQuat);
+                cam.quaternion.copy(camQuat);
+
+                // FOV: widens through middle, settles at base by end
+                const fovCurve = Math.sin(p * Math.PI); // 0→1→0
+                cam.fov = BASE_FOV + fovCurve * 18;
+                cam.updateProjectionMatrix();
+
+                // Warp streaks for sense of motion (peak in middle)
+                const streakEl = document.getElementById('warp-streaks');
+                if (streakEl) streakEl.style.opacity = fovCurve * 0.55;
+
+                // "Fly through" the title — reuse the hero's #hero-title
+                // element so there's a single continuous "solace" word
+                // from landing page all the way through the intro. It
+                // scales up as the camera accelerates, giving the sense
+                // that the letters are racing past.
+                const titleEl = document.getElementById('hero-title');
+                if (titleEl) {
+                    // Phase 1 (p: 0.00 → 0.08): hold at scale 1 briefly
+                    // Phase 2 (p: 0.08 → 0.30): scale 1 → 8, fade to 0
+                    // Phase 3 (p > 0.30): kill it
+                    if (p < 0.08) {
+                        titleEl.style.opacity = '1';
+                        titleEl.style.transform = 'translate(-50%,-50%) scale(1)';
+                    } else if (p < 0.30) {
+                        const t = (p - 0.08) / 0.22;     // 0 → 1
+                        const scale = 1 + t * 7;          // 1 → 8
+                        // Accelerating fade — holds briefly then drops fast
+                        const alpha = Math.max(0, 1 - t * t * 1.1);
+                        titleEl.style.opacity = alpha.toFixed(3);
+                        titleEl.style.transform = `translate(-50%,-50%) scale(${scale.toFixed(2)})`;
+                    } else {
+                        titleEl.style.opacity = '0';
+                        // Remove once fully invisible so it can't block anything
+                        if (titleEl.parentNode && !titleEl.dataset.removed) {
+                            titleEl.dataset.removed = '1';
+                            setTimeout(() => {
+                                if (titleEl.parentNode) titleEl.parentNode.removeChild(titleEl);
+                            }, 200);
+                        }
+                    }
+                }
+
+                updateHUD();
+                return;
+            }
+        }
+    }
+
     // ── 1w. Warp travel (interstellar journeys) ─────────────────────────────
     if (warpTarget) {
         warpT += dt / warpDuration;
@@ -270,7 +393,7 @@ export function updateFlight(dt, allBodies) {
             const anyMove = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
             if (anyMove) {
                 // Cancel warp — reset FOV, streaks, and vignette
-                cam.fov = 70;
+                cam.fov = BASE_FOV;
                 cam.updateProjectionMatrix();
                 const streakEl = document.getElementById('warp-streaks');
                 if (streakEl) streakEl.style.opacity = 0;
@@ -319,31 +442,35 @@ export function updateFlight(dt, allBodies) {
             cam.quaternion.copy(camQuat);
 
             // Speed feeling: FOV, warp streaks, vignette, and star fade
-            cam.fov = 70 + speedFeeling * 40;
+            cam.fov = BASE_FOV + speedFeeling * 40;
             cam.updateProjectionMatrix();
             const streakEl = document.getElementById('warp-streaks');
             if (streakEl) streakEl.style.opacity = speedFeeling * 1.0;
             const vignetteEl = document.getElementById('warp-vignette');
             if (vignetteEl) vignetteEl.style.opacity = (warpPhase === 'cruising') ? 0.7 : speedFeeling * 0.5;
 
-            // Fade stars to black during warp — creates sense of entering hyperspace
+            // Star fade during warp — keep a faint layer visible so that
+            // camera-relative motion against the near-star field gives a real
+            // sense of moving through space. Full blackness during cruise
+            // made the warp look like a static loading screen.
+            const CRUISE_STAR_OPACITY = 0.22;
             if (warpPhase === 'accelerating') {
-              setStarFieldOpacity(1.0 - speedFeeling); // fade out as we accelerate
+              setStarFieldOpacity(1.0 - speedFeeling * (1.0 - CRUISE_STAR_OPACITY));
             } else if (warpPhase === 'cruising') {
-              setStarFieldOpacity(0); // total darkness during cruise
+              setStarFieldOpacity(CRUISE_STAR_OPACITY);
             } else {
-              setStarFieldOpacity(speedFeeling < 0.3 ? 1.0 - speedFeeling : 0); // stay dark until nearly stopped
+              // Decelerating — fade stars back in as we slow down
+              setStarFieldOpacity(CRUISE_STAR_OPACITY + (1.0 - CRUISE_STAR_OPACITY) * (1.0 - speedFeeling));
             }
 
-            // Arrival notification at 95%
-            if (warpT >= 0.95) {
-                showArrivalNotification(warpTarget.name, warpTarget.desc);
-            }
+            // Arrival notification disabled — the bottom-left info card
+            // (hud.js) already shows the name and description on proximity,
+            // and two cards at once felt like duplicate UI.
 
             // Complete at 100%
             if (warpT >= 1) {
                 camPos.copy(warpTargetP);
-                cam.fov = 70;
+                cam.fov = BASE_FOV;
                 cam.updateProjectionMatrix();
                 if (streakEl) streakEl.style.opacity = 0;
                 if (vignetteEl) vignetteEl.style.opacity = 0;
@@ -397,7 +524,7 @@ export function updateFlight(dt, allBodies) {
 
         // Speed feeling during fly-to — strongest at midpoint
         const flySpeed = Math.sin(flyT * Math.PI); // 0 at start/end, 1 at midpoint
-        cam.fov = 70 + flySpeed * 25;
+        cam.fov = BASE_FOV + flySpeed * 25;
         cam.updateProjectionMatrix();
         const streakEl = document.getElementById('warp-streaks');
         if (streakEl) streakEl.style.opacity = flySpeed * 0.7;
@@ -462,7 +589,7 @@ export function updateFlight(dt, allBodies) {
         velocity.set(0, 0, 0);
         angularVelocity.set(0, 0, 0);
         // Reset FOV and speed lines in orbit mode
-        cam.fov += (70 - cam.fov) * 0.1;
+        cam.fov += (BASE_FOV - cam.fov) * 0.1;
         cam.updateProjectionMatrix();
         const streakEl2 = document.getElementById('warp-streaks');
         if (streakEl2) streakEl2.style.opacity = 0;
@@ -533,11 +660,15 @@ export function updateFlight(dt, allBodies) {
       for (let i = 0; i < allBodies.length; i++) {
         const body = allBodies[i];
         if (!body.g || !body.r) continue;
-        // Skip Sun and small spacecraft for approach speed limiting
-        if (body.name === 'SUN' || body.r < 8) continue;
+        // Skip the Sun — its huge radius would brake us any time we're in the
+        // solar system. Everything else (planets, moons, spacecraft) gets
+        // approach-speed limiting. Small bodies use an inflated effective
+        // radius so the braking zone is meaningful at typical viewing dists.
+        if (body.name === 'SUN') continue;
         const bodyPos = body.g.userData._worldPos || body.g.position;
         const dist = camPos.distanceTo(bodyPos);
-        const angDeg = 2 * Math.atan(body.r / Math.max(dist, 0.001)) * (180 / Math.PI);
+        const effR = Math.max(body.r, MIN_APPROACH_RADIUS);
+        const angDeg = 2 * Math.atan(effR / Math.max(dist, 0.001)) * (180 / Math.PI);
         if (angDeg > angularDeg) {
           angularDeg = angDeg;
           approachBody = body;
@@ -642,8 +773,8 @@ export function updateFlight(dt, allBodies) {
     {
       const spd = velocity.length();
       const speedRatio = Math.min(spd / MAX_BASE_SPEED, 3); // 0-3 range
-      // FOV: 70 at rest, up to 95 at max warp
-      const targetFov = 70 + speedRatio * 8;
+      // FOV: BASE at rest, widen up to +8 at max normal speed (warp adds more)
+      const targetFov = BASE_FOV + speedRatio * 8;
       cam.fov += (targetFov - cam.fov) * 0.05; // smooth lerp
       cam.updateProjectionMatrix();
 
@@ -749,6 +880,110 @@ export function flyTo(bodyName) {
 
 export function isFlyingTo() { return !!flyTarget; }
 
+// ── Cinematic intro ─────────────────────────────────────────────────────
+// Fly in from far outside the Milky Way disk to the home position.
+// Called once at boot; skippable with any input.
+/**
+ * Stage the camera for the intro, optionally paused for a landing page.
+ * @param {{paused?:boolean}} [opts]
+ */
+export function startIntro(opts = {}) {
+  // Start position: well outside the Milky Way disk (~620k units radius),
+  // offset from the galactic center so we see the spiral structure from
+  // above/side. The start is expressed relative to the galactic center so
+  // that even though the Sun is at world origin, the intro frames the
+  // galaxy itself, not the Sun.
+  introFromP.copy(GALACTIC_CENTER).add(new THREE.Vector3(1500000, 700000, 1200000));
+  introFromQ.copy(camQuat);
+  camPos.copy(introFromP);
+
+  // Compose the landing shot: aim a little BELOW the galactic center so
+  // the galaxy floats in the lower half of the frame, leaving a calm
+  // dark area above for the title. Looking-down-at-the-galaxy vibe.
+  introInitialLookAt.copy(GALACTIC_CENTER).add(
+    new THREE.Vector3(0, -350000, 0)
+  );
+  _lookMat.lookAt(camPos, introInitialLookAt, _upVec);
+  camQuat.setFromRotationMatrix(_lookMat);
+  if (cam) cam.quaternion.copy(camQuat);
+
+  introT = 0;
+  introActive = true;
+  introPaused = !!opts.paused;
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+
+  // Fade skybox hard — we're outside the galaxy, an inside-view starmap
+  // wrapping the camera would drown out the 3D Milky Way. Also reset the
+  // 3D galaxy to full opacity in case a previous run faded it.
+  setSkyboxOpacity(0.05);
+  setMilkyWayOpacity(1.0);
+
+  // Hide HUD (carousel etc.) — it reappears at the end of the cinematic
+  const hudEl = document.getElementById('hud');
+  if (hudEl) {
+    hudEl.style.transition = 'opacity 1.2s';
+    hudEl.style.opacity = '0';
+  }
+
+  // The floating in-world title card is only used when the intro plays
+  // without a landing page (e.g. if startIntro is called without paused).
+  if (!introPaused) {
+    showIntroTitleCard();
+  }
+}
+
+/**
+ * Unpause a paused intro (called when the hero page is dismissed).
+ * The existing #hero-title element carries over into the intro — no
+ * separate in-world title is created. It gets scaled + faded during
+ * the fly-through so the user literally floats through the word.
+ */
+export function beginIntroAnimation() {
+  if (!introActive) return;
+  introPaused = false;
+  // Kill the CSS opacity transition on the hero title — during the
+  // fly-through we update opacity every frame and any CSS transition
+  // lag would desync it from the camera's acceleration.
+  const titleEl = document.getElementById('hero-title');
+  if (titleEl) titleEl.style.transition = 'none';
+}
+
+function endIntro() {
+  introActive = false;
+  // Snap cleanly to home
+  camPos.copy(homePos);
+  camQuat.copy(homeQuat);
+  if (cam) {
+    cam.quaternion.copy(camQuat);
+    cam.fov = BASE_FOV;
+    cam.updateProjectionMatrix();
+  }
+  // Now that we're inside the Milky Way, the equirectangular starmap is
+  // the correct "view from Earth" Milky Way band. Restore skybox fully and
+  // hide the 3D particle galaxy — it was a prop for the outside-view
+  // intro, not meant to be seen from within the solar system.
+  setSkyboxOpacity(0.9);
+  setMilkyWayOpacity(0.0);
+  const streakEl = document.getElementById('warp-streaks');
+  if (streakEl) streakEl.style.opacity = 0;
+  const titleEl = document.getElementById('intro-title');
+  if (titleEl) {
+    titleEl.style.opacity = '0';
+    setTimeout(() => { if (titleEl.parentNode) titleEl.parentNode.removeChild(titleEl); }, 1500);
+  }
+  // Fade HUD back in
+  const hudEl = document.getElementById('hud');
+  if (hudEl) {
+    hudEl.style.transition = 'opacity 1.2s';
+    hudEl.style.opacity = '1';
+  }
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+}
+
+export function isIntroPlaying() { return introActive; }
+
 // ── Arrival notification ────────────────────────────────────────────────
 
 function showArrivalNotification(name, desc) {
@@ -790,10 +1025,15 @@ export function warpTo(targetName) {
   warpFromP.copy(camPos);
   warpFromQ.copy(camQuat);
 
-  // Compute target position: arrive close to the landmark center
-  // For voids, arrive at center. For everything else, offset by radius * 0.5 so you're inside.
+  // Compute target position: arrive close to the landmark center.
+  // For voids, arrive offset from center (not dead-center) so the player
+  // sees the near shell wall behind them and looks across the void at the
+  // far wall — gives depth and scale. For everything else, stop short so
+  // the object frames nicely.
   const approachDir = new THREE.Vector3().copy(landmark.pos).sub(camPos).normalize();
-  const arrivalOffset = landmark.visualType === 'void' ? 0 : landmark.radius * 0.5;
+  const arrivalOffset = landmark.visualType === 'void'
+    ? landmark.radius * 1.0   // inside the void, ~halfway between near wall and center
+    : landmark.radius * 0.5;
   warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -arrivalOffset);
 
   // Duration: 15-30 seconds based on distance

@@ -185,11 +185,11 @@ function tryLoad(loader, key, paths) {
       }
 
       const path = paths[idx];
-      // Timeout per attempt — 10 seconds max
+      // Timeout per attempt — 30 seconds max
       const timeout = setTimeout(() => {
         idx++;
         attempt();
-      }, 10000);
+      }, 30000);
 
       loader.load(
         path,
@@ -209,8 +209,8 @@ function tryLoad(loader, key, paths) {
       );
     }
 
-    // Global timeout — 15 seconds total per texture
-    setTimeout(fallback, 15000);
+    // Global timeout — 45 seconds total per texture
+    setTimeout(fallback, 45000);
     attempt();
   });
 }

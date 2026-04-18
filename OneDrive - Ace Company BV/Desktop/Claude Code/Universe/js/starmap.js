@@ -1,381 +1,337 @@
-// js/starmap.js — 3D Star Map overlay
-// Press M to toggle. Click a landmark to warp (fly-to) there.
+// js/starmap.js — Navigation catalog overlay (replaces the old 3D map)
+//
+// A clean, browseable, sectioned list of every destination in the
+// universe. No spatial rendering, no overlapping labels — just a
+// scannable catalog with names, short descriptions, and distances.
+// Sections: Start Here → Planets → Moons → Spacecraft → Landmarks.
+// Designed for the "chill Solace" aesthetic: quiet, readable, calm.
 
-import * as THREE from 'three';
-import { getLandmarks } from './deepspace.js';
+import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
+import { getBodies } from './bodies.js';
 import { warpTo, flyTo } from './flight.js';
+import { AU } from './constants.js';
 
-// ── State ────────────────────────────────────────────────────────────────
-let mapActive = false;
-let container = null;
-let mapCanvas = null;
-let mapScene = null;
-let mapCamera = null;
-let mapRenderer = null;
-let raycaster = null;
-let mouse = new THREE.Vector2();
+// ── Destination metadata ────────────────────────────────────────────────
+// Body colors and one-line descriptions for the catalog. Anything not
+// listed here falls back to a grey dot and the body's own description.
+const BODY_META = {
+  SUN:      { color: '#ffdd66', desc: 'our star — where all this begins' },
+  MERCURY:  { color: '#b0a090', desc: 'the smallest planet, scarred by craters' },
+  VENUS:    { color: '#d9b56a', desc: 'shrouded in permanent clouds' },
+  EARTH:    { color: '#4a9cff', desc: 'our pale blue dot' },
+  MOON:     { color: '#cccccc', desc: 'earth\u2019s tidally-locked companion' },
+  MARS:     { color: '#c15a3b', desc: 'the red planet' },
+  JUPITER:  { color: '#d9a566', desc: 'gas giant king of the solar system' },
+  SATURN:   { color: '#e8cc88', desc: 'crowned by an icy ring system' },
+  URANUS:   { color: '#88cce0', desc: 'tilted on its side — an ice giant' },
+  NEPTUNE:  { color: '#4466d0', desc: 'the farthest ice giant, wind-torn' },
+  PLUTO:    { color: '#b0a090', desc: 'distant dwarf, heart of ice' },
+  CERES:    { color: '#888888', desc: 'largest body in the asteroid belt' },
+  ERIS:     { color: '#ccddee', desc: 'icy dwarf planet at the edge' },
+};
 
-// Orbit controls state
-let orbitAngle = 0;
-let orbitElevation = 0.6;
-let orbitDist = 80;
-let isDragging = false;
-let dragStartX = 0;
-let dragStartY = 0;
-let dragStartAngle = 0;
-let dragStartElev = 0;
+const CRAFT_NAMES = new Set(['ISS','HUBBLE','JWST','NEW HORIZONS','VOYAGER 1','VOYAGER 2']);
+const MOON_NAMES = new Set([
+  'MOON','PHOBOS','DEIMOS','IO','EUROPA','GANYMEDE','CALLISTO',
+  'TITAN','ENCELADUS','MIMAS','TITANIA','OBERON','TRITON',
+]);
 
-// Sprite references for raycasting
-let landmarkSprites = [];
-let labelDivs = [];
-let solSprite = null;
+const CRAFT_META = {
+  'VOYAGER 1':    { color: '#ffeedd', desc: 'humanity\u2019s furthest emissary, 1977' },
+  'VOYAGER 2':    { color: '#ffeedd', desc: 'only spacecraft to visit all four gas giants' },
+  'NEW HORIZONS': { color: '#ddddff', desc: 'first visit to pluto, 2015' },
+  'JWST':         { color: '#ffdd66', desc: 'infrared eye on the early universe' },
+  'HUBBLE':       { color: '#ccddff', desc: 'deep-field pioneer, since 1990' },
+  'ISS':          { color: '#ffffff', desc: 'our home in low earth orbit' },
+};
 
-// Dot texture for sprites
-let dotTexture = null;
+// "Start Here" picks — a curated handful for first-time users
+const START_HERE = ['EARTH', 'SUN', 'SATURN', 'JUPITER'];
 
-// ── Dot texture (32px radial gradient) ───────────────────────────────────
-function getDotTexture() {
-  if (dotTexture) return dotTexture;
-  const sz = 32;
-  const cv = document.createElement('canvas');
-  cv.width = sz; cv.height = sz;
-  const ctx = cv.getContext('2d');
-  const grd = ctx.createRadialGradient(sz / 2, sz / 2, 0, sz / 2, sz / 2, sz / 2);
-  grd.addColorStop(0, 'rgba(255,255,255,1)');
-  grd.addColorStop(0.3, 'rgba(255,255,255,0.6)');
-  grd.addColorStop(0.7, 'rgba(255,255,255,0.15)');
-  grd.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = grd;
-  ctx.fillRect(0, 0, sz, sz);
-  dotTexture = new THREE.CanvasTexture(cv);
-  return dotTexture;
-}
+// ── State ─────────────────────────────────────────────────────────────
+let overlayEl = null;
+let listEl = null;
+let active = false;
 
-// ── initStarMap ──────────────────────────────────────────────────────────
+// ── Init ──────────────────────────────────────────────────────────────
 export function initStarMap() {
-  // Create overlay container
-  container = document.createElement('div');
-  container.id = 'star-map';
-  container.style.cssText = `
-    position: fixed; inset: 0; z-index: 60;
-    background: rgba(0,0,0,0.85);
-    display: none;
+  // The catalog lives in a left-side drawer (not a full-screen overlay)
+  // so the scene stays visible behind it. Slides in/out from the edge.
+  overlayEl = document.createElement('div');
+  overlayEl.id = 'catalog';
+  overlayEl.style.cssText = `
+    position: fixed;
+    top: 0; bottom: 0;
+    left: 0;
+    width: 420px;
+    max-width: 90vw;
+    z-index: 68;
+    background: rgba(8,10,18,0.88);
+    backdrop-filter: blur(14px);
+    -webkit-backdrop-filter: blur(14px);
+    border-right: 1px solid rgba(160,200,255,0.15);
+    box-shadow: 4px 0 40px rgba(0,0,0,0.55);
+    display: flex;
     flex-direction: column;
-    align-items: center;
-    justify-content: center;
+    overflow: hidden;
+    font-family: 'Segoe UI','Helvetica Neue',Arial,sans-serif;
+    font-weight: 300;
+    color: rgba(255,255,255,0.94);
+    transform: translateX(-100%);
+    transition: transform 0.42s cubic-bezier(0.22, 0.8, 0.3, 1);
   `;
 
-  // Title
-  const title = document.createElement('div');
-  title.textContent = 'STAR MAP';
-  title.style.cssText = `
-    position: absolute; top: 28px; left: 0; right: 0;
-    text-align: center;
-    font-variant: small-caps;
-    font-size: 22px;
-    letter-spacing: 6px;
-    color: #6aafff;
-    font-family: monospace;
-    pointer-events: none;
-    z-index: 2;
+  // Header (fixed at top of drawer)
+  const header = document.createElement('div');
+  header.style.cssText = `
+    flex-shrink: 0;
+    padding: 26px 28px 18px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    position: relative;
   `;
-  container.appendChild(title);
-
-  // Hint at bottom
-  const hint = document.createElement('div');
-  hint.textContent = 'PRESS M TO CLOSE \u00B7 CLICK DESTINATION TO WARP';
-  hint.style.cssText = `
-    position: absolute; bottom: 28px; left: 0; right: 0;
-    text-align: center;
-    font-size: 12px;
-    letter-spacing: 3px;
-    color: rgba(120,180,255,0.5);
-    font-family: monospace;
-    pointer-events: none;
-    z-index: 2;
+  header.innerHTML = `
+    <div style="font-size:11px;letter-spacing:7px;color:rgba(200,220,255,0.75);
+         text-shadow:0 1px 6px rgba(0,0,0,0.9)">destinations</div>
+    <div style="font-size:9px;letter-spacing:3px;margin-top:6px;
+         color:rgba(255,255,255,0.35)">press esc to close</div>
   `;
-  container.appendChild(hint);
+  // Close button (X) in the header
+  const closeBtn = document.createElement('div');
+  closeBtn.innerHTML = '&times;';
+  closeBtn.style.cssText = `
+    position: absolute; top: 22px; right: 22px;
+    width: 28px; height: 28px;
+    display: flex; align-items: center; justify-content: center;
+    font-size: 22px; line-height: 1;
+    color: rgba(255,255,255,0.45);
+    cursor: pointer;
+    transition: color 0.2s;
+    border-radius: 50%;
+  `;
+  closeBtn.addEventListener('mouseenter', () => {
+    closeBtn.style.color = 'rgba(255,255,255,0.95)';
+    closeBtn.style.background = 'rgba(255,255,255,0.06)';
+  });
+  closeBtn.addEventListener('mouseleave', () => {
+    closeBtn.style.color = 'rgba(255,255,255,0.45)';
+    closeBtn.style.background = 'transparent';
+  });
+  closeBtn.addEventListener('click', () => toggleStarMap());
+  header.appendChild(closeBtn);
+  overlayEl.appendChild(header);
 
-  // Canvas for the mini Three.js scene
-  mapCanvas = document.createElement('canvas');
-  mapCanvas.style.cssText = 'width:100%; height:100%; display:block;';
-  container.appendChild(mapCanvas);
+  // Scrollable list body
+  const scrollWrap = document.createElement('div');
+  scrollWrap.style.cssText = `
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 16px 20px 60px;
+  `;
+  // Custom scrollbar styling (webkit only, but gracefully no-ops elsewhere)
+  scrollWrap.style.scrollbarWidth = 'thin';
+  scrollWrap.style.scrollbarColor = 'rgba(160,200,255,0.25) transparent';
 
-  document.body.appendChild(container);
+  listEl = document.createElement('div');
+  scrollWrap.appendChild(listEl);
+  overlayEl.appendChild(scrollWrap);
 
-  // Mini Three.js scene
-  mapScene = new THREE.Scene();
-  mapCamera = new THREE.PerspectiveCamera(60, window.innerWidth / window.innerHeight, 0.1, 500);
-  mapRenderer = new THREE.WebGLRenderer({ canvas: mapCanvas, alpha: true, antialias: true });
-  mapRenderer.setPixelRatio(Math.min(window.devicePixelRatio, 2));
-  mapRenderer.setSize(window.innerWidth, window.innerHeight);
+  document.body.appendChild(overlayEl);
 
-  raycaster = new THREE.Raycaster();
-  raycaster.params.Points = { threshold: 1.5 };
-
-  // ── Event wiring ───────────────────────────────────────────────────────
-
-  // M key to toggle
+  // Keyboard: M toggles, Escape closes
   window.addEventListener('keydown', (e) => {
     if (e.code === 'KeyM') {
       e.preventDefault();
       e.stopPropagation();
       toggleStarMap();
-    }
-  });
-
-  // Mouse drag for orbiting
-  container.addEventListener('mousedown', (e) => {
-    if (e.button === 0) {
-      isDragging = true;
-      dragStartX = e.clientX;
-      dragStartY = e.clientY;
-      dragStartAngle = orbitAngle;
-      dragStartElev = orbitElevation;
-    }
-  });
-
-  window.addEventListener('mousemove', (e) => {
-    if (!isDragging || !mapActive) return;
-    const dx = e.clientX - dragStartX;
-    const dy = e.clientY - dragStartY;
-    orbitAngle = dragStartAngle - dx * 0.008;
-    orbitElevation = Math.max(-1.2, Math.min(1.2, dragStartElev + dy * 0.008));
-  });
-
-  window.addEventListener('mouseup', () => {
-    isDragging = false;
-  });
-
-  // Mouse wheel for zoom
-  container.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    orbitDist = Math.max(20, Math.min(200, orbitDist + e.deltaY * 0.05));
-  }, { passive: false });
-
-  // Click to warp
-  container.addEventListener('click', (e) => {
-    if (isDragging) return;
-    onMapClick(e);
-  });
-
-  // Actually detect whether a click was a drag vs. a real click
-  let clickStartX = 0, clickStartY = 0;
-  container.addEventListener('mousedown', (e) => {
-    clickStartX = e.clientX;
-    clickStartY = e.clientY;
-  });
-  container.addEventListener('mouseup', (e) => {
-    const dx = e.clientX - clickStartX;
-    const dy = e.clientY - clickStartY;
-    if (Math.abs(dx) + Math.abs(dy) < 5) {
-      onMapClick(e);
-    }
-  });
-
-  // Resize
-  window.addEventListener('resize', () => {
-    if (!mapActive) return;
-    mapCamera.aspect = window.innerWidth / window.innerHeight;
-    mapCamera.updateProjectionMatrix();
-    mapRenderer.setSize(window.innerWidth, window.innerHeight);
-  });
-}
-
-// ── buildMap ─────────────────────────────────────────────────────────────
-function buildMap() {
-  // Clear previous
-  while (mapScene.children.length > 0) {
-    mapScene.remove(mapScene.children[0]);
-  }
-  landmarkSprites = [];
-
-  // Remove old label divs
-  for (const lbl of labelDivs) {
-    if (lbl.parentNode) lbl.parentNode.removeChild(lbl);
-  }
-  labelDivs = [];
-
-  const landmarks = getLandmarks();
-  if (!landmarks || landmarks.length === 0) return;
-
-  // Find the range of positions to normalize
-  let maxDist = 0;
-  for (const lm of landmarks) {
-    const d = lm.pos.length();
-    if (d > maxDist) maxDist = d;
-  }
-  const scale = maxDist > 0 ? 40 / maxDist : 1;
-
-  // Ambient light
-  mapScene.add(new THREE.AmbientLight(0x334466, 1));
-
-  // Sol at center (yellow sprite)
-  const solMat = new THREE.SpriteMaterial({
-    map: getDotTexture(),
-    color: 0xffdd44,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    depthWrite: false,
-  });
-  solSprite = new THREE.Sprite(solMat);
-  solSprite.scale.set(2, 2, 1);
-  solSprite.userData._landmarkName = 'SOL';
-  mapScene.add(solSprite);
-  landmarkSprites.push(solSprite);
-
-  // Sol label
-  addLabel('SOL', new THREE.Vector3(0, 0, 0), '#ffdd44');
-
-  // Each landmark
-  for (const lm of landmarks) {
-    const pos = lm.pos.clone().multiplyScalar(scale);
-
-    // Determine sprite color
-    const isIntergalactic = lm.tier === 'intergalactic';
-    const color = isIntergalactic ? 0xaaddff : 0x5588cc;
-
-    const spriteMat = new THREE.SpriteMaterial({
-      map: getDotTexture(),
-      color: color,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      depthWrite: false,
-    });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.scale.set(isIntergalactic ? 1.5 : 1.0, isIntergalactic ? 1.5 : 1.0, 1);
-    sprite.position.copy(pos);
-    sprite.userData._landmarkName = lm.name;
-    mapScene.add(sprite);
-    landmarkSprites.push(sprite);
-
-    // Faint connection line to center
-    const lineGeo = new THREE.BufferGeometry().setFromPoints([
-      new THREE.Vector3(0, 0, 0),
-      pos,
-    ]);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: isIntergalactic ? 0x334466 : 0x223344,
-      transparent: true,
-      opacity: 0.25,
-    });
-    const line = new THREE.Line(lineGeo, lineMat);
-    mapScene.add(line);
-
-    // HTML label
-    addLabel(lm.name, pos, isIntergalactic ? '#aaddff' : '#5588cc');
-  }
-}
-
-function addLabel(text, pos3D, color) {
-  const lbl = document.createElement('div');
-  lbl.textContent = text;
-  lbl.style.cssText = `
-    position: absolute;
-    color: ${color};
-    font-family: monospace;
-    font-size: 10px;
-    letter-spacing: 1px;
-    pointer-events: none;
-    white-space: nowrap;
-    text-shadow: 0 0 6px rgba(50,100,200,0.5);
-    z-index: 3;
-    transition: opacity 0.15s;
-  `;
-  lbl.dataset.x = pos3D.x;
-  lbl.dataset.y = pos3D.y;
-  lbl.dataset.z = pos3D.z;
-  container.appendChild(lbl);
-  labelDivs.push(lbl);
-}
-
-// ── onMapClick ───────────────────────────────────────────────────────────
-function onMapClick(e) {
-  if (!mapActive) return;
-
-  const rect = mapCanvas.getBoundingClientRect();
-  mouse.x = ((e.clientX - rect.left) / rect.width) * 2 - 1;
-  mouse.y = -((e.clientY - rect.top) / rect.height) * 2 + 1;
-
-  raycaster.setFromCamera(mouse, mapCamera);
-  const intersects = raycaster.intersectObjects(landmarkSprites, false);
-
-  if (intersects.length > 0) {
-    const hit = intersects[0].object;
-    const name = hit.userData._landmarkName;
-    if (name) {
-      // Close the map
+    } else if (e.code === 'Escape' && active) {
+      e.preventDefault();
       toggleStarMap();
-      // Warp to the destination
-      if (name === 'SOL') {
-        flyTo('SUN');
-      } else {
-        warpTo(name);
-      }
     }
-  }
+  });
 }
 
-// ── updateStarMap ────────────────────────────────────────────────────────
-export function updateStarMap() {
-  if (!mapActive) return;
+// ── Building the list ─────────────────────────────────────────────────
+function buildList() {
+  listEl.innerHTML = '';
 
-  // Update camera position from orbit params
-  const cx = orbitDist * Math.cos(orbitElevation) * Math.cos(orbitAngle);
-  const cy = orbitDist * Math.sin(orbitElevation);
-  const cz = orbitDist * Math.cos(orbitElevation) * Math.sin(orbitAngle);
-  mapCamera.position.set(cx, cy, cz);
-  mapCamera.lookAt(0, 0, 0);
+  const bodies = getBodies();
+  const landmarks = getLandmarks();
+  const byName = {};
+  for (const b of bodies) byName[b.name] = b;
 
-  // Update label positions via 3D projection
-  const w = window.innerWidth;
-  const h = window.innerHeight;
-  for (const lbl of labelDivs) {
-    const pos = new THREE.Vector3(
-      parseFloat(lbl.dataset.x),
-      parseFloat(lbl.dataset.y),
-      parseFloat(lbl.dataset.z)
-    );
-    pos.project(mapCamera);
+  // ── Start Here ──
+  addSection('★ start here', START_HERE.map(n => byName[n]).filter(Boolean), { featured: true });
 
-    // Check if behind camera
-    if (pos.z > 1) {
-      lbl.style.opacity = '0';
-      continue;
-    }
+  // ── Planets (+ Sun up top, explicit order) ──
+  const planetOrder = ['SUN','MERCURY','VENUS','EARTH','MARS','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO'];
+  addSection('planets', planetOrder.map(n => byName[n]).filter(Boolean));
 
-    const sx = (pos.x * 0.5 + 0.5) * w;
-    const sy = (-pos.y * 0.5 + 0.5) * h;
-    lbl.style.left = sx + 'px';
-    lbl.style.top = (sy - 14) + 'px';
-    lbl.style.opacity = '1';
-  }
+  // ── Dwarf planets ──
+  const dwarfs = ['CERES','ERIS'].map(n => byName[n]).filter(Boolean);
+  if (dwarfs.length) addSection('dwarf planets', dwarfs);
 
-  // Render
-  mapRenderer.render(mapScene, mapCamera);
+  // ── Moons ──
+  const moons = bodies.filter(b => MOON_NAMES.has(b.name));
+  if (moons.length) addSection('moons', moons);
+
+  // ── Spacecraft ──
+  const craft = bodies.filter(b => CRAFT_NAMES.has(b.name));
+  if (craft.length) addSection('spacecraft', craft);
+
+  // ── Stellar landmarks (nebulae, stars, magnetars) ──
+  const stellar = landmarks.filter(l => l.tier === 'interstellar');
+  if (stellar.length) addSection('nebulae & stars', stellar, { isLandmark: true });
+
+  // ── Galactic landmarks (galaxies, voids, supermassive BHs) ──
+  const galactic = landmarks.filter(l => l.tier === 'intergalactic');
+  if (galactic.length) addSection('galaxies & voids', galactic, { isLandmark: true });
 }
 
-// ── toggleStarMap ────────────────────────────────────────────────────────
-export function toggleStarMap() {
-  mapActive = !mapActive;
-  if (mapActive) {
-    container.style.display = 'flex';
-    // Resize renderer in case window changed
-    mapCamera.aspect = window.innerWidth / window.innerHeight;
-    mapCamera.updateProjectionMatrix();
-    mapRenderer.setSize(window.innerWidth, window.innerHeight);
-    buildMap();
+function addSection(title, items, opts = {}) {
+  if (!items || items.length === 0) return;
+
+  const section = document.createElement('div');
+  section.style.cssText = 'margin: 38px 0 10px;';
+
+  const titleEl = document.createElement('div');
+  titleEl.textContent = title;
+  titleEl.style.cssText = `
+    font-size: 10px; letter-spacing: 5px;
+    color: ${opts.featured ? 'rgba(255,220,120,0.7)' : 'rgba(160,200,255,0.55)'};
+    padding-bottom: 14px; margin-bottom: 6px;
+    border-bottom: 1px solid rgba(255,255,255,0.06);
+    text-shadow: 0 1px 4px rgba(0,0,0,0.9);
+  `;
+  section.appendChild(titleEl);
+
+  for (const item of items) {
+    section.appendChild(buildRow(item, opts));
+  }
+
+  listEl.appendChild(section);
+}
+
+function buildRow(item, opts = {}) {
+  const isLandmark = !!opts.isLandmark || !!item.isLandmark;
+  const name = item.name;
+
+  // Friendly name: "Voyager 1" not "VOYAGER 1"
+  const nice = name.split(' ').map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(' ');
+
+  // Pick color + description from our metadata, then fall back
+  let color = '#9bb8dd';
+  let desc = item.desc || '';
+  if (BODY_META[name]) { color = BODY_META[name].color; desc = BODY_META[name].desc; }
+  else if (CRAFT_META[name]) { color = CRAFT_META[name].color; desc = CRAFT_META[name].desc; }
+  else if (isLandmark) { color = item.tier === 'intergalactic' ? '#b0d4ff' : '#7a9fc8'; }
+  // Trim long landmark descriptions to one line's worth
+  if (desc && desc.length > 90) desc = desc.slice(0, 87).replace(/\s+\S*$/, '') + '…';
+
+  const row = document.createElement('div');
+  row.style.cssText = `
+    display: flex; align-items: center; gap: 18px;
+    padding: 14px 14px;
+    cursor: pointer;
+    border-radius: 2px;
+    transition: background 0.15s, padding-left 0.15s;
+  `;
+  row.addEventListener('mouseenter', () => {
+    row.style.background = 'rgba(120,180,255,0.08)';
+    row.style.paddingLeft = '22px';
+  });
+  row.addEventListener('mouseleave', () => {
+    row.style.background = 'transparent';
+    row.style.paddingLeft = '14px';
+  });
+  row.addEventListener('click', () => onSelect(item, isLandmark));
+
+  // Colored dot (glowing)
+  const dot = document.createElement('div');
+  dot.style.cssText = `
+    width: 12px; height: 12px; border-radius: 50%;
+    background: ${color};
+    box-shadow: 0 0 14px ${color}, 0 0 4px ${color};
+    flex-shrink: 0;
+  `;
+  row.appendChild(dot);
+
+  // Name + description
+  const info = document.createElement('div');
+  info.style.cssText = 'flex: 1; min-width: 0;';
+  info.innerHTML = `
+    <div style="font-size:15px;letter-spacing:3px;color:rgba(255,255,255,0.94);
+         text-shadow:0 1px 3px rgba(0,0,0,0.9)">${nice.toLowerCase()}</div>
+    ${desc ? `<div style="font-size:10px;letter-spacing:1.5px;margin-top:4px;
+         color:rgba(200,220,255,0.42);overflow:hidden;text-overflow:ellipsis;
+         white-space:nowrap">${desc}</div>` : ''}
+  `;
+  row.appendChild(info);
+
+  // Distance (computed live when the catalog opens — good enough)
+  const distEl = document.createElement('div');
+  distEl.style.cssText = `
+    font-size: 10px; letter-spacing: 2px;
+    color: rgba(160,200,255,0.55);
+    white-space: nowrap; flex-shrink: 0;
+  `;
+  distEl.textContent = formatDistance(item);
+  row.appendChild(distEl);
+
+  return row;
+}
+
+function formatDistance(item) {
+  // Get the body's world position
+  let pos;
+  if (item.g) {
+    pos = item.g.userData?._worldPos || item.g.position;
+  } else if (item.pos) {
+    pos = item.pos;
   } else {
-    container.style.display = 'none';
-    // Clean up labels when closing
-    for (const lbl of labelDivs) {
-      if (lbl.parentNode) lbl.parentNode.removeChild(lbl);
-    }
-    labelDivs = [];
+    return '';
+  }
+  const auDist = pos.length() / AU;
+  if (auDist < 0.01) return Math.round(pos.length() * 50) + ' K km';
+  if (auDist < 1) return auDist.toFixed(2) + ' AU';
+  if (auDist < 1000) return auDist.toFixed(auDist < 10 ? 1 : 0) + ' AU';
+  const ly = auDist / 63241;
+  if (ly < 1000) return ly.toFixed(ly < 10 ? 1 : 0) + ' LY';
+  return (ly / 1e6).toFixed(1) + ' MLY';
+}
+
+function onSelect(item, isLandmark) {
+  toggleStarMap(); // close
+  if (isLandmark || item.isLandmark) {
+    warpTo(item.name);
+  } else {
+    flyTo(item.name);
   }
 }
 
-// ── isStarMapOpen ────────────────────────────────────────────────────────
-export function isStarMapOpen() {
-  return mapActive;
+// ── Toggle / state ────────────────────────────────────────────────────
+export function toggleStarMap() {
+  active = !active;
+  if (active) {
+    buildList();
+    // Slide in from the left edge
+    requestAnimationFrame(() => {
+      overlayEl.style.transform = 'translateX(0)';
+    });
+    // Hide the tab label while open (the drawer replaces its purpose)
+    const tab = document.getElementById('nav-rail-tab');
+    if (tab) tab.style.opacity = '0';
+  } else {
+    overlayEl.style.transform = 'translateX(-100%)';
+    const tab = document.getElementById('nav-rail-tab');
+    if (tab) tab.style.opacity = '1';
+  }
 }
+
+export function isStarMapOpen() {
+  return active;
+}
+
+// Star map no longer renders a 3D scene, but main.js still calls this
+// each frame. Keep a no-op for API compatibility.
+export function updateStarMap() {}
