@@ -60,11 +60,19 @@ export function setActivePlanet(name) {
   }
 }
 
+function addSectionLabel(text) {
+  const label = document.createElement('div');
+  label.className = 'pb-section';
+  label.textContent = text;
+  barContainer.appendChild(label);
+}
+
 function createBar(allBodies) {
   barContainer = document.getElementById('planet-bar');
   if (!barContainer) return;
 
-  // Planets
+  // ── Planets section ──
+  addSectionLabel('PLANETS');
   for (let i = 0; i < PLANET_ORDER.length; i++) {
     const name = PLANET_ORDER[i];
     const body = allBodies.find(b => b.name === name);
@@ -79,13 +87,8 @@ function createBar(allBodies) {
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
   }
 
-  // Divider
-  const divider = document.createElement('div');
-  divider.className = 'pb-divider';
-  divider.textContent = '|';
-  barContainer.appendChild(divider);
-
-  // Spacecraft
+  // ── Spacecraft section ──
+  addSectionLabel('CRAFT');
   for (let i = 0; i < SPACECRAFT_ORDER.length; i++) {
     const name = SPACECRAFT_ORDER[i];
     const body = allBodies.find(b => b.name === name);
@@ -100,13 +103,8 @@ function createBar(allBodies) {
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
   }
 
-  // Divider before landmarks
-  const divider2 = document.createElement('div');
-  divider2.className = 'pb-divider';
-  divider2.textContent = '|';
-  barContainer.appendChild(divider2);
-
-  // Landmarks
+  // ── Landmarks section ──
+  addSectionLabel('LANDMARKS');
   const landmarks = getDeepSpaceObjects().filter(o => o.isLandmark);
   for (const lm of landmarks) {
     const el = document.createElement('div');

@@ -81,12 +81,17 @@ export function updateHud(camPos, speed, allBodies) {
 
   if (!nb) return;
 
-  /* 3. Rich info card — only shows after user selects a planet --------- */
+  /* 3. Rich info card — shows on proximity for any body. Falls back to
+     the body's own short description for landmarks that don't have a
+     detailed planetConfig entry, so every destination gets a card. */
   const config = getPlanetConfig(nb.name);
-  const hasSelection = getActivePlanet() !== null;
+  const info = (config && config.info) ? config.info : {
+    type: nb.isLandmark ? 'DEEP SPACE' : '',
+    facts: [],
+    lore: nb.desc || '',
+  };
 
-  if (infoCard && config && config.info && hasSelection) {
-    // Compute angular size of the selected body (not the approach-speed body)
+  if (infoCard) {
     const bPos = nb.g.userData._worldPos || nb.g.position;
     const bDist = camPos.distanceTo(bPos);
     const ang = 2 * Math.atan(nb.r / Math.max(bDist, 0.001)) * (180 / Math.PI);
@@ -97,23 +102,23 @@ export function updateHud(camPos, speed, allBodies) {
       const fadeT = Math.min(1, (ang - 2) / 8);
       infoCard.style.opacity = fadeT;
 
-      // Name appears first — large and dramatic
+      // Name appears first
       if (infoCardName) infoCardName.textContent = nb.name;
 
-      // Type appears next
+      // Type
       if (infoCardType) {
-        infoCardType.textContent = config.info.type || '';
-        infoCardType.style.opacity = ang > 3 ? Math.min(1, (ang - 3) / 3) : 0;
+        infoCardType.textContent = info.type || '';
+        infoCardType.style.opacity = (info.type && ang > 3) ? Math.min(1, (ang - 3) / 3) : 0;
       }
 
-      // Divider line
+      // Divider
       if (infoCardLine) {
         infoCardLine.style.opacity = ang > 4 ? Math.min(1, (ang - 4) / 2) : 0;
       }
 
-      // Facts reveal one at a time
+      // Facts (may be empty for landmarks)
       if (infoCardFacts) {
-        const facts = config.info.facts || [];
+        const facts = info.facts || [];
         infoCardFacts.innerHTML = '';
         const visibleFacts = ang > 5 ? Math.min(facts.length, Math.floor((ang - 5) / 2) + 1) : 0;
         for (let i = 0; i < visibleFacts; i++) {
@@ -124,17 +129,19 @@ export function updateHud(camPos, speed, allBodies) {
         infoCardFacts.style.opacity = visibleFacts > 0 ? 1 : 0;
       }
 
-      // Lore appears last — the emotional payoff
+      // Lore / description
       if (infoCardLore) {
-        infoCardLore.textContent = config.info.lore || '';
-        infoCardLore.style.opacity = ang > 10 ? Math.min(1, (ang - 10) / 5) : 0;
+        infoCardLore.textContent = info.lore || '';
+        // Show lore earlier for landmarks (since they have no facts to
+        // gate it behind) — at ang > 4 instead of 10.
+        const loreThreshold = (info.facts && info.facts.length > 0) ? 10 : 4;
+        infoCardLore.style.opacity = ang > loreThreshold
+          ? Math.min(1, (ang - loreThreshold) / 5) : 0;
       }
     } else {
       infoCard.style.opacity = 0;
       if (ang < 1) infoCard.style.display = 'none';
     }
-  } else if (infoCard) {
-    infoCard.style.display = 'none';
   }
 
   /* 5. Legacy info panel (short desc) ---------------------------------- */

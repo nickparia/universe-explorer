@@ -346,74 +346,131 @@ export function createSombreroGalaxy(group, def) {
 
 // ═══════════════════════════════════════════════════════════════════════
 // 4. Bootes Void
+// ───────────────────────────────────────────────────────────────────────
+// The real Bootes Void is a 330 Mly-wide underdense region. The sense we
+// want the player to feel is: "I'm inside a bubble of emptiness with a
+// distant wall of galaxies surrounding me." Previously this rendered as
+// one thin shell of grey points + a handful of near-invisible sprites.
+// The redesign:
+//   • Three nested shells at different radii → the boundary reads as a
+//     thick wall with depth when the player turns their head.
+//   • Shell galaxies are actual colored sprites (warm core, cool arm
+//     tinting, varied scale) rather than uniform points, so they look
+//     like galaxies and not a particle cloud.
+//   • A very sparse set of faint galaxies drifts inside the void —
+//     enough to give parallax reference without filling the space.
+//   • A large dim inner glow sphere subtly darkens the interior,
+//     reinforcing the "emptiness" mood without going fully black.
 // ═══════════════════════════════════════════════════════════════════════
 export function createBootesVoid(group, def) {
   const scale = def.size * 3000;
   const tex = getGlowTex();
 
-  // 1. Scattered galaxy sprites inside the void (very faint) — 60 total
-  for (let i = 0; i < 60; i++) {
-    // Random position inside the void sphere
-    const r = Math.random() * scale * 0.35;
+  const shellOuter = scale * 0.42;
+
+  // ── 1. Inner darkening sphere ──────────────────────────────────────
+  // Very faint cool-tinted BackSide sphere; subtly desaturates the view
+  // toward screen center when the camera is inside, selling the void.
+  const voidGeo = new THREE.SphereGeometry(shellOuter * 0.9, 48, 48);
+  const voidMat = new THREE.MeshBasicMaterial({
+    color: 0x060814,
+    side: THREE.BackSide,
+    transparent: true,
+    opacity: 0.55,
+    depthWrite: false,
+  });
+  group.add(new THREE.Mesh(voidGeo, voidMat));
+
+  // ── 2. Sparse interior galaxies ────────────────────────────────────
+  // Enough to give parallax motion cues, but dim and few so the void
+  // still reads as empty.
+  const innerCount = 35;
+  for (let i = 0; i < innerCount; i++) {
+    // Bias toward the outer half of the interior so center stays darker
+    const rFrac = 0.25 + Math.pow(Math.random(), 0.6) * 0.55;
+    const r = shellOuter * rFrac;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
 
-    const x = r * Math.sin(phi) * Math.cos(theta);
-    const y = r * Math.sin(phi) * Math.sin(theta);
-    const z = r * Math.cos(phi);
-
-    const opacity = 0.08 + Math.random() * 0.06; // 0.08 to 0.14
-
-    const spriteMat = new THREE.SpriteMaterial({
+    const mat = new THREE.SpriteMaterial({
       map: tex,
-      color: 0x556688,
+      // Cool dim galaxies — mostly blue-grey with a hint of warm
+      color: Math.random() < 0.25 ? 0x88aabb : 0x4a5a70,
       blending: THREE.AdditiveBlending,
       transparent: true,
-      opacity: opacity,
+      opacity: 0.18 + Math.random() * 0.12,
       depthWrite: false,
     });
-    const sprite = new THREE.Sprite(spriteMat);
-    sprite.position.set(x, y, z);
-    const spriteSize = scale * 0.01 + Math.random() * scale * 0.01;
-    sprite.scale.set(spriteSize, spriteSize, 1);
+    const sprite = new THREE.Sprite(mat);
+    sprite.position.set(
+      r * Math.sin(phi) * Math.cos(theta),
+      r * Math.sin(phi) * Math.sin(theta),
+      r * Math.cos(phi)
+    );
+    const s = scale * (0.006 + Math.random() * 0.008);
+    sprite.scale.set(s, s, 1);
     group.add(sprite);
   }
 
-  // 2. Boundary shell — 3000 particles at the edge forming a thin shell
-  const shellCount = 3000;
-  const shellPositions = new Float32Array(shellCount * 3);
-  const shellColors = new Float32Array(shellCount * 3);
+  // ── 3. Boundary wall — 3 concentric layers for depth ──────────────
+  // Each layer uses colored sprite galaxies with size & color variety,
+  // so the "wall" has thickness and visible individual galaxies rather
+  // than reading as a uniform particle ring.
+  const shellLayers = [
+    { radius: shellOuter * 0.93, count: 180, sizeMul: 1.0, opacity: 0.55 },
+    { radius: shellOuter * 1.00, count: 260, sizeMul: 1.15, opacity: 0.70 },
+    { radius: shellOuter * 1.10, count: 150, sizeMul: 0.85, opacity: 0.40 },
+  ];
 
-  for (let i = 0; i < shellCount; i++) {
-    const r = scale * 0.4 * (0.9 + Math.random() * 0.1);
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
+  // Galaxy color palette — warm cores, cool spirals, occasional red giants
+  const PALETTE = [
+    0xfff0d8, 0xffe6b8, 0xddc8a0,  // warm yellow-white (elliptical galaxy bulges)
+    0xb8c8ff, 0xa0b8e0, 0xc8d8ff,  // cool blue (spiral arms)
+    0xffccaa, 0xffb890,             // reddish (distant / dusty)
+    0xe8e8e8, 0xc8c8d0,             // neutral white
+  ];
 
-    shellPositions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
-    shellPositions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta);
-    shellPositions[i * 3 + 2] = r * Math.cos(phi);
+  for (const layer of shellLayers) {
+    for (let i = 0; i < layer.count; i++) {
+      // Jitter radial position within the layer for thickness
+      const r = layer.radius * (0.97 + Math.random() * 0.06);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
 
-    // Normal galaxy density colors — warm white/yellow dots
-    const brightness = 0.3 + Math.random() * 0.5;
-    shellColors[i * 3]     = 0.8 * brightness;
-    shellColors[i * 3 + 1] = 0.7 * brightness;
-    shellColors[i * 3 + 2] = 0.5 * brightness;
+      const mat = new THREE.SpriteMaterial({
+        map: tex,
+        color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
+        blending: THREE.AdditiveBlending,
+        transparent: true,
+        // Individual galaxies vary in brightness
+        opacity: layer.opacity * (0.5 + Math.random() * 0.5),
+        depthWrite: false,
+      });
+      const sprite = new THREE.Sprite(mat);
+      sprite.position.set(
+        r * Math.sin(phi) * Math.cos(theta),
+        r * Math.sin(phi) * Math.sin(theta),
+        r * Math.cos(phi)
+      );
+      // Galaxies vary: most small, occasional larger nearby one
+      const sizeRoll = Math.random();
+      const base = sizeRoll < 0.05 ? 0.022 : (sizeRoll < 0.25 ? 0.012 : 0.006);
+      const s = scale * base * layer.sizeMul * (0.7 + Math.random() * 0.6);
+      sprite.scale.set(s, s, 1);
+      group.add(sprite);
+    }
   }
 
-  const shellGeom = new THREE.BufferGeometry();
-  shellGeom.setAttribute('position', new THREE.BufferAttribute(shellPositions, 3));
-  shellGeom.setAttribute('color', new THREE.BufferAttribute(shellColors, 3));
-
-  const shellMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.005,
+  // ── 4. Faint outer halo — soft glow suggesting denser space beyond
+  const haloMat = new THREE.SpriteMaterial({
     map: tex,
-    sizeAttenuation: true,
+    color: 0x5566aa,
     blending: THREE.AdditiveBlending,
     transparent: true,
-    opacity: 0.25,
+    opacity: 0.08,
     depthWrite: false,
   });
-
-  group.add(new THREE.Points(shellGeom, shellMat));
+  const halo = new THREE.Sprite(haloMat);
+  halo.scale.set(shellOuter * 3, shellOuter * 3, 1);
+  group.add(halo);
 }

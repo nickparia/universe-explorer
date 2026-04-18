@@ -101,7 +101,10 @@ let accretionDiskMesh = null;
 // ═══════════════════════════════════════════════════════════════════════
 export function createDeepSpace(scene, textures) {
   createLandmarks(scene, textures);
-  createNebulaClouds(scene);
+  // createNebulaClouds(scene) — removed: the big scattered particle clouds
+  // were rendering as formless coloured smudges around the solar system
+  // and breaking the clean "stars + milky way" look. The named nebula
+  // landmarks (Pillars, Carina, etc.) are still available via the carousel.
   createBlackHole(scene);
 }
 
