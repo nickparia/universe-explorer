@@ -6,7 +6,7 @@ import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
-import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, startIntro, beginIntroAnimation, isIntroPlaying, startAtVista, flyTo, warpTo } from './flight.js';
+import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, isIntroPlaying, startArrival, skipArrival, flyTo, warpTo } from './flight.js';
 import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
@@ -30,7 +30,7 @@ async function boot() {
   bootFade.id = 'boot-fade';
   bootFade.style.cssText =
     'position:fixed;inset:0;background:#000;z-index:400;pointer-events:none;' +
-    'opacity:1;transition:opacity 3.2s ease-out;';
+    'opacity:1;transition:opacity 1.6s ease-out;';
   document.body.appendChild(bootFade);
 
   // 1. Hide setup — the loading screen is intentionally left hidden.
@@ -132,39 +132,37 @@ async function boot() {
     if (el) el.style.display = 'none';
   }
 
-  // ── Opening: wake up already in the world ────────────────────────────────
-  // No forced journey. Pick a hero vista, start in a slow cinematic orbit
-  // of it, float the title over the live view. First input hands over the
-  // controls instantly. "Begin from the stars" runs the old galaxy intro
-  // as an opt-in ride (now skippable).
+  // ── Opening: one continuous shot, no prompts ─────────────────────────────
+  // Fade from black far beyond Earth, looking sunward. The word looms,
+  // accelerates, and the camera flies through it — settling behind Earth
+  // so the night side silhouettes against the Sun. Orbit drift then
+  // slowly brings dawn around the limb. Any input skips.
   initFieldNotes();
   initShipChat();
 
-  // Per-body composition: distance (in radii), polar angle (rad — smaller
-  // is higher above the ecliptic; Saturn needs height so the tilted rings
-  // open up instead of showing edge-on), and azimuth offset from the
-  // sunward axis (rad — how far the terminator rakes across the face).
-  const VISTAS = [
-    { name: 'SATURN',  dist: 5.4, phi: Math.PI / 3.4, theta: 0.5 },
-    { name: 'EARTH',   dist: 4.0, phi: Math.PI / 2.5, theta: 0.6 },
-    { name: 'JUPITER', dist: 4.4, phi: Math.PI / 2.7, theta: 0.55 },
-    { name: 'NEPTUNE', dist: 4.2, phi: Math.PI / 2.6, theta: 0.6 },
-  ];
-  let vistaIdx = 0;
-  try {
-    vistaIdx = parseInt(localStorage.getItem('solace_vista') || '0', 10) % VISTAS.length;
-    localStorage.setItem('solace_vista', String((vistaIdx + 1) % VISTAS.length));
-  } catch (e) { /* private mode — always Saturn, no tragedy */ }
-
   // One zero-dt pass so every body has its world position before we compose
   updateBodies(0, getCamPos());
-  const vista = VISTAS[vistaIdx];
-  const vistaBody = getBodies().find(b => b.name === vista.name) || getBodies()[0];
+  const earthBody = getBodies().find(b => b.name === 'EARTH') || getBodies()[0];
 
-  // Sky state for "inside the Milky Way" (what endIntro would set)
   setSkyboxOpacity(0.9);
   setMilkyWayOpacity(0.0);
-  startAtVista(vistaBody, vista);
+  startArrival(earthBody, { duration: 8 });
+
+  const titleEl = document.getElementById('hero-title');
+  let titleAnim = null;
+
+  function skipOpening() {
+    window.removeEventListener('keydown', skipOpening);
+    window.removeEventListener('mousedown', skipOpening);
+    window.removeEventListener('touchstart', skipOpening);
+    skipArrival();
+    if (titleAnim) titleAnim.finish();
+    else if (titleEl) titleEl.remove();
+    titleActive = false;
+  }
+  window.addEventListener('keydown', skipOpening);
+  window.addEventListener('mousedown', skipOpening);
+  window.addEventListener('touchstart', skipOpening);
 
   // The reveal is triggered from the render loop's first real frame —
   // an rAF here fires while the main thread is still decoding textures,
@@ -174,32 +172,23 @@ async function boot() {
     if (bootFadeStarted) return;
     bootFadeStarted = true;
     bootFade.style.opacity = '0';
-    setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 3500);
-    setTimeout(dismissTitle, 8000); // title dissolves on its own
+    setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 2000);
+
+    // The word: fade large, loom, then blow past the camera. Timed to the
+    // 8s arrival glide — the letters tear past as the camera crosses.
+    if (titleEl) {
+      titleEl.style.transition = 'none';
+      titleAnim = titleEl.animate([
+        { opacity: 0,    transform: 'translate(-50%, -50%) scale(0.92)', easing: 'ease-out' },
+        { opacity: 0.95, transform: 'translate(-50%, -50%) scale(1.06)', offset: 0.32, easing: 'ease-in' },
+        { opacity: 1,    transform: 'translate(-50%, -50%) scale(1.5)',  offset: 0.62, easing: 'cubic-bezier(0.7, 0, 1, 0.55)' },
+        { opacity: 0,    transform: 'translate(-50%, -50%) scale(16)' },
+      ], { duration: 6800, fill: 'forwards' });
+      titleAnim.onfinish = () => { if (titleEl.parentNode) titleEl.remove(); };
+    }
+    // Release click-to-travel once the shot has settled
+    setTimeout(() => { titleActive = false; }, 8600);
   }
-
-  // Title overlay over the live orbit — no instructions, no choices.
-  // The title simply holds for a few breaths after the fade-in and
-  // dissolves; any input dismisses it early. You are already flying.
-  const titleEl = document.getElementById('hero-title');
-  if (titleEl) titleEl.style.opacity = '1';
-
-  let titleDismissing = false;
-  function dismissTitle() {
-    if (titleDismissing) return;
-    titleDismissing = true;
-    // Keep click-to-travel suppressed briefly so a dismissing click
-    // can't also fly you at whatever planet was under the cursor
-    setTimeout(() => { titleActive = false; }, 400);
-    window.removeEventListener('keydown', dismissTitle);
-    window.removeEventListener('mousedown', dismissTitle);
-    window.removeEventListener('touchstart', dismissTitle);
-    if (titleEl) titleEl.style.opacity = '0';
-  }
-
-  window.addEventListener('keydown', dismissTitle);
-  window.addEventListener('mousedown', dismissTitle);
-  window.addEventListener('touchstart', dismissTitle);
 
   // 11. Main render loop
   let lastTime = performance.now();

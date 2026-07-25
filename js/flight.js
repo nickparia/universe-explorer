@@ -115,6 +115,12 @@ let _arrivalShown = false;
 let _lastMoveKeyAt = 0;
 let _warpStartedAt = 0;
 
+// Arrival state — the opening shot: glide in along the sun line and
+// settle behind a body so it silhouettes against the Sun.
+let arrival = null;
+const _arrFrom = new THREE.Vector3();
+const _arrTo = new THREE.Vector3();
+
 // Cinematic intro state — optional "begin from the stars" journey, skippable
 let introActive = false;
 let _introSkipRequested = false;
@@ -423,6 +429,37 @@ export function updateFlight(dt, allBodies, dtWall) {
                 return;
             }
         }
+    }
+
+    // ── 0a. Opening arrival — glide into the silhouette shot ────────────────
+    if (arrival) {
+        arrival.t += dtTravel / arrival.dur;
+        const t = Math.min(arrival.t, 1);
+        const ease = 1 - Math.pow(1 - t, 3); // ease-out: cross fast, settle soft
+        camPos.lerpVectors(_arrFrom, _arrTo, ease);
+        _lookMat.lookAt(camPos, new THREE.Vector3(0, 0, 0), _upVec);
+        camQuat.setFromRotationMatrix(_lookMat);
+        cam.quaternion.copy(camQuat);
+        cam.fov = BASE_FOV + (1 - ease) * 12; // settles as we arrive
+        cam.updateProjectionMatrix();
+
+        if (t >= 1) {
+            cam.fov = BASE_FOV;
+            cam.updateProjectionMatrix();
+            // Hand off to a live orbit at exactly this pose
+            const body = arrival.body;
+            const bodyPos = body.g.userData._worldPos || body.g.position;
+            const offset = camPos.clone().sub(bodyPos);
+            orbitBody = body;
+            orbitDistance = offset.length();
+            orbitTheta = Math.atan2(offset.z, offset.x);
+            orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / orbitDistance)));
+            orbitMode = true;
+            orbitTransition = false;
+            arrival = null;
+        }
+        updateHUD();
+        return;
     }
 
     // ── 1w. Warp travel (interstellar journeys) ─────────────────────────────
@@ -1053,7 +1090,40 @@ function endIntro() {
   angularVelocity.set(0, 0, 0);
 }
 
-export function isIntroPlaying() { return introActive; }
+export function isIntroPlaying() { return introActive || !!arrival; }
+
+/**
+ * The opening shot: start far out beyond `body` on its anti-sun side and
+ * glide in (ease-out) until the body hangs as a silhouette between the
+ * camera and the Sun. Hands off seamlessly to orbit mode, whose slow
+ * drift then brings the sunrise around the limb.
+ */
+export function startArrival(body, opts = {}) {
+  if (!body || !body.g) return;
+  const bodyPos = (body.g.userData._worldPos || body.g.position).clone();
+  const back = bodyPos.clone().normalize();          // away from the Sun
+  const side = new THREE.Vector3().crossVectors(back, _upVec).normalize();
+
+  _arrTo.copy(bodyPos)
+    .addScaledVector(back, body.r * 5.5)
+    .addScaledVector(_upVec, body.r * 1.7);
+  _arrFrom.copy(bodyPos)
+    .addScaledVector(back, body.r * 85)
+    .addScaledVector(_upVec, body.r * 10)
+    .addScaledVector(side, body.r * 16);
+
+  arrival = { t: 0, dur: opts.duration || 8, body };
+  camPos.copy(_arrFrom);
+  _lookMat.lookAt(camPos, new THREE.Vector3(0, 0, 0), _upVec);
+  camQuat.setFromRotationMatrix(_lookMat);
+  if (cam) cam.quaternion.copy(camQuat);
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+}
+
+export function skipArrival() {
+  if (arrival) arrival.t = 1;
+}
 
 /**
  * Boot directly into a slow cinematic orbit of a hero body — the app now
