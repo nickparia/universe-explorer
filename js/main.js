@@ -24,6 +24,15 @@ import { AU } from './constants.js';
 import * as THREE from 'three';
 
 async function boot() {
+  // Gentle fade from black — created first so it covers everything the
+  // renderer does while booting. Fades out once the vista is composed.
+  const bootFade = document.createElement('div');
+  bootFade.id = 'boot-fade';
+  bootFade.style.cssText =
+    'position:fixed;inset:0;background:#000;z-index:400;pointer-events:none;' +
+    'opacity:1;transition:opacity 3.2s ease-out;';
+  document.body.appendChild(bootFade);
+
   // 1. Hide setup — the loading screen is intentionally left hidden.
   // Texture loading happens behind a plain black canvas, then the hero
   // landing page (just "solace" over the Milky Way) appears when ready.
@@ -131,7 +140,16 @@ async function boot() {
   initFieldNotes();
   initShipChat();
 
-  const VISTAS = ['SATURN', 'EARTH', 'JUPITER', 'NEPTUNE'];
+  // Per-body composition: distance (in radii), polar angle (rad — smaller
+  // is higher above the ecliptic; Saturn needs height so the tilted rings
+  // open up instead of showing edge-on), and azimuth offset from the
+  // sunward axis (rad — how far the terminator rakes across the face).
+  const VISTAS = [
+    { name: 'SATURN',  dist: 5.4, phi: Math.PI / 3.4, theta: 0.5 },
+    { name: 'EARTH',   dist: 4.0, phi: Math.PI / 2.5, theta: 0.6 },
+    { name: 'JUPITER', dist: 4.4, phi: Math.PI / 2.7, theta: 0.55 },
+    { name: 'NEPTUNE', dist: 4.2, phi: Math.PI / 2.6, theta: 0.6 },
+  ];
   let vistaIdx = 0;
   try {
     vistaIdx = parseInt(localStorage.getItem('solace_vista') || '0', 10) % VISTAS.length;
@@ -140,12 +158,24 @@ async function boot() {
 
   // One zero-dt pass so every body has its world position before we compose
   updateBodies(0, getCamPos());
-  const vistaBody = getBodies().find(b => b.name === VISTAS[vistaIdx]) || getBodies()[0];
+  const vista = VISTAS[vistaIdx];
+  const vistaBody = getBodies().find(b => b.name === vista.name) || getBodies()[0];
 
   // Sky state for "inside the Milky Way" (what endIntro would set)
   setSkyboxOpacity(0.9);
   setMilkyWayOpacity(0.0);
-  startAtVista(vistaBody);
+  startAtVista(vistaBody, vista);
+
+  // The reveal is triggered from the render loop's first real frame —
+  // an rAF here fires while the main thread is still decoding textures,
+  // which would start (and waste) the fade behind a stalled compositor.
+  let bootFadeStarted = false;
+  function revealWorld() {
+    if (bootFadeStarted) return;
+    bootFadeStarted = true;
+    bootFade.style.opacity = '0';
+    setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 3500);
+  }
 
   // Title overlay over the live orbit
   const titleEl = document.getElementById('hero-title');
@@ -156,11 +186,12 @@ async function boot() {
   hintEl.style.cssText = 'position:fixed;top:calc(50% + 9vh);left:50%;transform:translateX(-50%);' +
     'z-index:160;text-align:center;font-size:10px;letter-spacing:4px;color:rgba(255,255,255,0.4);' +
     'text-shadow:0 1px 4px rgba(0,0,0,0.9);transition:opacity 1s;pointer-events:auto;';
-  hintEl.innerHTML = 'press any key' +
-    '<div id="vista-stars" style="margin-top:26px;font-size:9px;letter-spacing:3px;' +
+  hintEl.innerHTML = '<div>press any key</div>' +
+    '<div style="margin-top:26px">' +
+    '<span id="vista-stars" style="font-size:9px;letter-spacing:3px;' +
     'color:rgba(140,180,255,0.45);cursor:pointer;pointer-events:auto;' +
-    'border-bottom:1px solid rgba(140,180,255,0.2);display:inline-block;padding-bottom:3px">' +
-    'begin from the stars</div>';
+    'border-bottom:1px solid rgba(140,180,255,0.2);padding-bottom:3px">' +
+    'begin from the stars</span></div>';
   document.body.appendChild(hintEl);
 
   let titleDismissing = false;
@@ -197,8 +228,10 @@ async function boot() {
   const sunLight = getSunLight();
   const bootesVoidLandmark = getLandmarks().find(lm => lm.name === 'BOOTES VOID');
 
+  let _frameCount = 0;
   function animate() {
     requestAnimationFrame(animate);
+    if (++_frameCount === 2) revealWorld();
     const now = performance.now();
     const dt = Math.min((now - lastTime) / 1000, 0.05);
     adaptTier(now - lastTime);
@@ -216,7 +249,7 @@ async function boot() {
     const allBodies = getBodies().concat(getDeepSpaceObjects());
 
     // Update flight physics
-    updateFlight(dt, allBodies);
+    updateFlight(dt, allBodies, dtWall);
 
     // Motion-parallax dust (reads speed feel computed by flight)
     updateDust(dt, getCamPos(), getVelocity(), getSpeedFeel());

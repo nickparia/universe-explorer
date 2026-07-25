@@ -19,7 +19,7 @@ export function initShipChat() {
   wrap = document.createElement('div');
   wrap.id = 'ship-chat';
   wrap.style.cssText =
-    'position:fixed;left:24px;bottom:96px;width:300px;z-index:60;' +
+    'position:fixed;right:24px;bottom:200px;width:300px;z-index:60;' +
     "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;" +
     'opacity:0;transition:opacity 0.9s;pointer-events:none;';
 

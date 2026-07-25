@@ -112,6 +112,8 @@ const warpFromQ = new THREE.Quaternion();
 const warpTargetP = new THREE.Vector3();
 let warpPhase = 'none'; // 'none' | 'accelerating' | 'cruising' | 'decelerating'
 let _arrivalShown = false;
+let _lastMoveKeyAt = 0;
+let _warpStartedAt = 0;
 
 // Cinematic intro state — optional "begin from the stars" journey, skippable
 let introActive = false;
@@ -206,6 +208,9 @@ export function initFlight(camera) {
             e.preventDefault();
         }
 
+        if (e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD') {
+            _lastMoveKeyAt = performance.now();
+        }
         if (e.code === 'KeyH') doHome();
         if (e.code === 'KeyO') toggleOrbit();
         if (e.code === 'KeyI') {
@@ -229,7 +234,8 @@ export function initFlight(camera) {
     });
 
     window.addEventListener('keyup', (e) => {
-        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        // No input guard here: clearing is always safe, and skipping it
+        // wedges a key as held when focus moves into an input mid-press.
         keys[e.code] = false;
     });
 
@@ -299,8 +305,11 @@ export function initFlight(camera) {
 
 // ── updateFlight ─────────────────────────────────────────────────────────────
 
-export function updateFlight(dt, allBodies) {
+export function updateFlight(dt, allBodies, dtWall) {
     if (!cam) return;
+    // Scripted travel advances on wall-clock time (capped per frame) so a
+    // backgrounded tab still arrives; free-flight physics uses clamped dt.
+    const dtTravel = Math.min(dtWall ?? dt, 2.0);
     _feel.free = false; // set true only when free-flight physics runs
     if (starMapOpen) return; // freeze flight when map is open
 
@@ -418,11 +427,14 @@ export function updateFlight(dt, allBodies) {
 
     // ── 1w. Warp travel (interstellar journeys) ─────────────────────────────
     if (warpTarget) {
-        warpT += dt / warpDuration;
+        warpT += dtTravel / warpDuration;
 
-        // Allow cancel on WASD input after initial acceleration
+        // Allow cancel on WASD input after initial acceleration — but only
+        // a keypress that happened AFTER the warp began counts, so stuck or
+        // pre-held keys can't silently abort the journey.
         if (warpT > 0.1) {
-            const anyMove = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'];
+            const anyMove = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) &&
+                            _lastMoveKeyAt > _warpStartedAt;
             if (anyMove) {
                 // Cancel warp — reset FOV, streaks, and vignette
                 cam.fov = BASE_FOV;
@@ -520,7 +532,7 @@ export function updateFlight(dt, allBodies) {
 
     // ── 1a. Fly-to autopilot ─────────────────────────────────────────────────
     if (flyTarget) {
-        flyT += dt / flyDuration;
+        flyT += dtTravel / flyDuration;
         if (flyT >= 1) {
             flyT = 1;
             // Auto-enter orbit mode on arrival
@@ -595,8 +607,10 @@ export function updateFlight(dt, allBodies) {
         if (keys['KeyW'] || keys['ArrowUp'])    orbitDistance = Math.max(orbitBody.r * 1.5, orbitDistance - orbitBody.r * 2 * dt);
         if (keys['KeyS'] || keys['ArrowDown'])  orbitDistance += orbitBody.r * 2 * dt;
 
-        // Auto-rotation — slow cinematic drift, ~45 seconds per full orbit
-        orbitTheta += dt * 0.14;
+        // Auto-rotation — glacial drift, ~5 minutes per full orbit. Fast
+        // enough to feel alive, slow enough that the opening vista stays
+        // on the sunlit side for minutes.
+        orbitTheta += dt * 0.02;
 
         // Compute orbit position
         const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);
@@ -1047,18 +1061,18 @@ export function isIntroPlaying() { return introActive; }
  * Composed from the sunlit side, slightly above the equator, so the body
  * is lit and the terminator rakes across the frame.
  */
-export function startAtVista(body) {
+export function startAtVista(body, opts = {}) {
   if (!body || !body.g) return;
   const bodyPos = body.g.userData._worldPos || body.g.position;
 
   orbitBody = body;
   orbitMode = true;
   orbitTransition = false;
-  orbitDistance = body.r * 4.2;
+  orbitDistance = body.r * (opts.dist || 4.2);
 
   const sunDir = bodyPos.clone().negate().normalize();
-  orbitTheta = Math.atan2(sunDir.z, sunDir.x) + 0.65;
-  orbitPhi = Math.PI / 2.6;
+  orbitTheta = Math.atan2(sunDir.z, sunDir.x) + (opts.theta ?? 0.65);
+  orbitPhi = opts.phi ?? Math.PI / 2.6;
 
   const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);
   const y = orbitDistance * Math.cos(orbitPhi);
@@ -1130,6 +1144,7 @@ export function warpTo(targetName) {
   // Set warp target
   warpTarget = { name: landmark.name, desc: landmark.desc, pos: landmark.pos };
   warpT = 0;
+  _warpStartedAt = performance.now();
   warpPhase = 'accelerating';
   _arrivalShown = false;
   emit('nav:target', landmark.name);
