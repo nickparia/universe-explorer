@@ -1,12 +1,14 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
-import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity } from './engine.js';
+import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
-import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, startIntro, beginIntroAnimation, isIntroPlaying, flyTo, warpTo } from './flight.js';
+import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, startIntro, beginIntroAnimation, isIntroPlaying, startAtVista, flyTo, warpTo } from './flight.js';
+import { initFieldNotes } from './fieldnotes.js';
+import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic } from './music.js';
@@ -75,8 +77,12 @@ async function boot() {
     });
   }
 
+  // True while the opening title floats over the vista — suppresses
+  // click-to-travel so the dismissing click can't also fly you somewhere.
+  let titleActive = true;
+
   // Click-in-world navigation — hover any celestial body to see its name,
-  // click to travel there. Suppressed during cinematic / map / hero.
+  // click to travel there. Suppressed during cinematic / map / title.
   initHoverSelect({
     camera,
     getBodies: () => getBodies().concat(getDeepSpaceObjects()),
@@ -86,9 +92,7 @@ async function boot() {
     suppress: () => {
       if (isIntroPlaying()) return true;
       if (isStarMapOpen()) return true;
-      // Hero page is visible when #hero has display:flex and is not fading
-      const hero = document.getElementById('hero');
-      if (hero && hero.style.display !== 'none' && hero.style.opacity !== '0') return true;
+      if (titleActive) return true;
       return false;
     },
   });
@@ -119,35 +123,74 @@ async function boot() {
     if (el) el.style.display = 'none';
   }
 
-  // Kick off the cinematic intro — but pause it at the starting camera
-  // position so the landing page can sit on top with the Milky Way visible
-  // behind it. Any key or click un-pauses and begins the zoom.
-  startIntro({ paused: true });
+  // ── Opening: wake up already in the world ────────────────────────────────
+  // No forced journey. Pick a hero vista, start in a slow cinematic orbit
+  // of it, float the title over the live view. First input hands over the
+  // controls instantly. "Begin from the stars" runs the old galaxy intro
+  // as an opt-in ride (now skippable).
+  initFieldNotes();
+  initShipChat();
 
-  // Show the hero landing page
-  const heroEl = document.getElementById('hero');
-  if (heroEl) {
-    heroEl.style.display = 'flex';
-    heroEl.style.opacity = '1';
+  const VISTAS = ['SATURN', 'EARTH', 'JUPITER', 'NEPTUNE'];
+  let vistaIdx = 0;
+  try {
+    vistaIdx = parseInt(localStorage.getItem('solace_vista') || '0', 10) % VISTAS.length;
+    localStorage.setItem('solace_vista', String((vistaIdx + 1) % VISTAS.length));
+  } catch (e) { /* private mode — always Saturn, no tragedy */ }
+
+  // One zero-dt pass so every body has its world position before we compose
+  updateBodies(0, getCamPos());
+  const vistaBody = getBodies().find(b => b.name === VISTAS[vistaIdx]) || getBodies()[0];
+
+  // Sky state for "inside the Milky Way" (what endIntro would set)
+  setSkyboxOpacity(0.9);
+  setMilkyWayOpacity(0.0);
+  startAtVista(vistaBody);
+
+  // Title overlay over the live orbit
+  const titleEl = document.getElementById('hero-title');
+  if (titleEl) titleEl.style.opacity = '1';
+
+  const hintEl = document.createElement('div');
+  hintEl.id = 'vista-hint';
+  hintEl.style.cssText = 'position:fixed;top:calc(50% + 9vh);left:50%;transform:translateX(-50%);' +
+    'z-index:160;text-align:center;font-size:10px;letter-spacing:4px;color:rgba(255,255,255,0.4);' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.9);transition:opacity 1s;pointer-events:auto;';
+  hintEl.innerHTML = 'press any key' +
+    '<div id="vista-stars" style="margin-top:26px;font-size:9px;letter-spacing:3px;' +
+    'color:rgba(140,180,255,0.45);cursor:pointer;pointer-events:auto;' +
+    'border-bottom:1px solid rgba(140,180,255,0.2);display:inline-block;padding-bottom:3px">' +
+    'begin from the stars</div>';
+  document.body.appendChild(hintEl);
+
+  let titleDismissing = false;
+  function dismissTitle() {
+    if (titleDismissing) return;
+    titleDismissing = true;
+    // Keep click-to-travel suppressed briefly so the dismissing click
+    // can't also fly you at whatever planet was under the cursor
+    setTimeout(() => { titleActive = false; }, 400);
+    window.removeEventListener('keydown', dismissTitle);
+    window.removeEventListener('mousedown', dismissTitle);
+    window.removeEventListener('touchstart', dismissTitle);
+    if (titleEl) titleEl.style.opacity = '0';
+    hintEl.style.opacity = '0';
+    setTimeout(() => { if (hintEl.parentNode) hintEl.parentNode.removeChild(hintEl); }, 1100);
   }
 
-  // Any keypress or mouse click starts the journey
-  let heroDismissed = false;
-  function dismissHero() {
-    if (heroDismissed) return;
-    heroDismissed = true;
-    window.removeEventListener('keydown', dismissHero);
-    window.removeEventListener('mousedown', dismissHero);
-    window.removeEventListener('touchstart', dismissHero);
-    if (heroEl) heroEl.style.opacity = '0';
-    setTimeout(() => {
-      if (heroEl) heroEl.style.display = 'none';
-      beginIntroAnimation();
-    }, 1400);
-  }
-  window.addEventListener('keydown', dismissHero);
-  window.addEventListener('mousedown', dismissHero);
-  window.addEventListener('touchstart', dismissHero);
+  const starsBtn = hintEl.querySelector('#vista-stars');
+  starsBtn.addEventListener('mousedown', (e) => {
+    e.stopPropagation();
+    e.preventDefault();
+    dismissTitle();
+    setMilkyWayOpacity(1.0);
+    startIntro({ paused: false });
+    beginIntroAnimation();
+  });
+
+  window.addEventListener('keydown', dismissTitle);
+  window.addEventListener('mousedown', dismissTitle);
+  window.addEventListener('touchstart', dismissTitle);
 
   // 11. Main render loop
   let lastTime = performance.now();

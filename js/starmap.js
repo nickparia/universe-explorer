@@ -8,7 +8,7 @@
 
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getBodies } from './bodies.js';
-import { warpTo, flyTo } from './flight.js';
+import { warpTo, flyTo, getCamPos } from './flight.js';
 import { emit } from './bus.js';
 import { AU } from './constants.js';
 
@@ -52,6 +52,8 @@ const START_HERE = ['EARTH', 'SUN', 'SATURN', 'JUPITER'];
 // ── State ─────────────────────────────────────────────────────────────
 let overlayEl = null;
 let listEl = null;
+let searchEl = null;
+let pillEl = null;
 let active = false;
 
 // ── Init ──────────────────────────────────────────────────────────────
@@ -94,8 +96,35 @@ export function initStarMap() {
     <div style="font-size:11px;letter-spacing:7px;color:rgba(200,220,255,0.75);
          text-shadow:0 1px 6px rgba(0,0,0,0.9)">destinations</div>
     <div style="font-size:9px;letter-spacing:3px;margin-top:6px;
-         color:rgba(255,255,255,0.35)">press esc to close</div>
+         color:rgba(255,255,255,0.35)">type to search &middot; enter to travel &middot; esc closes</div>
   `;
+  searchEl = document.createElement('input');
+  searchEl.type = 'text';
+  searchEl.placeholder = 'where to?';
+  searchEl.style.cssText = `
+    width: 100%; box-sizing: border-box;
+    margin-top: 16px; padding: 10px 14px;
+    background: rgba(255,255,255,0.04);
+    border: 1px solid rgba(140,180,255,0.18);
+    border-radius: 2px; outline: none;
+    color: rgba(255,255,255,0.9);
+    font-size: 13px; letter-spacing: 3px;
+    font-family: inherit; font-weight: 300;
+    transition: border-color 0.2s;
+  `;
+  searchEl.addEventListener('focus', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.5)'; });
+  searchEl.addEventListener('blur', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.18)'; });
+  searchEl.addEventListener('input', () => applyFilter(searchEl.value));
+  searchEl.addEventListener('keydown', (e) => {
+    e.stopPropagation();
+    if (e.key === 'Enter') {
+      const first = listEl.querySelector('[data-row]:not([data-hidden])');
+      if (first) first.click();
+    } else if (e.key === 'Escape') {
+      if (searchEl.value) { searchEl.value = ''; applyFilter(''); e.stopPropagation(); }
+    }
+  });
+  header.appendChild(searchEl);
   // Close button (X) in the header
   const closeBtn = document.createElement('div');
   closeBtn.innerHTML = '&times;';
@@ -141,7 +170,8 @@ export function initStarMap() {
 
   // Keyboard: M toggles, Escape closes
   window.addEventListener('keydown', (e) => {
-    if (e.code === 'KeyM') {
+    const typing = e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA');
+    if (e.code === 'KeyM' && !typing) {
       e.preventDefault();
       e.stopPropagation();
       toggleStarMap();
@@ -150,6 +180,38 @@ export function initStarMap() {
       toggleStarMap();
     }
   });
+
+  // The old left-edge rail tab is superseded by the destinations pill
+  const railTab = document.getElementById('nav-rail-tab');
+  if (railTab) railTab.style.display = 'none';
+
+  // ── Destinations pill — the discoverable way in ──────────────────────
+  pillEl = document.createElement('div');
+  pillEl.id = 'dest-pill';
+  pillEl.innerHTML = '&#10022;&nbsp;&nbsp;destinations&nbsp;&nbsp;<span style="color:rgba(140,180,255,0.55)">m</span>';
+  pillEl.style.cssText = `
+    position: fixed; bottom: 22px; left: 50%; transform: translateX(-50%);
+    z-index: 66; padding: 10px 24px;
+    background: rgba(8,12,22,0.5);
+    border: 1px solid rgba(140,180,255,0.2);
+    border-radius: 999px;
+    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
+    font-family: 'Segoe UI','Helvetica Neue',Arial,sans-serif; font-weight: 300;
+    font-size: 10px; letter-spacing: 4px;
+    color: rgba(210,225,255,0.75);
+    cursor: pointer; user-select: none;
+    transition: opacity 0.4s, border-color 0.25s, background 0.25s;
+  `;
+  pillEl.addEventListener('mouseenter', () => {
+    pillEl.style.borderColor = 'rgba(140,180,255,0.5)';
+    pillEl.style.background = 'rgba(20,32,55,0.6)';
+  });
+  pillEl.addEventListener('mouseleave', () => {
+    pillEl.style.borderColor = 'rgba(140,180,255,0.2)';
+    pillEl.style.background = 'rgba(8,12,22,0.5)';
+  });
+  pillEl.addEventListener('click', (e) => { e.stopPropagation(); toggleStarMap(); });
+  document.body.appendChild(pillEl);
 }
 
 // ── Building the list ─────────────────────────────────────────────────
@@ -182,11 +244,11 @@ function buildList() {
 
   // ── Stellar landmarks (nebulae, stars, magnetars) ──
   const stellar = landmarks.filter(l => l.tier === 'interstellar');
-  if (stellar.length) addSection('nebulae & stars', stellar, { isLandmark: true });
+  if (stellar.length) addSection('the milky way', stellar, { isLandmark: true });
 
   // ── Galactic landmarks (galaxies, voids, supermassive BHs) ──
   const galactic = landmarks.filter(l => l.tier === 'intergalactic');
-  if (galactic.length) addSection('galaxies & voids', galactic, { isLandmark: true });
+  if (galactic.length) addSection('deep space', galactic, { isLandmark: true });
 }
 
 function addSection(title, items, opts = {}) {
@@ -230,6 +292,8 @@ function buildRow(item, opts = {}) {
   if (desc && desc.length > 90) desc = desc.slice(0, 87).replace(/\s+\S*$/, '') + '…';
 
   const row = document.createElement('div');
+  row.dataset.row = '1';
+  row.dataset.search = (name + ' ' + desc).toLowerCase();
   row.style.cssText = `
     display: flex; align-items: center; gap: 18px;
     padding: 14px 14px;
@@ -276,10 +340,41 @@ function buildRow(item, opts = {}) {
     color: rgba(160,200,255,0.55);
     white-space: nowrap; flex-shrink: 0;
   `;
-  distEl.textContent = formatDistance(item);
+  distEl.innerHTML = formatDistance(item) +
+    `<div style="margin-top:3px;color:rgba(140,180,255,0.4)">${travelTime(item, isLandmark)}</div>`;
   row.appendChild(distEl);
 
   return row;
+}
+
+// Travel time using the same formulas as flyTo / warpTo — the map reads
+// like a nav computer, not a level select.
+function travelTime(item, isLandmark) {
+  let pos;
+  if (item.g) pos = item.g.userData?._worldPos || item.g.position;
+  else if (item.pos) pos = item.pos;
+  else return '';
+  const dist = getCamPos().distanceTo(pos);
+  const secs = isLandmark
+    ? Math.max(15, Math.min(30, dist / 2000))
+    : Math.max(2, Math.min(6, dist / 6000));
+  return '&asymp; ' + Math.round(secs) + 's journey';
+}
+
+// ── Search filter ──────────────────────────────────────────────────────
+function applyFilter(q) {
+  const query = q.trim().toLowerCase();
+  const sections = listEl.children;
+  for (const section of sections) {
+    let visible = 0;
+    for (const row of section.querySelectorAll('[data-row]')) {
+      const hit = !query || row.dataset.search.includes(query);
+      row.style.display = hit ? 'flex' : 'none';
+      if (hit) { row.removeAttribute('data-hidden'); visible++; }
+      else row.setAttribute('data-hidden', '1');
+    }
+    section.style.display = visible > 0 ? 'block' : 'none';
+  }
 }
 
 function formatDistance(item) {
@@ -316,17 +411,16 @@ export function toggleStarMap() {
   emit('starmap:toggled', active);
   if (active) {
     buildList();
-    // Slide in from the left edge
+    if (searchEl) { searchEl.value = ''; applyFilter(''); }
     requestAnimationFrame(() => {
       overlayEl.style.transform = 'translateX(0)';
+      if (searchEl) searchEl.focus();
     });
-    // Hide the tab label while open (the drawer replaces its purpose)
-    const tab = document.getElementById('nav-rail-tab');
-    if (tab) tab.style.opacity = '0';
+    if (pillEl) pillEl.style.opacity = '0';
   } else {
     overlayEl.style.transform = 'translateX(-100%)';
-    const tab = document.getElementById('nav-rail-tab');
-    if (tab) tab.style.opacity = '1';
+    if (searchEl) searchEl.blur();
+    if (pillEl) pillEl.style.opacity = '1';
   }
 }
 

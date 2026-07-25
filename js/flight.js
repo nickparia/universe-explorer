@@ -113,8 +113,9 @@ const warpTargetP = new THREE.Vector3();
 let warpPhase = 'none'; // 'none' | 'accelerating' | 'cruising' | 'decelerating'
 let _arrivalShown = false;
 
-// Cinematic intro state — plays once on boot, skippable
+// Cinematic intro state — optional "begin from the stars" journey, skippable
 let introActive = false;
+let _introSkipRequested = false;
 let introPaused = false;   // held paused while the landing page is visible
 let introT = 0;
 let introDuration = 13;    // seconds
@@ -197,6 +198,8 @@ export function initFlight(camera) {
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
     window.addEventListener('keydown', (e) => {
+        // Typing in an input (star map search, ship computer) never flies the ship
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         keys[e.code] = true;
 
         if (e.code === 'Space' || e.code.startsWith('Arrow')) {
@@ -226,6 +229,7 @@ export function initFlight(camera) {
     });
 
     window.addEventListener('keyup', (e) => {
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
         keys[e.code] = false;
     });
 
@@ -313,10 +317,14 @@ export function updateFlight(dt, allBodies) {
             updateHUD();
             return;
         }
-        // The intro plays through to completion — no skip. Input during
-        // the cinematic is ignored so the user can't shortcut the journey.
+        // Skippable: any key or click after the first second cuts to arrival
         {
             introT += dt / introDuration;
+            if (_introSkipRequested && introT * introDuration > 1) {
+                endIntro();
+                updateHUD();
+                return;
+            }
             if (introT >= 1) {
                 endIntro();
             } else {
@@ -825,7 +833,18 @@ export function updateFlight(dt, allBodies) {
 
 // ── HUD update helper ────────────────────────────────────────────────────────
 
+let _prevOrbitName = null;
+
 function updateHUD() {
+    // Orbit state transitions are detected here (updateHUD runs every frame
+    // on every path) so no individual orbit entry/exit site can be missed.
+    const curOrbitName = (orbitMode && orbitBody) ? orbitBody.name : null;
+    if (curOrbitName !== _prevOrbitName) {
+        if (curOrbitName) emit('orbit:enter', { name: curOrbitName });
+        else emit('orbit:exit', { name: _prevOrbitName });
+        _prevOrbitName = curOrbitName;
+    }
+
     if (elBoostFill) {
         elBoostFill.style.width = (boostEnergy * 100) + '%';
     }
@@ -940,6 +959,9 @@ export function startIntro(opts = {}) {
 
   introT = 0;
   introActive = true;
+  _introSkipRequested = false;
+  window.addEventListener('keydown', _requestIntroSkip);
+  window.addEventListener('mousedown', _requestIntroSkip);
   introPaused = !!opts.paused;
   velocity.set(0, 0, 0);
   angularVelocity.set(0, 0, 0);
@@ -980,8 +1002,12 @@ export function beginIntroAnimation() {
   if (titleEl) titleEl.style.transition = 'none';
 }
 
+function _requestIntroSkip() { _introSkipRequested = true; }
+
 function endIntro() {
   introActive = false;
+  window.removeEventListener('keydown', _requestIntroSkip);
+  window.removeEventListener('mousedown', _requestIntroSkip);
   // Snap cleanly to home
   camPos.copy(homePos);
   camQuat.copy(homeQuat);
@@ -1014,6 +1040,36 @@ function endIntro() {
 }
 
 export function isIntroPlaying() { return introActive; }
+
+/**
+ * Boot directly into a slow cinematic orbit of a hero body — the app now
+ * opens already inside the world instead of commuting in from the galaxy.
+ * Composed from the sunlit side, slightly above the equator, so the body
+ * is lit and the terminator rakes across the frame.
+ */
+export function startAtVista(body) {
+  if (!body || !body.g) return;
+  const bodyPos = body.g.userData._worldPos || body.g.position;
+
+  orbitBody = body;
+  orbitMode = true;
+  orbitTransition = false;
+  orbitDistance = body.r * 4.2;
+
+  const sunDir = bodyPos.clone().negate().normalize();
+  orbitTheta = Math.atan2(sunDir.z, sunDir.x) + 0.65;
+  orbitPhi = Math.PI / 2.6;
+
+  const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);
+  const y = orbitDistance * Math.cos(orbitPhi);
+  const z = orbitDistance * Math.sin(orbitPhi) * Math.sin(orbitTheta);
+  camPos.copy(bodyPos).add(new THREE.Vector3(x, y, z));
+  _lookMat.lookAt(camPos, bodyPos, _upVec);
+  camQuat.setFromRotationMatrix(_lookMat);
+  if (cam) cam.quaternion.copy(camQuat);
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+}
 
 // ── Arrival notification ────────────────────────────────────────────────
 

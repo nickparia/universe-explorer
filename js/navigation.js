@@ -189,10 +189,5 @@ export function initNavigation(camera) {
 }
 
 export function updateNavigation(dt, camPos, speed, allBodies) {
-  if (!_initialized && allBodies && allBodies.length > 0) {
-    createBar(allBodies);
-    _initialized = true;
-  }
-
-  updateBar(camPos);
+  // Carousel retired — the star map (M) is the single navigation surface.
 }
