@@ -1290,6 +1290,30 @@ function toggleOrbit() {
 }
 
 export function isOrbiting() { return orbitMode; }
+export function getOrbitBodyName() { return (orbitMode && orbitBody) ? orbitBody.name : null; }
+
+/**
+ * Resume a saved session: place the camera exactly where it was. If the
+ * traveler was orbiting, re-derive the orbit from the pose so the slow
+ * drift continues as if they never left.
+ */
+export function restorePose(pos, quat, orbitBodyRef) {
+  camPos.set(pos.px, pos.py, pos.pz);
+  camQuat.set(quat.qx, quat.qy, quat.qz, quat.qw).normalize();
+  if (cam) cam.quaternion.copy(camQuat);
+  velocity.set(0, 0, 0);
+  angularVelocity.set(0, 0, 0);
+  if (orbitBodyRef && orbitBodyRef.g) {
+    const bodyPos = orbitBodyRef.g.userData._worldPos || orbitBodyRef.g.position;
+    const offset = camPos.clone().sub(bodyPos);
+    orbitBody = orbitBodyRef;
+    orbitDistance = offset.length();
+    orbitTheta = Math.atan2(offset.z, offset.x);
+    orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / orbitDistance)));
+    orbitMode = true;
+    orbitTransition = false;
+  }
+}
 
 // ── Getters ──────────────────────────────────────────────────────────────────
 

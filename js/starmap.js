@@ -18,6 +18,7 @@ import { getBodies } from './bodies.js';
 import { warpTo, flyTo, getCamPos } from './flight.js';
 import { emit } from './bus.js';
 import { AU } from './constants.js';
+import { getVisited } from './session.js';
 
 const SVGNS = 'http://www.w3.org/2000/svg';
 
@@ -537,12 +538,23 @@ function addShell(R, label, opts = {}) {
 
 function addDot(item, x, y, r, opts = {}) {
   const color = colorFor(item);
+  const visited = getVisited().has(item.name);
   const g = svg('g', { style: 'cursor:pointer;' });
+
+  // The voyage log, drawn: places you've orbited carry a warm ring —
+  // the chart slowly becomes yours.
+  if (visited) {
+    g.appendChild(svg('circle', {
+      cx: x, cy: y, r: r * 1.9, fill: 'none',
+      stroke: 'rgba(255,215,160,0.35)', 'stroke-width': 1,
+      'vector-effect': 'non-scaling-stroke',
+    }));
+  }
 
   const hit = svg('circle', { cx: x, cy: y, r: Math.max(r * 2.6, 15), fill: 'transparent' });
   g.appendChild(hit);
 
-  const halo = svg('circle', { cx: x, cy: y, r: r * 2.1, fill: color, opacity: 0.14 });
+  const halo = svg('circle', { cx: x, cy: y, r: r * 2.1, fill: color, opacity: visited ? 0.24 : 0.14 });
   g.appendChild(halo);
 
   let core;

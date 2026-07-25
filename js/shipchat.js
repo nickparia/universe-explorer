@@ -8,6 +8,7 @@
 import { on } from './bus.js';
 import { getLocation } from './catalog.js';
 import { getPlanetConfig } from './planetconfig.js';
+import { getVisited } from './session.js';
 
 let wrap = null;
 let log = null;
@@ -88,6 +89,8 @@ function buildContext(name) {
   if (info.type) parts.push('Type: ' + info.type);
   if (info.facts) parts.push('Facts: ' + info.facts.join('; '));
   if (info.lore) parts.push(info.lore);
+  const visited = [...getVisited()];
+  if (visited.length) parts.push('Voyage log — places this traveler has orbited: ' + visited.join(', '));
   return parts.join('\n').slice(0, 1500);
 }
 

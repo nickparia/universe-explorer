@@ -10,6 +10,9 @@ import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFee
 import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
+import { initSession, getResumePose } from './session.js';
+import { initSoundscape, startSoundscape } from './soundscape.js';
+import { restorePose } from './flight.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic } from './music.js';
 import { initHud, updateHud } from './hud.js';
@@ -116,6 +119,7 @@ async function boot() {
   // Defer music start until first user interaction (browser requires gesture for audio)
   function startMusicOnGesture() {
     music.start();
+    startSoundscape();
     window.removeEventListener('click', startMusicOnGesture);
     window.removeEventListener('keydown', startMusicOnGesture);
   }
@@ -139,6 +143,8 @@ async function boot() {
   // slowly brings dawn around the limb. Any input skips.
   initFieldNotes();
   initShipChat();
+  initSession();
+  initSoundscape();
 
   // One zero-dt pass so every body has its world position before we compose
   updateBodies(0, getCamPos());
@@ -146,7 +152,18 @@ async function boot() {
 
   setSkyboxOpacity(0.9);
   setMilkyWayOpacity(0.0);
-  startArrival(earthBody, { duration: 8 });
+
+  // Returning travelers resume where they left off — the title sequence
+  // belongs to first arrivals (and long absences). The ship remembers.
+  const resume = getResumePose();
+  if (resume) {
+    const orbitRef = resume.orbit
+      ? getBodies().concat(getDeepSpaceObjects()).find(b => b.name === resume.orbit)
+      : null;
+    restorePose(resume, resume, orbitRef || null);
+  } else {
+    startArrival(earthBody, { duration: 8 });
+  }
 
   const titleEl = document.getElementById('hero-title');
   let titleAnim = null;
@@ -160,9 +177,15 @@ async function boot() {
     else if (titleEl) titleEl.remove();
     titleActive = false;
   }
-  window.addEventListener('keydown', skipOpening);
-  window.addEventListener('mousedown', skipOpening);
-  window.addEventListener('touchstart', skipOpening);
+  if (resume) {
+    // No ceremony on return — remove the title and hand over instantly
+    if (titleEl) titleEl.remove();
+    titleActive = false;
+  } else {
+    window.addEventListener('keydown', skipOpening);
+    window.addEventListener('mousedown', skipOpening);
+    window.addEventListener('touchstart', skipOpening);
+  }
 
   // The reveal is triggered from the render loop's first real frame —
   // an rAF here fires while the main thread is still decoding textures,
@@ -176,7 +199,7 @@ async function boot() {
 
     // The word: fade large, loom, then blow past the camera. Timed to the
     // 8s arrival glide — the letters tear past as the camera crosses.
-    if (titleEl) {
+    if (!resume && titleEl) {
       titleEl.style.transition = 'none';
       // Pin one high-res raster: double the font, halve the scale range —
       // Chrome re-rasterizing mid-scale is what makes animated text "jump".

@@ -7,12 +7,12 @@ import { on } from './bus.js';
 
 // ── Track catalog ──────────────────────────────────────────────
 const TRACKS = {
-  sun:       ['audio/moonlight_sonata.mp3'],
-  inner:     ['audio/moonlight_sonata.mp3'],
-  giants:    ['audio/moonlight_sonata.mp3'],
-  deep:      ['audio/moonlight_sonata.mp3'],
-  nebula:    ['audio/moonlight_sonata.mp3'],
-  blackhole: ['audio/moonlight_sonata.mp3'],
+  sun:       ['audio/sun_zarathustra.mp3'],
+  inner:     ['audio/inner_clair_de_lune.mp3', 'audio/inner_moonlight.mp3', 'audio/moonlight_sonata.mp3', 'audio/satie_gymnopedie.mp3'],
+  giants:    ['audio/giants_jupiter.mp3', 'audio/giants_new_world.mp3', 'audio/pachelbel_canon.mp3'],
+  deep:      ['audio/deep_reverie.mp3', 'audio/part_spiegel.mp3', 'audio/vivaldi_spring_largo.mp3'],
+  nebula:    ['audio/nebula_air.mp3'],
+  blackhole: ['audio/blackhole_adagio.ogg'],
 };
 
 // ── Zone helpers ───────────────────────────────────────────────
