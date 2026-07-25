@@ -437,7 +437,14 @@ export function updateFlight(dt, allBodies, dtWall) {
         const t = Math.min(arrival.t, 1);
         const ease = 1 - Math.pow(1 - t, 3); // ease-out: cross fast, settle soft
         camPos.lerpVectors(_arrFrom, _arrTo, ease);
-        _lookMat.lookAt(camPos, new THREE.Vector3(0, 0, 0), _upVec);
+        // Gaze: locked on the Sun for the crossing, then settling onto the
+        // destination in the final stretch — so the orientation at t=1 is
+        // EXACTLY what orbit mode computes and the handoff has no snap.
+        const arrBodyPos = arrival.body.g.userData._worldPos || arrival.body.g.position;
+        _dir.set(0, 0, 0); // look target: sun → body
+        const lookBlend = smoothstep(0.7, 1, ease);
+        if (lookBlend > 0) _dir.lerp(arrBodyPos, lookBlend);
+        _lookMat.lookAt(camPos, _dir, _upVec);
         camQuat.setFromRotationMatrix(_lookMat);
         cam.quaternion.copy(camQuat);
         cam.fov = BASE_FOV + (1 - ease) * 12; // settles as we arrive
