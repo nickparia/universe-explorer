@@ -1,16 +1,17 @@
 // js/starmap.js — the star chart.
 //
-// A full-screen radial nav chart, drawn top-down like a ship's plotting
-// table: the Sun at center, planets on schematic orbit rings at their TRUE
-// current orbital angles (the chart is live, not a diagram), spacecraft as
-// diamonds between them, and two outer shells for deep-space locations —
-// the Milky Way ring (interstellar tier) and the Deep Space ring
-// (intergalactic tier), positioned at their real catalog azimuths.
+// A zoomable, pannable radial chart — a ship instrument, not a menu. The
+// world stays visible behind light glass; scroll zooms toward the cursor,
+// drag pans, click travels. The chart is semantic: zoomed out you see the
+// solar system as a cluster inside the landmark shells; zoom in and the
+// planets spread, then each planet's moons fade in around it. Built to
+// absorb growth — new tiers (galaxies, exoplanet systems) become new
+// layers with their own zoom bands.
 //
-// Interactions: hover a dot for name + travel time, click to travel (the
-// warp is the transition — the chart closes itself). Search at the top
-// covers EVERYTHING including moons that aren't drawn on the chart; Enter
-// travels to the top match. M toggles, Esc closes.
+// Layout is schematic (rings by rank, not scale) but angles are TRUE:
+// planets sit at their live orbital azimuths, landmarks at their real
+// catalog azimuths. Search covers everything; Enter travels to the top
+// match. M toggles, Esc closes.
 
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getBodies } from './bodies.js';
@@ -49,12 +50,27 @@ const CRAFT_META = {
 const PLANETISH = ['MERCURY','VENUS','EARTH','MARS','CERES','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO','ERIS'];
 const CRAFT_NAMES = new Set(Object.keys(CRAFT_META));
 
-// Chart layout (viewBox units)
+// Which planet each moon belongs to — moons orbit their planet's chart dot
+const MOON_HOST = {
+  MOON: 'EARTH',
+  PHOBOS: 'MARS', DEIMOS: 'MARS',
+  IO: 'JUPITER', EUROPA: 'JUPITER', GANYMEDE: 'JUPITER', CALLISTO: 'JUPITER',
+  TITAN: 'SATURN', ENCELADUS: 'SATURN', MIMAS: 'SATURN',
+  TITANIA: 'URANUS', OBERON: 'URANUS',
+  TRITON: 'NEPTUNE',
+};
+
+// Chart layout (base viewBox units)
 const VIEW = 565;
+const BASE_W = VIEW * 2;
 const RING_MIN = 68;
 const RING_MAX = 300;
 const R_INTERSTELLAR = 375;
 const R_INTERGALACTIC = 462;
+const MOON_RING = 22;          // moons orbit this far from their planet dot
+const MOON_MIN_SCALE = 2.1;    // zoom-in factor at which moons appear
+const ZOOM_MIN = 0.55;         // can zoom out well past the full chart
+const ZOOM_MAX = 9;            // deep enough that a planet + moons fill view
 
 // ── State ─────────────────────────────────────────────────────────────
 let overlayEl = null;
@@ -64,8 +80,15 @@ let resultsEl = null;
 let tooltipEl = null;
 let pillEl = null;
 let active = false;
-let chartNodes = [];   // { el, name, search }
-let allDest = [];      // every travelable destination incl. moons
+let pendingOpen = false;  // M pressed before boot finished building the map
+let nodes = [];           // chart nodes with base metrics for counter-scaling
+let allDest = [];         // every travelable destination (search index)
+
+// Camera over the chart
+const view = { cx: 0, cy: 0, w: BASE_W };
+let panning = false;
+let panMoved = false;
+let panStart = null;
 
 // ── Helpers ───────────────────────────────────────────────────────────
 function worldPos(item) {
@@ -116,41 +139,47 @@ function svg(tag, attrs) {
 export function initStarMap() {
   overlayEl = document.createElement('div');
   overlayEl.id = 'starchart';
+  // Light glass — the world stays visible behind the instrument
   overlayEl.style.cssText = `
     position: fixed; inset: 0; z-index: 68;
-    background: radial-gradient(ellipse at center, rgba(6,9,18,0.72) 0%, rgba(2,4,9,0.92) 100%);
-    backdrop-filter: blur(7px); -webkit-backdrop-filter: blur(7px);
-    display: flex; flex-direction: column; align-items: center;
+    background: radial-gradient(ellipse at center, rgba(4,7,14,0.38) 0%, rgba(2,4,9,0.7) 100%);
+    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
     font-family: 'Segoe UI','Helvetica Neue',Arial,sans-serif; font-weight: 300;
     color: rgba(255,255,255,0.94);
     opacity: 0; pointer-events: none;
     transition: opacity 0.45s ease;
+    overflow: hidden;
   `;
 
-  // ── Header: title + search ──
+  // ── The chart fills the overlay; UI floats over it ──
+  svgEl = svg('svg', { viewBox: `${-VIEW} ${-VIEW} ${BASE_W} ${BASE_W}` });
+  svgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;';
+  overlayEl.appendChild(svgEl);
+
+  // ── Search, floating top-center ──
   const header = document.createElement('div');
-  header.style.cssText = 'flex-shrink:0;text-align:center;padding-top:34px;width:340px;max-width:86vw;position:relative;z-index:2;';
-  header.innerHTML = `
-    <div style="font-size:11px;letter-spacing:8px;color:rgba(200,220,255,0.7);
-         text-shadow:0 1px 6px rgba(0,0,0,0.9)">star chart</div>
+  header.style.cssText = `
+    position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
+    width: 320px; max-width: 84vw; z-index: 2;
   `;
   searchEl = document.createElement('input');
   searchEl.type = 'text';
   searchEl.placeholder = 'where to?';
   searchEl.style.cssText = `
     width: 100%; box-sizing: border-box;
-    margin-top: 14px; padding: 10px 16px;
-    background: rgba(255,255,255,0.045);
-    border: 1px solid rgba(140,180,255,0.2);
+    padding: 9px 16px;
+    background: rgba(8,12,22,0.55);
+    border: 1px solid rgba(140,180,255,0.22);
     border-radius: 999px; outline: none;
     color: rgba(255,255,255,0.9);
     text-align: center;
-    font-size: 13px; letter-spacing: 3px;
+    font-size: 12px; letter-spacing: 3px;
     font-family: inherit; font-weight: 300;
+    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
     transition: border-color 0.2s;
   `;
   searchEl.addEventListener('focus', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.55)'; });
-  searchEl.addEventListener('blur', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.2)'; });
+  searchEl.addEventListener('blur', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.22)'; });
   searchEl.addEventListener('input', () => applyFilter(searchEl.value));
   searchEl.addEventListener('keydown', (e) => {
     e.stopPropagation();
@@ -165,31 +194,25 @@ export function initStarMap() {
   });
   header.appendChild(searchEl);
 
-  // Search results dropdown (covers moons etc. that aren't charted)
   resultsEl = document.createElement('div');
   resultsEl.style.cssText = `
-    position: absolute; left: 0; right: 0; top: 100%;
     margin-top: 8px; border-radius: 4px; overflow: hidden;
-    background: rgba(8,12,22,0.92);
+    background: rgba(8,12,22,0.88);
     border: 1px solid rgba(140,180,255,0.15);
     backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    display: none; text-align: left;
+    display: none;
   `;
   header.appendChild(resultsEl);
   overlayEl.appendChild(header);
 
-  // ── The chart ──
-  const chartWrap = document.createElement('div');
-  chartWrap.style.cssText = 'flex:1;width:100%;display:flex;align-items:center;justify-content:center;min-height:0;padding:8px 0 4px;';
-  svgEl = svg('svg', { viewBox: `${-VIEW} ${-VIEW} ${VIEW * 2} ${VIEW * 2}` });
-  svgEl.style.cssText = 'height:100%;max-width:96vw;display:block;';
-  chartWrap.appendChild(svgEl);
-  overlayEl.appendChild(chartWrap);
-
   // ── Footer hint ──
   const foot = document.createElement('div');
-  foot.style.cssText = 'flex-shrink:0;padding-bottom:20px;font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.3);';
-  foot.textContent = 'click a destination to travel · esc closes';
+  foot.style.cssText = `
+    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
+    font-size: 9px; letter-spacing: 3px; color: rgba(255,255,255,0.32);
+    pointer-events: none; white-space: nowrap;
+  `;
+  foot.textContent = 'scroll to zoom · drag to pan · click a destination to travel · esc closes';
   overlayEl.appendChild(foot);
 
   document.body.appendChild(overlayEl);
@@ -206,6 +229,53 @@ export function initStarMap() {
     opacity: 0; transition: opacity 0.15s; white-space: nowrap;
   `;
   document.body.appendChild(tooltipEl);
+
+  // ── Zoom & pan ──
+  svgEl.addEventListener('wheel', (e) => {
+    e.preventDefault();
+    const rect = svgEl.getBoundingClientRect();
+    // xMidYMid meet: the square viewBox maps onto the centered square of
+    // side min(width, height)
+    const side = Math.min(rect.width, rect.height);
+    const px = (e.clientX - rect.left - rect.width / 2) / side;   // -0.5..0.5
+    const py = (e.clientY - rect.top - rect.height / 2) / side;
+    const mx = view.cx + px * view.w;
+    const my = view.cy + py * view.w;
+    const factor = Math.exp(e.deltaY * 0.0016);
+    const newW = Math.max(BASE_W / ZOOM_MAX, Math.min(BASE_W / ZOOM_MIN, view.w * factor));
+    view.cx = mx - (mx - view.cx) * (newW / view.w);
+    view.cy = my - (my - view.cy) * (newW / view.w);
+    view.w = newW;
+    applyViewTransform();
+  }, { passive: false });
+
+  svgEl.addEventListener('pointerdown', (e) => {
+    if (e.button !== 0) return;
+    panning = true;
+    panMoved = false;
+    panStart = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
+    svgEl.setPointerCapture(e.pointerId);
+  });
+  svgEl.addEventListener('pointermove', (e) => {
+    if (!panning) return;
+    const dx = e.clientX - panStart.x;
+    const dy = e.clientY - panStart.y;
+    if (Math.abs(dx) + Math.abs(dy) > 5) panMoved = true;
+    if (panMoved) {
+      const rect = svgEl.getBoundingClientRect();
+      const side = Math.min(rect.width, rect.height);
+      view.cx = panStart.cx - (dx / side) * view.w;
+      view.cy = panStart.cy - (dy / side) * view.w;
+      applyViewTransform();
+      svgEl.style.cursor = 'grabbing';
+    }
+  });
+  svgEl.addEventListener('pointerup', () => {
+    panning = false;
+    svgEl.style.cursor = 'grab';
+    // panMoved is read by click handlers this tick; clear it just after
+    setTimeout(() => { panMoved = false; }, 0);
+  });
 
   // Keyboard: M toggles (not while typing), Escape closes
   window.addEventListener('keydown', (e) => {
@@ -251,13 +321,62 @@ export function initStarMap() {
   });
   pillEl.addEventListener('click', (e) => { e.stopPropagation(); toggleStarMap(); });
   document.body.appendChild(pillEl);
+
+  // M was pressed while the app was still booting — honor it now
+  if (pendingOpen) {
+    pendingOpen = false;
+    toggleStarMap();
+  }
+}
+
+// Buffer an M pressed before initStarMap has run (boot takes seconds on a
+// cold load and "pressed M, nothing happened" reads as broken)
+window.addEventListener('keydown', (e) => {
+  if (e.code === 'KeyM' && !overlayEl &&
+      !(e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA'))) {
+    pendingOpen = true;
+  }
+});
+
+// ── View transform: zoom/pan + semantic scaling ───────────────────────
+function applyViewTransform() {
+  svgEl.setAttribute('viewBox', `${view.cx - view.w / 2} ${view.cy - view.w / 2} ${view.w} ${view.w}`);
+  const scale = BASE_W / view.w; // 1 = default, >1 zoomed in
+
+  // Counter-scale: keep dots/labels near-constant screen size, with a
+  // gentle growth as you dive so zooming still feels like approaching
+  const geom = 1 / Math.pow(scale, 0.72);
+
+  for (const n of nodes) {
+    if (n.core) {
+      if (n.core.tagName === 'circle') n.core.setAttribute('r', n.baseR * geom);
+      else {
+        const r = n.baseR * geom;
+        n.core.setAttribute('x', n.x - r);
+        n.core.setAttribute('y', n.y - r);
+        n.core.setAttribute('width', r * 2);
+        n.core.setAttribute('height', r * 2);
+      }
+    }
+    if (n.halo) n.halo.setAttribute('r', n.baseR * 2.1 * geom);
+    if (n.hit) n.hit.setAttribute('r', Math.max(n.baseR * 2.6, 15) * geom);
+    if (n.label) n.label.setAttribute('font-size', n.baseFont * geom);
+
+    // Semantic visibility: moons fade in past their zoom band
+    if (n.minScale) {
+      const vis = Math.max(0, Math.min(1, (scale - n.minScale) / 0.6));
+      n.el.style.opacity = n.filtered ? Math.min(vis, 0.12) : vis;
+      n.el.style.pointerEvents = vis > 0.3 ? 'auto' : 'none';
+    }
+  }
 }
 
 // ── Chart construction ────────────────────────────────────────────────
 function buildChart() {
   svgEl.innerHTML = '';
-  chartNodes = [];
+  nodes = [];
   allDest = [];
+  view.cx = 0; view.cy = 0; view.w = BASE_W;
 
   const bodies = getBodies();
   const landmarks = getLandmarks().map(l => ({ ...l, isLandmark: true }));
@@ -265,12 +384,10 @@ function buildChart() {
   const byName = {};
   for (const b of bodies) byName[b.name] = b;
 
-  // Every travelable destination goes in the search index
   allDest = bodies.concat(landmarks);
   const bh = deep.find(o => o.isBlackHole);
   if (bh) allDest.push({ ...bh, isLandmark: false });
 
-  // Soft glow filter for the sun
   const defs = svg('defs', {});
   defs.innerHTML = `<filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
     <feGaussianBlur stdDeviation="4" result="b"/>
@@ -283,7 +400,8 @@ function buildChart() {
     .map(b => ({ b, au: worldPos(b).length() / AU }))
     .sort((p, q) => p.au - q.au);
 
-  const ringOf = [];  // [{au, R}] for craft interpolation
+  const ringOf = [];
+  const planetChartPos = {};   // name -> {x, y} for moon placement
   planets.forEach((p, i) => {
     const R = planets.length === 1 ? RING_MIN
       : RING_MIN + (i * (RING_MAX - RING_MIN)) / (planets.length - 1);
@@ -292,29 +410,37 @@ function buildChart() {
     svgEl.appendChild(svg('circle', {
       cx: 0, cy: 0, r: R, fill: 'none',
       stroke: 'rgba(140,180,255,0.09)', 'stroke-width': 1,
+      'vector-effect': 'non-scaling-stroke',
     }));
     const pos = worldPos(p.b);
     const a = Math.atan2(pos.z, pos.x);
-    addDot(p.b, Math.cos(a) * R, Math.sin(a) * R, 7, { label: true });
+    const x = Math.cos(a) * R, y = Math.sin(a) * R;
+    planetChartPos[p.b.name] = { x, y };
+    addDot(p.b, x, y, 7, { label: true });
   });
 
   // ── Sun at center ──
   const sun = byName['SUN'];
   if (sun) {
-    const g = addDot(sun, 0, 0, 11, { label: false });
-    const core = g.querySelector('[data-core]');
-    if (core) core.setAttribute('filter', 'url(#glow)');
+    const n = addDot(sun, 0, 0, 11, { label: false });
+    if (n.core) n.core.setAttribute('filter', 'url(#glow)');
   }
 
-  // ── Craft: diamonds, radius log-interpolated between planet rings.
-  // Craft parked at a planet (ISS, Hubble, JWST at Earth) land on the same
-  // chart point as their host — skip their labels (hover names them) and
-  // fan the dots slightly so each stays clickable.
-  const placed = [];
-  for (const node of chartNodes) {
-    const m = node.el.querySelector('[data-core]');
-    if (m && m.tagName === 'circle') placed.push({ x: +m.getAttribute('cx'), y: +m.getAttribute('cy') });
+  // ── Moons: orbit their planet's dot, visible once zoomed in ──
+  for (const moonName in MOON_HOST) {
+    const moon = byName[moonName];
+    const host = planetChartPos[MOON_HOST[moonName]];
+    if (!moon || !host) continue;
+    const siblings = Object.keys(MOON_HOST).filter(m => MOON_HOST[m] === MOON_HOST[moonName] && byName[m]);
+    const idx = siblings.indexOf(moonName);
+    const a = (idx / Math.max(siblings.length, 1)) * Math.PI * 2 - Math.PI / 2;
+    const x = host.x + Math.cos(a) * MOON_RING;
+    const y = host.y + Math.sin(a) * MOON_RING;
+    addDot(moon, x, y, 3, { label: true, minScale: MOON_MIN_SCALE, font: 7 });
   }
+
+  // ── Craft: diamonds; labels suppressed when parked at a planet ──
+  const placed = Object.values(planetChartPos).slice();
   let fan = 0;
   for (const name of CRAFT_NAMES) {
     const b = byName[name];
@@ -334,7 +460,7 @@ function buildChart() {
     placed.push({ x, y });
   }
 
-  // ── Outer shells: the Milky Way + Deep Space ──
+  // ── Outer shells ──
   addShell(R_INTERSTELLAR, 'the milky way');
   addShell(R_INTERGALACTIC, 'deep space');
 
@@ -343,7 +469,6 @@ function buildChart() {
     const pos = worldPos(item);
     const a = Math.atan2(pos.z, pos.x);
     let R = ring;
-    // Nudge outward until clear of neighbors on the same shell
     while (outerPlaced.some(pt => Math.hypot(pt.x - Math.cos(a) * R, pt.y - Math.sin(a) * R) < 46)) {
       R += 30;
     }
@@ -355,6 +480,8 @@ function buildChart() {
     addOuter(lm, lm.tier === 'intergalactic' ? R_INTERGALACTIC : R_INTERSTELLAR);
   }
   if (bh) addOuter(bh, R_INTERGALACTIC);
+
+  applyViewTransform();
 }
 
 function craftRadius(au, rings) {
@@ -375,39 +502,42 @@ function addShell(R, label) {
     cx: 0, cy: 0, r: R, fill: 'none',
     stroke: 'rgba(140,180,255,0.13)', 'stroke-width': 1,
     'stroke-dasharray': '2 7',
+    'vector-effect': 'non-scaling-stroke',
   }));
   const lx = -R * 0.7071, ly = -R * 0.7071;
   const t = svg('text', {
     x: lx - 10, y: ly - 10, 'text-anchor': 'end',
     fill: 'rgba(160,200,255,0.4)',
-    style: 'font-size:11px;letter-spacing:6px;',
+    'font-size': 11,
+    style: 'letter-spacing:6px;',
   });
   t.textContent = label;
   svgEl.appendChild(t);
+  nodes.push({ el: t, label: t, baseFont: 11, baseR: 0, x: lx, y: ly, search: ' ' });
 }
 
 function addDot(item, x, y, r, opts = {}) {
   const color = colorFor(item);
   const g = svg('g', { style: 'cursor:pointer;' });
 
-  // Generous invisible hit area
-  g.appendChild(svg('circle', { cx: x, cy: y, r: Math.max(r * 2.6, 15), fill: 'transparent' }));
+  const hit = svg('circle', { cx: x, cy: y, r: Math.max(r * 2.6, 15), fill: 'transparent' });
+  g.appendChild(hit);
 
-  // Halo + core
   const halo = svg('circle', { cx: x, cy: y, r: r * 2.1, fill: color, opacity: 0.14 });
   g.appendChild(halo);
+
   let core;
   if (opts.diamond) {
     core = svg('rect', {
       x: x - r, y: y - r, width: r * 2, height: r * 2,
-      fill: color, transform: `rotate(45 ${x} ${y})`, 'data-core': '1',
+      fill: color, transform: `rotate(45 ${x} ${y})`,
     });
   } else {
-    core = svg('circle', { cx: x, cy: y, r, fill: color, 'data-core': '1' });
+    core = svg('circle', { cx: x, cy: y, r, fill: color });
   }
   g.appendChild(core);
 
-  // Label
+  const baseFont = opts.font || (opts.outer ? 10 : 9.5);
   let labelEl = null;
   if (opts.label) {
     const len = Math.hypot(x, y) || 1;
@@ -417,7 +547,8 @@ function addDot(item, x, y, r, opts = {}) {
       x: lx, y: ly,
       'text-anchor': opts.outer ? (lx > 6 ? 'start' : lx < -6 ? 'end' : 'middle') : 'middle',
       fill: 'rgba(220,232,255,0.6)',
-      style: `font-size:${opts.outer ? 10 : 9.5}px;letter-spacing:2px;pointer-events:none;`,
+      'font-size': baseFont,
+      style: 'letter-spacing:2px;pointer-events:none;',
     });
     labelEl.textContent = nice(item.name);
     g.appendChild(labelEl);
@@ -438,24 +569,39 @@ function addDot(item, x, y, r, opts = {}) {
     if (labelEl) labelEl.setAttribute('fill', 'rgba(220,232,255,0.6)');
     tooltipEl.style.opacity = '0';
   });
-  g.addEventListener('click', () => goTo(item));
+  g.addEventListener('click', () => {
+    if (panMoved) return; // that was a drag, not a selection
+    goTo(item);
+  });
 
   svgEl.appendChild(g);
-  chartNodes.push({ el: g, name: item.name, search: (item.name + ' ' + descFor(item)).toLowerCase() });
-  return g;
+  const node = {
+    el: g, core, halo, hit, label: labelEl,
+    x, y, baseR: r, baseFont,
+    minScale: opts.minScale || 0,
+    filtered: false,
+    name: item.name,
+    search: (item.name + ' ' + descFor(item)).toLowerCase(),
+  };
+  nodes.push(node);
+  if (node.minScale) { g.style.opacity = 0; g.style.pointerEvents = 'none'; }
+  return node;
 }
 
 // ── Search ────────────────────────────────────────────────────────────
 function applyFilter(q) {
   const query = q.trim().toLowerCase();
 
-  // Dim chart dots that don't match
-  for (const n of chartNodes) {
-    n.el.style.transition = 'opacity 0.25s';
-    n.el.style.opacity = !query || n.search.includes(query) ? '1' : '0.12';
+  for (const n of nodes) {
+    if (!n.core) continue; // shell labels ignore filtering
+    n.filtered = !!query && !n.search.includes(query);
+    if (!n.minScale) {
+      n.el.style.transition = 'opacity 0.25s';
+      n.el.style.opacity = n.filtered ? '0.12' : '1';
+    }
   }
+  applyViewTransform(); // re-resolve zoom-gated visibility under the filter
 
-  // Dropdown results (covers moons and anything not on the chart)
   resultsEl.innerHTML = '';
   if (!query) { resultsEl.style.display = 'none'; return; }
 
@@ -484,6 +630,7 @@ function applyFilter(q) {
 
 // ── Toggle / state ────────────────────────────────────────────────────
 export function toggleStarMap() {
+  if (!overlayEl) { pendingOpen = true; return; }
   active = !active;
   emit('starmap:toggled', active);
   if (active) {
@@ -492,7 +639,6 @@ export function toggleStarMap() {
     applyFilter('');
     overlayEl.style.opacity = '1';
     overlayEl.style.pointerEvents = 'auto';
-    requestAnimationFrame(() => searchEl.focus());
     if (pillEl) pillEl.style.opacity = '0';
   } else {
     overlayEl.style.opacity = '0';
