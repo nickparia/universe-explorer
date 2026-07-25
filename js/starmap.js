@@ -142,8 +142,8 @@ export function initStarMap() {
   // Light glass — the world stays visible behind the instrument
   overlayEl.style.cssText = `
     position: fixed; inset: 0; z-index: 68;
-    background: radial-gradient(ellipse at center, rgba(4,7,14,0.38) 0%, rgba(2,4,9,0.7) 100%);
-    backdrop-filter: blur(3px); -webkit-backdrop-filter: blur(3px);
+    background: radial-gradient(ellipse at center, rgba(3,5,11,0.62) 0%, rgba(1,3,7,0.9) 100%);
+    backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
     font-family: 'Segoe UI','Helvetica Neue',Arial,sans-serif; font-weight: 300;
     color: rgba(255,255,255,0.94);
     opacity: 0; pointer-events: none;
@@ -254,7 +254,8 @@ export function initStarMap() {
     panning = true;
     panMoved = false;
     panStart = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
-    svgEl.setPointerCapture(e.pointerId);
+    // NOTE: no setPointerCapture — capture redirects the click event to the
+    // svg itself and destination dots never receive it.
   });
   svgEl.addEventListener('pointermove', (e) => {
     if (!panning) return;
@@ -395,6 +396,17 @@ function buildChart() {
   </filter>`;
   svgEl.appendChild(defs);
 
+  // ── System regions: bordered + tinted, drawn under everything ──
+  addShell(RING_MAX + 28, 'solar system', {
+    solid: true,
+    fill: 'rgba(120,170,255,0.035)',
+  });
+  addShell(R_INTERSTELLAR, 'the milky way', {
+    band: 'rgba(140,180,255,0.05)',
+    bandWidth: 64,
+  });
+  addShell(R_INTERGALACTIC, 'deep space', {});
+
   // ── Rings + planets: schematic radii, true angles ──
   const planets = PLANETISH.map(n => byName[n]).filter(Boolean)
     .map(b => ({ b, au: worldPos(b).length() / AU }))
@@ -460,10 +472,6 @@ function buildChart() {
     placed.push({ x, y });
   }
 
-  // ── Outer shells ──
-  addShell(R_INTERSTELLAR, 'the milky way');
-  addShell(R_INTERGALACTIC, 'deep space');
-
   const outerPlaced = [];
   function addOuter(item, ring) {
     const pos = worldPos(item);
@@ -497,11 +505,22 @@ function craftRadius(au, rings) {
   return Math.min(RING_MAX + 34, rings[rings.length - 1].R + 22);
 }
 
-function addShell(R, label) {
+function addShell(R, label, opts = {}) {
+  // Region tint: a filled disc (solar system) or a wide band (milky way)
+  if (opts.fill) {
+    svgEl.appendChild(svg('circle', { cx: 0, cy: 0, r: R, fill: opts.fill }));
+  }
+  if (opts.band) {
+    svgEl.appendChild(svg('circle', {
+      cx: 0, cy: 0, r: R, fill: 'none',
+      stroke: opts.band, 'stroke-width': opts.bandWidth || 60,
+    }));
+  }
   svgEl.appendChild(svg('circle', {
     cx: 0, cy: 0, r: R, fill: 'none',
-    stroke: 'rgba(140,180,255,0.13)', 'stroke-width': 1,
-    'stroke-dasharray': '2 7',
+    stroke: opts.solid ? 'rgba(150,195,255,0.28)' : 'rgba(140,180,255,0.16)',
+    'stroke-width': 1,
+    'stroke-dasharray': opts.solid ? 'none' : '2 7',
     'vector-effect': 'non-scaling-stroke',
   }));
   const lx = -R * 0.7071, ly = -R * 0.7071;
