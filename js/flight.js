@@ -586,7 +586,8 @@ export function updateFlight(dt, allBodies, dtWall) {
                 if (vignetteEl) vignetteEl.style.opacity = 0;
                 emit('warp:end', { name: warpTarget.name, reason: 'arrived' });
 
-                const dsBody = getDeepSpaceObjects().find(o => o.name === warpTarget.name);
+                const dsBody = getDeepSpaceObjects().find(o => o.name === warpTarget.name) ||
+                               (_allBodies && _allBodies.find(b => b.name === warpTarget.name && b.g && b.r));
                 if (dsBody && dsBody.g) {
                     const lmPos = dsBody.g.userData._worldPos || dsBody.g.position;
                     _arrFrom.copy(camPos);
@@ -999,6 +1000,14 @@ export function flyTo(bodyName) {
     const bodyPos = body.g.userData._worldPos || body.g.position;
     const dist = camPos.distanceTo(bodyPos);
 
+    // A glide is for neighborhood hops. Anything long routes through the
+    // warp pipeline — tunnel, charge beat, arrival glide — so travel time
+    // and sensation stay proportional to the journey.
+    if (dist > 40000) {
+        warpTo(bodyName);
+        return;
+    }
+
     // Approach from the sunward side (sun is at origin) so the lit face is visible
     const sunDir = new THREE.Vector3().copy(bodyPos).negate().normalize();
     // Offset slightly upward for a cinematic angle
@@ -1221,10 +1230,22 @@ export function warpTo(targetName) {
   const allLandmarks = getLandmarks();
   const landmark = allLandmarks.find(lm => lm.name === targetName);
 
-  if (!landmark) {
-    // Fall back to regular fly-to for solar system bodies
-    flyTo(targetName);
-    return;
+  // Resolve the destination: a landmark, or any body (planet, craft,
+  // black hole) — warp is the long-haul carrier for everything.
+  let targetPos, targetR, isVoid = false;
+  if (landmark) {
+    targetPos = landmark.pos;
+    targetR = landmark.radius;
+    isVoid = landmark.visual === 'void';
+  } else {
+    const body = _allBodies && _allBodies.find(b => b.name === targetName && b.g && b.r);
+    if (!body) return;
+    targetPos = body.g.userData._worldPos || body.g.position;
+    targetR = body.r;
+    if (camPos.distanceTo(targetPos) <= 40000) {
+      flyTo(targetName); // short hop — the neighborhood glide is nicer
+      return;
+    }
   }
 
   // Cancel any active orbit/fly-to/return modes
@@ -1237,29 +1258,31 @@ export function warpTo(targetName) {
   warpFromP.copy(camPos);
   warpFromQ.copy(camQuat);
 
-  // Compute target position: arrive close to the landmark center.
-  // For voids, arrive offset from center (not dead-center) so the player
-  // sees the near shell wall behind them and looks across the void at the
-  // far wall — gives depth and scale. For everything else, stop short so
-  // the object frames nicely.
-  const approachDir = new THREE.Vector3().copy(landmark.pos).sub(camPos).normalize();
-  const arrivalOffset = landmark.visual === 'void'
-    ? landmark.radius * 1.0   // inside the void, ~halfway between near wall and center
-    : landmark.radius * 0.5;
-  warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -arrivalOffset);
+  // Compute the standoff: for voids, arrive inside (the near wall behind
+  // you, the far wall across the emptiness). For landmarks, stop inside
+  // the visual's volume. For bodies, stop a few radii out — the arrival
+  // glide then dollies in and captures orbit.
+  const approachDir = new THREE.Vector3().copy(targetPos).sub(camPos).normalize();
+  const arrivalOffset = landmark
+    ? (isVoid ? targetR * 1.0 : targetR * 0.5)
+    : Math.max(targetR * 6, 80);
+  warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
 
-  // Duration: 15-30 seconds based on distance
-  const dist = camPos.distanceTo(landmark.pos);
-  warpDuration = Math.max(15, Math.min(30, dist / 2000));
+  // Duration grows logarithmically: every 10x the distance adds ~4s.
+  // Pluto ~12s, the Pillars ~20s, the Bootes Void ~25s — journeys feel
+  // proportional without long ones becoming tedious. Sensation of speed
+  // comes from the tunnel, not the clock.
+  const dist = camPos.distanceTo(targetPos);
+  warpDuration = Math.min(32, Math.max(8, 8 + 4 * Math.log10(Math.max(dist, 10000) / 10000)));
 
   // Set warp target
-  warpTarget = { name: landmark.name, desc: landmark.desc, pos: landmark.pos };
+  warpTarget = { name: targetName, desc: landmark ? landmark.desc : '', pos: targetPos.clone ? targetPos.clone() : targetPos };
   warpT = 0;
   _warpStartedAt = performance.now();
   warpPhase = 'accelerating';
   _arrivalShown = false;
-  emit('nav:target', landmark.name);
-  emit('warp:start', { name: landmark.name, duration: warpDuration });
+  emit('nav:target', targetName);
+  emit('warp:start', { name: targetName, duration: warpDuration });
 
   // Clear velocity
   velocity.set(0, 0, 0);
