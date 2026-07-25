@@ -19,10 +19,24 @@ const sceneOffset = new THREE.Vector3();
 
 export function getSceneOffset() { return sceneOffset; }
 
-// Base camera FOV — kept narrower than a wide first-person FOV to reduce
-// perspective stretching on spheres at screen edges. Speed/warp effects
-// temporarily widen this in flight.js.
-export const BASE_FOV = 62;
+// Base camera FOV — three.js FOV is VERTICAL, so on wide windows the
+// horizontal field balloons and rectilinear projection stretches spheres
+// near the screen edges into eggs. We therefore cap the HORIZONTAL field
+// and derive the vertical FOV from the aspect ratio: wide monitors get a
+// tighter lens, narrow windows keep the classic feel. Live ESM binding —
+// flight.js formulas (BASE_FOV + speed widening) pick changes up each
+// frame. Recomputed on resize.
+export let BASE_FOV = 62;
+const V_FOV_MAX = 62;   // never wider than the original vertical field
+const H_FOV_MAX = 82;   // degrees — edge distortion stays acceptable
+
+function computeBaseFov() {
+  const aspect = window.innerWidth / Math.max(window.innerHeight, 1);
+  const hRad = (H_FOV_MAX * Math.PI) / 180;
+  const vDeg = (2 * Math.atan(Math.tan(hRad / 2) / aspect) * 180) / Math.PI;
+  BASE_FOV = Math.min(V_FOV_MAX, vDeg);
+}
+computeBaseFov();
 
 // ═══════════════════════════════════════════════════════════════
 // initEngine
@@ -109,6 +123,7 @@ export function initEngine() {
 
   // ── Resize handler ──
   window.addEventListener('resize', () => {
+    computeBaseFov();
     const w = window.innerWidth;
     const h = window.innerHeight;
     camera.aspect = w / h;
