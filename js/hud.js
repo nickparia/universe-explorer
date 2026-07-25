@@ -33,7 +33,7 @@ export function updateHud(camPos, speed, allBodies) {
   if (speedEl) {
     // Convert scene units/s to approximate km/s (1 AU = 3000 units = 150M km)
     const kmPerUnit = 150000000 / AU;  // ~50,000 km per unit
-    const kmPerSec = speed * kmPerUnit * 60;  // velocity is scaled by 60 in flight.js
+    const kmPerSec = speed * kmPerUnit;  // velocity is true units/second
     const unitEl = document.getElementById('speed-unit');
 
     if (kmPerSec > 500000) {

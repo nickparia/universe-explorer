@@ -37,8 +37,9 @@ export function updateAtmoEffects(dt, camPos, velocity, camera, scene) {
   const perfConfig = getConfig();
   // ── Entry/exit flash detection ────────────────────────────────────
   if (alt.hasAtmosphere) {
-    const crossedIn = prevAltNorm >= 2.0 && alt.altitudeNorm < 2.0 && speed > 80;
-    const crossedOut = prevAltNorm <= 2.0 && alt.altitudeNorm > 2.0 && speed > 80;
+    // velocity is true u/s — near-planet approach speeds are tens of u/s
+    const crossedIn = prevAltNorm >= 2.0 && alt.altitudeNorm < 2.0 && speed > 25;
+    const crossedOut = prevAltNorm <= 2.0 && alt.altitudeNorm > 2.0 && speed > 25;
 
     if ((crossedIn || crossedOut) && canTriggerEntry) {
       entryFlashActive = true;
@@ -68,10 +69,10 @@ export function updateAtmoEffects(dt, camPos, velocity, camera, scene) {
 
   // ── Re-entry glow ─────────────────────────────────────────────────
   if (glowOverlay) {
-    if (alt.hasAtmosphere && alt.altitudeNorm < 3 && speed > 80) {
+    if (alt.hasAtmosphere && alt.altitudeNorm < 3 && speed > 25) {
       const config = getPlanetConfig(alt.nearestBody);
       const density = config?.atmosphere?.density || 1;
-      const baseIntensity = Math.min(1, (speed / 150) * Math.min(density, 5) * (1 - alt.altitudeNorm / 3));
+      const baseIntensity = Math.min(1, (speed / 60) * Math.min(density, 5) * (1 - alt.altitudeNorm / 3));
 
       // Add flash spike
       let flashBoost = 0;
@@ -91,11 +92,11 @@ export function updateAtmoEffects(dt, camPos, velocity, camera, scene) {
 
   // ── Camera shake ──────────────────────────────────────────────────
   const shakeMultiplier = perfConfig.cameraShake;
-  if (alt.hasAtmosphere && alt.altitudeNorm < 2 && speed > 30 && shakeMultiplier > 0) {
+  if (alt.hasAtmosphere && alt.altitudeNorm < 2 && speed > 12 && shakeMultiplier > 0) {
     const config = getPlanetConfig(alt.nearestBody);
     const density = Math.min(config?.atmosphere?.density || 1, 10);
     // More aggressive at high speed
-    const speedFactor = Math.min(speed / 200, 2);
+    const speedFactor = Math.min(speed / 80, 2);
     const shakeIntensity = speedFactor * density * (1 - alt.altitudeNorm / 2) * 0.003 * shakeMultiplier;
 
     shakeOffset.set(

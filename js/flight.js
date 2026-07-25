@@ -9,29 +9,37 @@ import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GA
 let starMapOpen = false;
 on('starmap:toggled', (isOpen) => { starMapOpen = isOpen; });
 
-// ── Constants ────────────────────────────────────────────────────────────────
-const THRUST_ACCEL       = 12;      // gentler initial acceleration
-const WARP_MULTIPLIER    = 40;
-const LINEAR_DAMPING     = 0.06;    // stronger drag when coasting — stops faster
-const THRUST_DAMPING     = 0.025;   // mild drag even while thrusting — prevents runaway
-const ANGULAR_DAMPING    = 0.12;    // snappier rotation stops
-const MAX_BASE_SPEED     = 600;
-const MOUSE_SENS         = 0.0015;  // slightly less twitchy
-const ROLL_ACCEL         = 1.2;
-const GRAVITY_RANGE_MULT = 5;
+// ── Movement model ───────────────────────────────────────────────────────────
+// Distance-proportional speed governor: the allowed speed is K × the distance
+// to the nearest (effective) surface. Far from everything you fly at
+// interstellar speeds; closing on a target the ceiling falls with the gap, so
+// the ship glides in exponentially. Stopping distance is at most
+// v·TAU_BRAKE ≤ K·TAU_BRAKE ≈ 0.32 of the remaining gap — overshoot is
+// mathematically impossible, at every scale, with no mode switching.
+const SPEED_DIST_K = 0.9;     // allowed speed = 0.9 × gap per second
+const SPEED_MIN    = 3;       // u/s — crawl floor at a surface
+const SPEED_MAX    = 1.5e6;   // u/s — ceiling in the intergalactic gulf
+const BOOST_MULT   = 3;       // Shift raises the ceiling while energy lasts
+
+// Velocity chases the input direction with critically-damped smoothing.
+// Different time constants per intent: slow cinematic ramp-up, authoritative
+// braking, gentle glide when keys are released.
+const TAU_ACCEL = 1.4;        // s — ramp up
+const TAU_BRAKE = 0.35;       // s — slow down / change direction
+const TAU_COAST = 0.6;        // s — keys released → glide to rest
+
+// Mouse look: direct rotation with light smoothing (no rotational inertia).
+const MOUSE_SENS = 0.0022;
+const TAU_LOOK   = 0.07;      // s — look smoothing
+const INVERT_Y   = true;      // flight-sim Y: pull down = pitch up
+const ROLL_ACCEL = 1.6;
+const TAU_ROLL   = 0.30;
+
 const BH_GRAVITY_RANGE_MULT = 50;
 
-// Angular-size speed limiting — creates awe on approach
-const ANGULAR_SLOW_START  = 5;    // degrees — planet becomes noticeable, start slowing
-const ANGULAR_SLOW_FULL   = 60;   // degrees — planet fills view, crawling speed
-const ANGULAR_WARP_CUTOFF = 15;   // degrees — warp disabled
-const MIN_APPROACH_SPEED  = 5;    // u/s — minimum speed near a body
-// Effective radius floor used ONLY for angular-size approach-speed limiting.
-// Real-world spacecraft in this scene have r=3..6 so at any reasonable viewing
-// distance their true angular size stays near 0 and the braking never kicks
-// in — you blow straight past them. Treating them as if they had a ~25-unit
-// hitbox for approach purposes gives a braking zone ~4x their visual size,
-// which makes small objects approachable without overshoot.
+// Effective radius floor for the governor. Spacecraft have r=3..6, so their
+// true surface would allow blowing past them at range; a ~25-unit effective
+// hitbox gives every small object a meaningful approach envelope.
 const MIN_APPROACH_RADIUS = 25;
 
 // ── Home position / orientation ──────────────────────────────────────────────
@@ -61,8 +69,16 @@ const angularVelocity = new THREE.Vector3(0, 0, 0);
 let boostEnergy = 1;
 let warpActive  = false;
 
+// Look smoothing + roll state
+let _pendYaw = 0, _pendPitch = 0, _rollVel = 0;
+const _wish = new THREE.Vector3();
+const _govBodyPos = new THREE.Vector3();
+
+// Speed feel — consumed by the dust field & HUD
+const _feel = { ratio: 0, govDist: Infinity, speed: 0, free: false };
+
 // Approach info (exported for HUD)
-let _approachInfo = { angularSize: 0, maxSpeed: MAX_BASE_SPEED, bodyName: null, warpAllowed: true };
+let _approachInfo = { maxSpeed: SPEED_MAX, bodyName: null };
 
 // Return-home animation state
 let returning = false;
@@ -274,6 +290,7 @@ export function initFlight(camera) {
 
 export function updateFlight(dt, allBodies) {
     if (!cam) return;
+    _feel.free = false; // set true only when free-flight physics runs
     if (starMapOpen) return; // freeze flight when map is open
 
     // Store reference for number key fly-to
@@ -620,103 +637,95 @@ export function updateFlight(dt, allBodies) {
       }
     }
 
-    // ── 2. Angular momentum from mouse ───────────────────────────────────────
-    angularVelocity.x += mouseDY * MOUSE_SENS;
-    angularVelocity.y += -mouseDX * MOUSE_SENS;
+    // ── 2. Mouse look — direct rotation with smoothing, inverted Y ──────────
+    _pendYaw   += -mouseDX * MOUSE_SENS;
+    _pendPitch += (INVERT_Y ? 1 : -1) * mouseDY * MOUSE_SENS;
     mouseDX = 0;
     mouseDY = 0;
 
-    // ── 3. Roll from Q/E ─────────────────────────────────────────────────────
-    if (keys['KeyQ'])  angularVelocity.z += ROLL_ACCEL * dt;
-    if (keys['KeyE'])  angularVelocity.z -= ROLL_ACCEL * dt;
+    const lookAlpha = 1 - Math.exp(-dt / TAU_LOOK);
+    const yawStep   = _pendYaw * lookAlpha;
+    const pitchStep = _pendPitch * lookAlpha;
+    _pendYaw   -= yawStep;
+    _pendPitch -= pitchStep;
 
-    // ── 4. Apply angular velocity to quaternion ──────────────────────────────
+    // ── 3. Roll from Q/E — kept inertial, reads as reaction wheels ──────────
+    if (keys['KeyQ']) _rollVel += ROLL_ACCEL * dt;
+    if (keys['KeyE']) _rollVel -= ROLL_ACCEL * dt;
+    _rollVel *= Math.exp(-dt / TAU_ROLL);
+
+    // ── 4. Apply rotation ────────────────────────────────────────────────────
     _axisX.set(1, 0, 0).applyQuaternion(camQuat);
     _axisY.set(0, 1, 0).applyQuaternion(camQuat);
     _axisZ.set(0, 0, 1).applyQuaternion(camQuat);
 
-    _qPitch.setFromAxisAngle(_axisX, angularVelocity.x);
-    _qYaw.setFromAxisAngle(_axisY, angularVelocity.y);
-    _qRoll.setFromAxisAngle(_axisZ, angularVelocity.z);
+    _qPitch.setFromAxisAngle(_axisX, pitchStep);
+    _qYaw.setFromAxisAngle(_axisY, yawStep);
+    _qRoll.setFromAxisAngle(_axisZ, _rollVel * dt);
 
     camQuat.premultiply(_qPitch);
     camQuat.premultiply(_qYaw);
     camQuat.premultiply(_qRoll);
     camQuat.normalize();
 
-    // ── 5. Dampen angular velocity ───────────────────────────────────────────
-    angularVelocity.multiplyScalar(1 - ANGULAR_DAMPING);
-
-    // ── 6. Angular-size speed limiting ───────────────────────────────────────
-    // Compute the apparent angular size of the nearest body. When it looks
-    // big on screen, force the player to slow down — this creates the sense
-    // of scale and makes overshooting impossible.
-    let angularDeg = 0;
-    let approachMaxSpeed = MAX_BASE_SPEED;
-    let warpAllowed = true;
-    let approachBody = null;
-
+    // ── 5. Speed governor — ceiling proportional to gap to nearest surface ──
+    let govDist = Infinity;
+    let govBody = null;
     if (allBodies) {
       for (let i = 0; i < allBodies.length; i++) {
         const body = allBodies[i];
         if (!body.g || !body.r) continue;
-        // Skip the Sun — its huge radius would brake us any time we're in the
-        // solar system. Everything else (planets, moons, spacecraft) gets
-        // approach-speed limiting. Small bodies use an inflated effective
-        // radius so the braking zone is meaningful at typical viewing dists.
-        if (body.name === 'SUN') continue;
         const bodyPos = body.g.userData._worldPos || body.g.position;
-        const dist = camPos.distanceTo(bodyPos);
         const effR = Math.max(body.r, MIN_APPROACH_RADIUS);
-        const angDeg = 2 * Math.atan(effR / Math.max(dist, 0.001)) * (180 / Math.PI);
-        if (angDeg > angularDeg) {
-          angularDeg = angDeg;
-          approachBody = body;
+        const d = camPos.distanceTo(bodyPos) - effR;
+        if (d < govDist) {
+          govDist = d;
+          govBody = body;
+          _govBodyPos.copy(bodyPos);
         }
       }
     }
+    govDist = Math.max(govDist, 0.5);
+    let allowed = Math.min(SPEED_MAX, Math.max(SPEED_MIN, govDist * SPEED_DIST_K));
 
-    if (angularDeg > ANGULAR_SLOW_START) {
-      const t = smoothstep(ANGULAR_SLOW_START, ANGULAR_SLOW_FULL, angularDeg);
-      approachMaxSpeed = MAX_BASE_SPEED * (1 - t) + MIN_APPROACH_SPEED * t;
-      if (angularDeg > ANGULAR_WARP_CUTOFF) warpAllowed = false;
-    }
-
-    _approachInfo.angularSize = angularDeg;
-    _approachInfo.maxSpeed = approachMaxSpeed;
-    _approachInfo.bodyName = approachBody ? approachBody.name : null;
-    _approachInfo.warpAllowed = warpAllowed;
-
-    // ── 7. Warp drive ────────────────────────────────────────────────────────
+    // ── 6. Boost — Shift raises the ceiling while energy lasts ──────────────
     const shiftHeld = keys['ShiftLeft'] || keys['ShiftRight'];
-    if (shiftHeld && warpAllowed) {
+    warpActive = shiftHeld && boostEnergy > 0;
+    if (warpActive) {
         boostEnergy -= dt * 0.2;
     } else {
         boostEnergy += dt * 0.125;
     }
     boostEnergy = Math.max(0, Math.min(1, boostEnergy));
+    if (warpActive) allowed = Math.min(SPEED_MAX, allowed * BOOST_MULT);
 
-    warpActive = shiftHeld && boostEnergy > 0 && warpAllowed;
-    const warpMult   = warpActive ? WARP_MULTIPLIER : 1;
-    const maxSpeed    = approachMaxSpeed * warpMult;
-    // Thrust is ALWAYS full power — only max speed is capped, not your ability to accelerate/escape
-    const thrustAccel = THRUST_ACCEL * warpMult;
+    _approachInfo.maxSpeed = allowed;
+    _approachInfo.bodyName = govBody ? govBody.name : null;
 
-    // ── 8. Thrust acceleration ───────────────────────────────────────────────
+    // ── 7. Wish velocity from input ──────────────────────────────────────────
     const fwd   = getForward(camQuat);
     const right = getRight(camQuat);
     const up    = getUp(camQuat);
 
+    _wish.set(0, 0, 0);
     let thrusting = false;
+    if (keys['KeyW'] || keys['ArrowUp'])    { _wish.add(fwd);   thrusting = true; }
+    if (keys['KeyS'] || keys['ArrowDown'])  { _wish.sub(fwd);   thrusting = true; }
+    if (keys['KeyD'] || keys['ArrowRight']) { _wish.add(right); thrusting = true; }
+    if (keys['KeyA'] || keys['ArrowLeft'])  { _wish.sub(right); thrusting = true; }
+    if (keys['Space']) { _wish.add(up); thrusting = true; }
+    if (keys['KeyC'])  { _wish.sub(up); thrusting = true; }
+    if (thrusting && _wish.lengthSq() > 0) _wish.normalize().multiplyScalar(allowed);
 
-    if (keys['KeyW'] || keys['ArrowUp'])    { velocity.addScaledVector(fwd, thrustAccel * dt); thrusting = true; }
-    if (keys['KeyS'] || keys['ArrowDown'])  { velocity.addScaledVector(fwd, -thrustAccel * dt); thrusting = true; }
-    if (keys['KeyA'] || keys['ArrowLeft'])  { velocity.addScaledVector(right, -thrustAccel * dt); thrusting = true; }
-    if (keys['KeyD'] || keys['ArrowRight']) { velocity.addScaledVector(right, thrustAccel * dt); thrusting = true; }
-    if (keys['Space']) { velocity.addScaledVector(up, thrustAccel * dt); thrusting = true; }
-    if (keys['KeyC'])  { velocity.addScaledVector(up, -thrustAccel * dt); thrusting = true; }
+    // ── 8. Velocity chases wish — critically damped, frame-rate independent ─
+    const speed0 = velocity.length();
+    let tau;
+    if (!thrusting)                     tau = TAU_COAST;
+    else if (_wish.length() >= speed0)  tau = TAU_ACCEL;
+    else                                tau = TAU_BRAKE;
+    velocity.lerp(_wish, 1 - Math.exp(-dt / tau));
 
-    // ── 9. Black hole gravity only ──────────────────────────────────────────
+    // ── 9. Black hole gravity ────────────────────────────────────────────────
     const alt = getAltitude();
     if (allBodies) {
         for (let i = 0; i < allBodies.length; i++) {
@@ -735,25 +744,19 @@ export function updateFlight(dt, allBodies) {
         }
     }
 
-    // ── 10. Linear dampening ───────────────────────────────────────────────
-    // Always apply some drag — stronger when coasting, mild when thrusting.
-    if (thrusting) {
-        velocity.multiplyScalar(1 - THRUST_DAMPING);
-    } else {
-        const curSpeed = velocity.length();
-        const speedFactor = 1 + Math.min(curSpeed / MAX_BASE_SPEED, 1) * 0.08;
-        velocity.multiplyScalar(1 - LINEAR_DAMPING * speedFactor);
-    }
-
-    // ── 11. Speed cap ────────────────────────────────────────────────────────
+    // ── 10. Inbound overspeed clamp ──────────────────────────────────────────
+    // Hard-cap only while closing on the governor body: that's the overshoot
+    // guarantee. Outbound overspeed is self-correcting (the gap grows, the
+    // ceiling rises) and must stay free so gas-giant ejection and escapes
+    // aren't strangled by the near-surface ceiling.
     const speed = velocity.length();
-    if (speed > maxSpeed) {
-        const overspeedRatio = Math.min((speed - maxSpeed) / maxSpeed, 1);
-        const dragDamp = 0.035 + overspeedRatio * 0.15;
-        velocity.multiplyScalar(1 - dragDamp);
+    const hardCap = allowed * 1.2;
+    if (speed > hardCap && govBody) {
+        _dir.copy(_govBodyPos).sub(camPos).normalize();
+        if (velocity.dot(_dir) > 0) velocity.multiplyScalar(hardCap / speed);
     }
 
-    // ── 12. Surface collision — planets only, not spacecraft ───────────────
+    // ── 11. Surface collision — planets only, not spacecraft ────────────────
     if (alt.body && alt.altitude < 1 && alt.nearestBody !== 'SUN' && alt.bodyRadius > 8) {
         const bodyPos = alt.body.g.userData._worldPos || alt.body.g.position;
         const outward = _dir.copy(camPos).sub(bodyPos).normalize();
@@ -766,23 +769,29 @@ export function updateFlight(dt, allBodies) {
         }
     }
 
-    // ── 13. Apply velocity to position ───────────────────────────────────────
-    camPos.addScaledVector(velocity, dt * 60);
+    // ── 12. Integrate position — velocity is true units/second ──────────────
+    camPos.addScaledVector(velocity, dt);
 
-    // ── 14. Speed feeling — FOV widen + speed lines ────────────────────────
+    // ── 13. Speed feel ───────────────────────────────────────────────────────
+    // ratio = how hard you're pushing the local ceiling. Because the ceiling
+    // is distance-proportional, ratio is also the honest measure of APPARENT
+    // speed (scenery-passing rate) at every scale — so it drives FOV, streaks
+    // and the dust field identically near a moon and between galaxies.
     {
       const spd = velocity.length();
-      const speedRatio = Math.min(spd / MAX_BASE_SPEED, 3); // 0-3 range
-      // FOV: BASE at rest, widen up to +8 at max normal speed (warp adds more)
-      const targetFov = BASE_FOV + speedRatio * 8;
-      cam.fov += (targetFov - cam.fov) * 0.05; // smooth lerp
+      const ratio = Math.min(spd / Math.max(allowed, 1e-6), 1.5);
+      _feel.ratio = ratio;
+      _feel.govDist = govDist;
+      _feel.speed = spd;
+      _feel.free = true;
+
+      const targetFov = BASE_FOV + smoothstep(0.35, 1.2, ratio) * 14;
+      cam.fov += (targetFov - cam.fov) * (1 - Math.exp(-dt / 0.25));
       cam.updateProjectionMatrix();
 
-      // Speed lines overlay
       const streakEl = document.getElementById('warp-streaks');
       if (streakEl) {
-        const lineOpacity = Math.max(0, (speedRatio - 0.3) / 2.7); // fade in above 30% speed
-        streakEl.style.opacity = lineOpacity * 0.6;
+        streakEl.style.opacity = (smoothstep(0.55, 1.2, ratio) * 0.5).toFixed(3);
       }
     }
 
@@ -1123,3 +1132,4 @@ export function getBoostEnergy() { return boostEnergy; }
 export function isWarping()      { return warpActive; }
 
 export function getApproachInfo() { return _approachInfo; }
+export function getSpeedFeel()    { return _feel; }

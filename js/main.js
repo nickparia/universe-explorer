@@ -6,7 +6,8 @@ import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
-import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, doHome, startIntro, beginIntroAnimation, isIntroPlaying, flyTo, warpTo } from './flight.js';
+import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, startIntro, beginIntroAnimation, isIntroPlaying, flyTo, warpTo } from './flight.js';
+import { initDust, updateDust } from './dust.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic } from './music.js';
 import { initHud, updateHud } from './hud.js';
@@ -50,6 +51,7 @@ async function boot() {
 
   // 6. Build deep space content
   createDeepSpace(scene, textures);
+  initDust(scene);
 
   // 7. Initialize flight controls
   initFlight(camera);
@@ -172,6 +174,9 @@ async function boot() {
 
     // Update flight physics
     updateFlight(dt, allBodies);
+
+    // Motion-parallax dust (reads speed feel computed by flight)
+    updateDust(dt, getCamPos(), getVelocity(), getSpeedFeel());
 
     // Update altitude tracking
     updateAltitude(getCamPos(), allBodies);
