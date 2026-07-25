@@ -178,12 +178,23 @@ async function boot() {
     // 8s arrival glide — the letters tear past as the camera crosses.
     if (titleEl) {
       titleEl.style.transition = 'none';
+      // Pin one high-res raster: double the font, halve the scale range —
+      // Chrome re-rasterizing mid-scale is what makes animated text "jump".
+      titleEl.style.fontSize = 'clamp(88px, 14vw, 192px)';
+      titleEl.style.willChange = 'transform, opacity';
+      // Scale rides ONE continuous accelerating curve (the loom is simply
+      // its slow beginning) — per-segment easings had velocity seams that
+      // read as hitches. Opacity runs on its own seam-free track.
+      titleEl.animate([
+        { transform: 'translate(-50%, -50%) scale(0.47)' },
+        { transform: 'translate(-50%, -50%) scale(9)' },
+      ], { duration: 7000, easing: 'cubic-bezier(0.8, 0, 0.9, 0.4)', fill: 'forwards' });
       titleAnim = titleEl.animate([
-        { opacity: 0,    transform: 'translate(-50%, -50%) scale(0.92)', easing: 'ease-out' },
-        { opacity: 0.95, transform: 'translate(-50%, -50%) scale(1.06)', offset: 0.32, easing: 'ease-in' },
-        { opacity: 1,    transform: 'translate(-50%, -50%) scale(1.5)',  offset: 0.62, easing: 'cubic-bezier(0.7, 0, 1, 0.55)' },
-        { opacity: 0,    transform: 'translate(-50%, -50%) scale(16)' },
-      ], { duration: 6800, fill: 'forwards' });
+        { opacity: 0 },
+        { opacity: 1, offset: 0.3 },
+        { opacity: 1, offset: 0.82 },
+        { opacity: 0 },
+      ], { duration: 7000, easing: 'linear', fill: 'forwards' });
       titleAnim.onfinish = () => { if (titleEl.parentNode) titleEl.remove(); };
     }
     // Release click-to-travel once the shot has settled
