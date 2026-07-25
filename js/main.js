@@ -200,7 +200,10 @@ async function boot() {
     requestAnimationFrame(animate);
     if (++_frameCount === 2) revealWorld();
     const now = performance.now();
-    const dt = Math.min((now - lastTime) / 1000, 0.05);
+    // dt is clamped for physics stability; dtWall is real elapsed time so
+    // scripted travel keeps progressing while the tab is backgrounded
+    const dtWall = (now - lastTime) / 1000;
+    const dt = Math.min(dtWall, 0.05);
     adaptTier(now - lastTime);
     lastTime = now;
     const elapsed = now * 0.001;
