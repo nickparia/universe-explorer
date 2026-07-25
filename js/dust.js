@@ -8,40 +8,71 @@
 // away and between galaxies it is light-years away — but the apparent
 // streaming rate stays honest, because allowed speed scales the same way.
 //
-// Particles live as offsets in a unit cube around the camera and wrap
-// toroidally; world position = camera + offset × shellRadius. Rescaling the
-// shell therefore never pops particles — they just breathe outward.
+// Two render layers share one particle set:
+//   - Points: soft round motes (radial-gradient sprite, per-particle tint)
+//   - LineSegments: motion streaks — each particle smears into a fading
+//     trail along the travel direction as you push the speed ceiling.
+// The layers crossfade on the speed ratio: drifting shows motes, cruising
+// hard shows streaks. Particles live as offsets in a unit cube around the
+// camera and wrap toroidally; world position = camera + offset × shellR,
+// so rescaling the shell never pops particles — they just breathe outward.
 
 import * as THREE from 'three';
 import { setWorldPos } from './engine.js';
+import { getPointTexture } from './textures.js';
 
 const COUNT = 480;
 const SHELL_MIN = 30;        // units — near-surface scale
 const SHELL_MAX = 400000;    // units — intergalactic scale
 const SHELL_FACTOR = 0.55;   // shell radius = factor × gap to nearest object
+const STREAK_TIME = 0.05;    // s — streak length = velocity × this
+const STREAK_MAX_FRAC = 0.3; // streak length cap as fraction of shell radius
 
 let points = null;
-let mat = null;
-let positions = null;        // Float32Array written to the geometry
+let streaks = null;
+let matP = null;
+let matL = null;
+let posP = null;             // Float32Array — mote positions
+let posL = null;             // Float32Array — streak segment endpoints
 const offsets = [];          // unit-cube offsets, the source of truth
 let shellR = 200;
 const _shift = new THREE.Vector3();
+const _streakVec = new THREE.Vector3();
 
 export function initDust(scene) {
+  const colorsP = new Float32Array(COUNT * 3);
+  const colorsL = new Float32Array(COUNT * 2 * 3);
+
   for (let i = 0; i < COUNT; i++) {
     offsets.push(new THREE.Vector3(
       Math.random() - 0.5,
       Math.random() - 0.5,
       Math.random() - 0.5
     ));
+
+    // Subtle tint variation — mostly ice-blue/white, a few warm motes,
+    // varied brightness so the field doesn't read as a uniform grid.
+    const warm = Math.random() < 0.12;
+    const b = 0.35 + Math.random() * 0.65;
+    const r = (warm ? 1.0 : 0.72 + Math.random() * 0.2) * b;
+    const g = (warm ? 0.82 : 0.82 + Math.random() * 0.12) * b;
+    const bl = (warm ? 0.6 : 1.0) * b;
+    colorsP[i * 3] = r; colorsP[i * 3 + 1] = g; colorsP[i * 3 + 2] = bl;
+
+    // Streak head carries the tint, tail fades to near-black so each
+    // segment renders as a comet-like trail under additive blending.
+    colorsL[i * 6] = r; colorsL[i * 6 + 1] = g; colorsL[i * 6 + 2] = bl;
+    colorsL[i * 6 + 3] = r * 0.05; colorsL[i * 6 + 4] = g * 0.05; colorsL[i * 6 + 5] = bl * 0.05;
   }
 
-  const geo = new THREE.BufferGeometry();
-  positions = new Float32Array(COUNT * 3);
-  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  const geoP = new THREE.BufferGeometry();
+  posP = new Float32Array(COUNT * 3);
+  geoP.setAttribute('position', new THREE.BufferAttribute(posP, 3));
+  geoP.setAttribute('color', new THREE.BufferAttribute(colorsP, 3));
 
-  mat = new THREE.PointsMaterial({
-    color: 0xaaccee,
+  matP = new THREE.PointsMaterial({
+    map: getPointTexture(),
+    vertexColors: true,
     size: 1,
     sizeAttenuation: true,
     transparent: true,
@@ -50,11 +81,30 @@ export function initDust(scene) {
     depthWrite: false,
   });
 
-  points = new THREE.Points(geo, mat);
+  points = new THREE.Points(geoP, matP);
   points.frustumCulled = false;
   points.renderOrder = 5;
   scene.add(points);
   setWorldPos(points, new THREE.Vector3());
+
+  const geoL = new THREE.BufferGeometry();
+  posL = new Float32Array(COUNT * 2 * 3);
+  geoL.setAttribute('position', new THREE.BufferAttribute(posL, 3));
+  geoL.setAttribute('color', new THREE.BufferAttribute(colorsL, 3));
+
+  matL = new THREE.LineBasicMaterial({
+    vertexColors: true,
+    transparent: true,
+    opacity: 0,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+  });
+
+  streaks = new THREE.LineSegments(geoL, matL);
+  streaks.frustumCulled = false;
+  streaks.renderOrder = 5;
+  scene.add(streaks);
+  setWorldPos(streaks, new THREE.Vector3());
 }
 
 function wrap01(v) {
@@ -75,6 +125,12 @@ export function updateDust(dt, camPos, velocity, feel) {
   const targetR = Math.min(SHELL_MAX, Math.max(SHELL_MIN, feel.govDist * SHELL_FACTOR));
   shellR += (targetR - shellR) * (1 - Math.exp(-dt / 0.8));
 
+  // Streak vector: how far a particle smears this frame, in world units,
+  // opposite to travel. Capped so streaks never span the whole shell.
+  _streakVec.copy(velocity).multiplyScalar(-STREAK_TIME);
+  const maxLen = shellR * STREAK_MAX_FRAC;
+  if (_streakVec.lengthSq() > maxLen * maxLen) _streakVec.setLength(maxLen);
+
   // Stream particles opposite to travel (in unit-cube space)
   _shift.copy(velocity).multiplyScalar(dt / shellR);
   for (let i = 0; i < COUNT; i++) {
@@ -82,17 +138,29 @@ export function updateDust(dt, camPos, velocity, feel) {
     o.x = wrap01(o.x - _shift.x);
     o.y = wrap01(o.y - _shift.y);
     o.z = wrap01(o.z - _shift.z);
-    positions[i * 3]     = o.x * shellR;
-    positions[i * 3 + 1] = o.y * shellR;
-    positions[i * 3 + 2] = o.z * shellR;
+    const x = o.x * shellR, y = o.y * shellR, z = o.z * shellR;
+    posP[i * 3] = x; posP[i * 3 + 1] = y; posP[i * 3 + 2] = z;
+    posL[i * 6] = x; posL[i * 6 + 1] = y; posL[i * 6 + 2] = z;
+    posL[i * 6 + 3] = x + _streakVec.x;
+    posL[i * 6 + 4] = y + _streakVec.y;
+    posL[i * 6 + 5] = z + _streakVec.z;
   }
   points.geometry.attributes.position.needsUpdate = true;
+  streaks.geometry.attributes.position.needsUpdate = true;
   setWorldPos(points, camPos);
+  setWorldPos(streaks, camPos);
 
   // Visible only in free flight and only when meaningfully moving relative
   // to the local scale. Scripted travel (warp/fly-to) has its own effects.
   const t = Math.max(0, Math.min(1, (feel.ratio - 0.15) / 0.85));
-  const targetOpacity = feel.free ? t * t * (3 - 2 * t) * 0.5 : 0;
-  mat.opacity += (targetOpacity - mat.opacity) * (1 - Math.exp(-dt / 0.3));
-  mat.size = shellR * 0.007;
+  const base = feel.free ? t * t * (3 - 2 * t) * 0.55 : 0;
+
+  // Crossfade motes → streaks as you push the ceiling
+  const sb = Math.max(0, Math.min(1, (feel.ratio - 0.45) / 0.45));
+  const streakBlend = sb * sb * (3 - 2 * sb);
+  const targetP = base * (1 - streakBlend * 0.65);
+  const targetL = base * streakBlend;
+  matP.opacity += (targetP - matP.opacity) * (1 - Math.exp(-dt / 0.3));
+  matL.opacity += (targetL - matL.opacity) * (1 - Math.exp(-dt / 0.3));
+  matP.size = shellR * 0.006;
 }
