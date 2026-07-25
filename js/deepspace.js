@@ -92,7 +92,7 @@ function createLandmarks(scene, textures) {
 
     // Dispatch to custom visual renderer if available, else default glow
     if (VISUAL_RENDERERS[def.visual]) {
-      VISUAL_RENDERERS[def.visual](group, def);
+      VISUAL_RENDERERS[def.visual](group, def, textures);
     } else {
       // Default: soft glow sprite
       const glowMat = new THREE.SpriteMaterial({

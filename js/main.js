@@ -307,14 +307,33 @@ async function boot() {
     }
     updateStarFieldOpacity(dt);
 
-    // Hide distant landmark groups — only show the one you're near
+    // Fade distant landmarks in/out smoothly — a hard visibility toggle
+    // reads as the whole nebula popping into existence mid-departure.
     {
       const camP = getCamPos();
       const allLandmarks = getLandmarks();
       for (const lm of allLandmarks) {
         const d = camP.distanceTo(lm.pos);
-        const showRange = lm.radius * 5; // only visible when approaching
-        lm.anchor.visible = d < showRange;
+        const fadeStart = lm.radius * 4.0;
+        const fadeEnd = lm.radius * 7.0;
+        const f = d <= fadeStart ? 1 : d >= fadeEnd ? 0 :
+          1 - (d - fadeStart) / (fadeEnd - fadeStart);
+        if (f <= 0) {
+          lm.anchor.visible = false;
+          continue;
+        }
+        lm.anchor.visible = true;
+        if (Math.abs((lm._fade ?? -1) - f) > 0.02) {
+          lm._fade = f;
+          lm.anchor.traverse((o) => {
+            if (o.material) {
+              if (o.material.userData._baseOpacity === undefined) {
+                o.material.userData._baseOpacity = o.material.opacity;
+              }
+              o.material.opacity = o.material.userData._baseOpacity * f;
+            }
+          });
+        }
       }
     }
 

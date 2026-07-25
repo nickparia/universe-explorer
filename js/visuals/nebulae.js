@@ -37,44 +37,85 @@ function getNebulaParticleTex() {
   return _nebulaParticleTex;
 }
 
+
+/** Convert a photo's dark sky to transparency (luminance → alpha) */
+function photoToAlphaTexture(tex) {
+  if (!tex || !tex.image) return null;
+  try {
+    const img = tex.image;
+    const cv = document.createElement('canvas');
+    cv.width = img.width; cv.height = img.height;
+    const ctx = cv.getContext('2d');
+    ctx.drawImage(img, 0, 0);
+    const data = ctx.getImageData(0, 0, cv.width, cv.height);
+    const px = data.data;
+    for (let i = 0; i < px.length; i += 4) {
+      const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+      // Gentle curve: sky (near-black) fully transparent, structure solid
+      px[i + 3] = Math.min(255, Math.pow(lum / 255, 0.75) * 460);
+    }
+    ctx.putImageData(data, 0, 0);
+    const t = new THREE.CanvasTexture(cv);
+    t.colorSpace = THREE.SRGBColorSpace;
+    return t;
+  } catch (e) {
+    return null;
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
-export function createPillars(group, def) {
-  // The Eagle Nebula's pillars — layered composition tuned for the arrival
-  // view at ~3.5 radii: a luminous teal emission backdrop, three dark
-  // sculpted dust columns silhouetted against it, golden rim light on the
-  // side facing the ionizing cluster, and newborn stars at the tips.
+export function createPillars(group, def, textures) {
+  // The real thing. Principle: the best, most accurate pictures available —
+  // this renders NASA's Hubble near-infrared portrait of the Pillars with
+  // its sky luminance-keyed to transparency, so the actual pillars float
+  // in space, wrapped in a soft ambient halo and a whisper of parallax
+  // dust. Accuracy first; the atmosphere layers only support the photo.
   const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
-  // Ionizing light from the upper-left (NGC 6611 cluster direction)
-  const lightDir = new THREE.Vector3(-0.38, 0.82, 0.3).normalize();
-  const baseY = -0.42 * s;
+  const photo = textures && textures.landmarkPillars
+    ? photoToAlphaTexture(textures.landmarkPillars)
+    : null;
 
-  // ── A. Emission backdrop — the glowing wall the pillars stand against ──
+  if (photo) {
+    const mat = new THREE.SpriteMaterial({
+      map: photo,
+      transparent: true,
+      opacity: 0.98,
+      depthWrite: false,
+    });
+    const sprite = new THREE.Sprite(mat);
+    // Image aspect 3249:3045
+    sprite.scale.set(s * 1.5, s * 1.41, 1);
+    sprite.renderOrder = 2;
+    group.add(sprite);
+  }
+
+  // ── Ambient halo — faint blue-teal breath around the photograph ──
   {
-    const count = 520;
+    const count = 260;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      // Flattened shell behind the columns
-      positions[i * 3]     = gaussRandom() * s * 0.6;
-      positions[i * 3 + 1] = baseY + Math.random() * s * 1.25;
-      positions[i * 3 + 2] = -s * 0.28 - Math.random() * s * 0.5;
-      // Hubble-palette teal-green, occasional warm patch
-      const warm = Math.random() < 0.18;
-      const b = 0.14 + Math.random() * 0.2;
-      colors[i * 3]     = (warm ? 0.9 : 0.38) * b;
-      colors[i * 3 + 1] = (warm ? 0.62 : 0.72) * b;
-      colors[i * 3 + 2] = (warm ? 0.38 : 0.62) * b;
+      const r = s * (0.55 + Math.random() * 0.75);
+      const a = Math.random() * Math.PI * 2;
+      const y = gaussRandom() * s * 0.5;
+      positions[i * 3]     = Math.cos(a) * r;
+      positions[i * 3 + 1] = y;
+      positions[i * 3 + 2] = Math.sin(a) * r * 0.6 - s * 0.15;
+      const b = 0.05 + Math.random() * 0.08;
+      colors[i * 3]     = b * 0.55;
+      colors[i * 3 + 1] = b * 0.75;
+      colors[i * 3 + 2] = b * 1.0;
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
-      vertexColors: true, map: tex, size: s * 0.5, sizeAttenuation: true,
-      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.35,
+      vertexColors: true, map: tex, size: s * 0.55, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.3,
       depthWrite: false,
     });
     const pts = new THREE.Points(geom, mat);
@@ -82,139 +123,30 @@ export function createPillars(group, def) {
     group.add(pts);
   }
 
-  // ── The three columns ──
-  const pillarDefs = [
-    { xOff: -0.27, tilt:  0.10, height: 1.00, width: 0.105 },
-    { xOff:  0.03, tilt: -0.05, height: 0.66, width: 0.085 },
-    { xOff:  0.27, tilt: -0.15, height: 0.46, width: 0.072 },
-  ];
-  const H = s * 0.95;
-  const _pos = new THREE.Vector3();
-  const _nrm = new THREE.Vector3();
-
-  for (let pi = 0; pi < pillarDefs.length; pi++) {
-    const pDef = pillarDefs[pi];
-
-    // Lumpy taper: radius narrows toward the tip with sinusoidal knots
-    const radiusAt = (t) =>
-      pDef.width * s * (1 - 0.52 * t) *
-      (1 + 0.32 * Math.sin(t * 9 + pi * 2.1) * (0.4 + t));
-
-    const axisXAt = (t) => (pDef.xOff + pDef.tilt * t) * s;
-
-    // ── B. Dark dust body — NormalBlending so it occludes the backdrop ──
-    {
-      const count = 5200;
-      const positions = new Float32Array(count * 3);
-      const colors = new Float32Array(count * 3);
-      for (let i = 0; i < count; i++) {
-        const t = Math.pow(Math.random(), 0.85); // denser toward base
-        const r = radiusAt(t) * Math.abs(gaussRandom()) * 0.55;
-        const a = Math.random() * Math.PI * 2;
-        positions[i * 3]     = axisXAt(t) + Math.cos(a) * r;
-        positions[i * 3 + 1] = baseY + t * pDef.height * H;
-        positions[i * 3 + 2] = Math.sin(a) * r;
-        // Dark sepia, slightly lighter where thin
-        const b = 0.035 + Math.random() * 0.06;
-        colors[i * 3]     = b * 1.55;
-        colors[i * 3 + 1] = b * 1.0;
-        colors[i * 3 + 2] = b * 0.62;
-      }
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      const mat = new THREE.PointsMaterial({
-        vertexColors: true, map: tex, size: s * 0.062, sizeAttenuation: true,
-        blending: THREE.NormalBlending, transparent: true, opacity: 0.95,
-        depthWrite: false,
-      });
-      const pts = new THREE.Points(geom, mat);
-      pts.renderOrder = 2;
-      group.add(pts);
-    }
-
-    // ── C. Golden rim light on the illuminated flank ──
-    {
-      const count = 1900;
-      const positions = new Float32Array(count * 3);
-      const colors = new Float32Array(count * 3);
-      let placed = 0;
-      while (placed < count) {
-        const t = Math.random();
-        const a = Math.random() * Math.PI * 2;
-        _nrm.set(Math.cos(a), 0.18, Math.sin(a)).normalize();
-        if (_nrm.dot(lightDir) < 0.48) continue; // lit flank only
-        const r = radiusAt(t) * (0.92 + Math.random() * 0.22);
-        _pos.set(axisXAt(t) + Math.cos(a) * r, baseY + t * pDef.height * H, Math.sin(a) * r);
-        positions[placed * 3]     = _pos.x;
-        positions[placed * 3 + 1] = _pos.y;
-        positions[placed * 3 + 2] = _pos.z;
-        // Amber rim, brighter toward tips where ionization is fiercest
-        const b = 0.16 + Math.random() * 0.2 + t * 0.3;
-        colors[placed * 3]     = b * 1.0;
-        colors[placed * 3 + 1] = b * 0.68;
-        colors[placed * 3 + 2] = b * 0.36;
-        placed++;
-      }
-      const geom = new THREE.BufferGeometry();
-      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-      const mat = new THREE.PointsMaterial({
-        vertexColors: true, map: tex, size: s * 0.02, sizeAttenuation: true,
-        blending: THREE.AdditiveBlending, transparent: true, opacity: 0.34,
-        depthWrite: false,
-      });
-      const pts = new THREE.Points(geom, mat);
-      pts.renderOrder = 3;
-      group.add(pts);
-    }
-
-    // ── D. Newborn stars at the tip ──
-    const tipX = axisXAt(1) - pDef.tilt * 0.1 * s;
-    const tipY = baseY + pDef.height * H;
-    for (let st = 0; st < 4; st++) {
-      const starMat = new THREE.SpriteMaterial({
-        map: tex, color: st === 0 ? 0xcfe8ff : 0xffe9c9,
-        blending: THREE.AdditiveBlending, transparent: true,
-        opacity: 0.85, depthWrite: false,
-      });
-      const star = new THREE.Sprite(starMat);
-      star.position.set(
-        tipX + (Math.random() - 0.5) * pDef.width * s * 0.7,
-        tipY - Math.random() * 0.06 * H,
-        (Math.random() - 0.5) * pDef.width * s * 0.7
-      );
-      const sc = s * (0.012 + Math.random() * 0.014);
-      star.scale.set(sc, sc, 1);
-      star.renderOrder = 4;
-      group.add(star);
-    }
-  }
-
-  // ── E. Common dust bank the columns rise from ──
+  // ── Parallax dust — sparse foreground motes so approach has depth ──
   {
-    const count = 2600;
+    const count = 160;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      positions[i * 3]     = (Math.random() - 0.5) * s * 0.95;
-      positions[i * 3 + 1] = baseY - Math.abs(gaussRandom()) * s * 0.07;
-      positions[i * 3 + 2] = (Math.random() - 0.5) * s * 0.3;
-      const b = 0.045 + Math.random() * 0.075;
-      colors[i * 3]     = b * 1.5;
-      colors[i * 3 + 1] = b * 0.95;
-      colors[i * 3 + 2] = b * 0.6;
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.2;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 1.8;
+      positions[i * 3 + 2] = s * (0.35 + Math.random() * 1.1); // in front
+      const b = 0.10 + Math.random() * 0.16;
+      colors[i * 3]     = b * 0.8;
+      colors[i * 3 + 1] = b * 0.85;
+      colors[i * 3 + 2] = b * 1.0;
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
-      vertexColors: true, map: tex, size: s * 0.055, sizeAttenuation: true,
-      blending: THREE.NormalBlending, transparent: true, opacity: 0.8,
+      vertexColors: true, map: tex, size: s * 0.012, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.5,
       depthWrite: false,
     });
     const pts = new THREE.Points(geom, mat);
-    pts.renderOrder = 2;
+    pts.renderOrder = 3;
     group.add(pts);
   }
 }
