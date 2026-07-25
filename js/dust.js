@@ -26,7 +26,7 @@ const SHELL_MIN = 30;        // units — near-surface scale
 const SHELL_MAX = 400000;    // units — intergalactic scale
 const SHELL_FACTOR = 0.55;   // shell radius = factor × gap to nearest object
 const STREAK_TIME = 0.05;    // s — streak length = velocity × this
-const STREAK_MAX_FRAC = 0.3; // streak length cap as fraction of shell radius
+const STREAK_MAX_FRAC = 0.11; // streak length cap as fraction of shell radius
 
 let points = null;
 let streaks = null;
@@ -35,6 +35,7 @@ let matL = null;
 let posP = null;             // Float32Array — mote positions
 let posL = null;             // Float32Array — streak segment endpoints
 const offsets = [];          // unit-cube offsets, the source of truth
+const lenFactor = [];        // per-particle streak length — depth variation
 let shellR = 200;
 const _shift = new THREE.Vector3();
 const _streakVec = new THREE.Vector3();
@@ -51,6 +52,10 @@ export function initDust(scene) {
       Math.random() - 0.5,
       Math.random() - 0.5
     ));
+    // Squared distribution: most streaks short and faint, a few long —
+    // reads as depth instead of a uniform line burst
+    const lf = Math.random();
+    lenFactor.push(0.12 + lf * lf * 0.88);
 
     // Subtle tint variation — mostly ice-blue/white, a few warm motes,
     // varied brightness so the field doesn't read as a uniform grid.
@@ -151,9 +156,9 @@ export function updateDust(dt, camPos, velocity, feel) {
     const x = o.x * shellR, y = o.y * shellR, z = o.z * shellR;
     posP[i * 3] = x; posP[i * 3 + 1] = y; posP[i * 3 + 2] = z;
     posL[i * 6] = x; posL[i * 6 + 1] = y; posL[i * 6 + 2] = z;
-    posL[i * 6 + 3] = x + _streakVec.x;
-    posL[i * 6 + 4] = y + _streakVec.y;
-    posL[i * 6 + 5] = z + _streakVec.z;
+    posL[i * 6 + 3] = x + _streakVec.x * lenFactor[i];
+    posL[i * 6 + 4] = y + _streakVec.y * lenFactor[i];
+    posL[i * 6 + 5] = z + _streakVec.z * lenFactor[i];
   }
   points.geometry.attributes.position.needsUpdate = true;
   streaks.geometry.attributes.position.needsUpdate = true;
@@ -162,15 +167,17 @@ export function updateDust(dt, camPos, velocity, feel) {
 
   // Visible in free flight (scaled by how hard you push the ceiling) and
   // during warp (the 3D dust stream IS the tunnel).
-  const drive = feel.free ? feel.ratio : (feel.warp ? 0.55 + feel.warp * 0.65 : 0);
+  const drive = feel.free ? feel.ratio : (feel.warp ? 0.45 + feel.warp * 0.42 : 0);
   const t = Math.max(0, Math.min(1, (drive - 0.15) / 0.85));
-  const base = t * t * (3 - 2 * t) * 0.55;
+  const base = t * t * (3 - 2 * t) * 0.5;
 
-  // Crossfade motes → streaks as apparent speed rises
+  // Crossfade motes → streaks as apparent speed rises. The blend never
+  // fully saturates: motes persist through the cruise so the stream keeps
+  // depth instead of collapsing into a wall of lines.
   const sb = Math.max(0, Math.min(1, (drive - 0.45) / 0.45));
   const streakBlend = sb * sb * (3 - 2 * sb);
-  const targetP = base * (1 - streakBlend * 0.65);
-  const targetL = base * streakBlend;
+  const targetP = base * (1 - streakBlend * 0.5);
+  const targetL = base * streakBlend * 0.6;
   matP.opacity += (targetP - matP.opacity) * (1 - Math.exp(-dt / 0.3));
   matL.opacity += (targetL - matL.opacity) * (1 - Math.exp(-dt / 0.3));
   matP.size = shellR * 0.006;

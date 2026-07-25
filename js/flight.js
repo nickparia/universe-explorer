@@ -548,13 +548,14 @@ export function updateFlight(dt, allBodies, dtWall) {
             camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
             cam.quaternion.copy(camQuat);
 
-            // Speed feeling: FOV, warp streaks, vignette, and star fade
-            cam.fov = BASE_FOV + speedFeeling * 40;
+            // Speed feeling: gentle FOV push, a whisper of vignette, star
+            // fade — the 3D dust stream carries the tunnel on its own.
+            cam.fov = BASE_FOV + speedFeeling * 18;
             cam.updateProjectionMatrix();
             const streakEl = document.getElementById('warp-streaks');
-            if (streakEl) streakEl.style.opacity = speedFeeling * 1.0;
+            if (streakEl) streakEl.style.opacity = 0;
             const vignetteEl = document.getElementById('warp-vignette');
-            if (vignetteEl) vignetteEl.style.opacity = (warpPhase === 'cruising') ? 0.7 : speedFeeling * 0.5;
+            if (vignetteEl) vignetteEl.style.opacity = speedFeeling * 0.18;
 
             // Star fade during warp — keep a faint layer visible so that
             // camera-relative motion against the near-star field gives a real
