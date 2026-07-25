@@ -607,10 +607,10 @@ export function updateFlight(dt, allBodies, dtWall) {
         if (keys['KeyW'] || keys['ArrowUp'])    orbitDistance = Math.max(orbitBody.r * 1.5, orbitDistance - orbitBody.r * 2 * dt);
         if (keys['KeyS'] || keys['ArrowDown'])  orbitDistance += orbitBody.r * 2 * dt;
 
-        // Auto-rotation — glacial drift, ~5 minutes per full orbit. Fast
-        // enough to feel alive, slow enough that the opening vista stays
-        // on the sunlit side for minutes.
-        orbitTheta += dt * 0.02;
+        // Auto-rotation — slow drift, ~2.5 minutes per full orbit. Visibly
+        // alive (a static opening reads as frozen) while keeping the
+        // vista sunlit for the first minute.
+        orbitTheta += dt * 0.04;
 
         // Compute orbit position
         const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);

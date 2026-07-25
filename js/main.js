@@ -175,49 +175,27 @@ async function boot() {
     bootFadeStarted = true;
     bootFade.style.opacity = '0';
     setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 3500);
+    setTimeout(dismissTitle, 8000); // title dissolves on its own
   }
 
-  // Title overlay over the live orbit
+  // Title overlay over the live orbit — no instructions, no choices.
+  // The title simply holds for a few breaths after the fade-in and
+  // dissolves; any input dismisses it early. You are already flying.
   const titleEl = document.getElementById('hero-title');
   if (titleEl) titleEl.style.opacity = '1';
-
-  const hintEl = document.createElement('div');
-  hintEl.id = 'vista-hint';
-  hintEl.style.cssText = 'position:fixed;top:calc(50% + 9vh);left:50%;transform:translateX(-50%);' +
-    'z-index:160;text-align:center;font-size:10px;letter-spacing:4px;color:rgba(255,255,255,0.4);' +
-    'text-shadow:0 1px 4px rgba(0,0,0,0.9);transition:opacity 1s;pointer-events:auto;';
-  hintEl.innerHTML = '<div>press any key</div>' +
-    '<div style="margin-top:26px">' +
-    '<span id="vista-stars" style="font-size:9px;letter-spacing:3px;' +
-    'color:rgba(140,180,255,0.45);cursor:pointer;pointer-events:auto;' +
-    'border-bottom:1px solid rgba(140,180,255,0.2);padding-bottom:3px">' +
-    'begin from the stars</span></div>';
-  document.body.appendChild(hintEl);
 
   let titleDismissing = false;
   function dismissTitle() {
     if (titleDismissing) return;
     titleDismissing = true;
-    // Keep click-to-travel suppressed briefly so the dismissing click
+    // Keep click-to-travel suppressed briefly so a dismissing click
     // can't also fly you at whatever planet was under the cursor
     setTimeout(() => { titleActive = false; }, 400);
     window.removeEventListener('keydown', dismissTitle);
     window.removeEventListener('mousedown', dismissTitle);
     window.removeEventListener('touchstart', dismissTitle);
     if (titleEl) titleEl.style.opacity = '0';
-    hintEl.style.opacity = '0';
-    setTimeout(() => { if (hintEl.parentNode) hintEl.parentNode.removeChild(hintEl); }, 1100);
   }
-
-  const starsBtn = hintEl.querySelector('#vista-stars');
-  starsBtn.addEventListener('mousedown', (e) => {
-    e.stopPropagation();
-    e.preventDefault();
-    dismissTitle();
-    setMilkyWayOpacity(1.0);
-    startIntro({ paused: false });
-    beginIntroAnimation();
-  });
 
   window.addEventListener('keydown', dismissTitle);
   window.addEventListener('mousedown', dismissTitle);
