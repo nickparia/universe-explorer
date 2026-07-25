@@ -1,7 +1,7 @@
 import * as THREE from 'three';
 import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
-import { getLandmarks } from './deepspace.js';
+import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { emit, on } from './bus.js';
 import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GALACTIC_CENTER } from './engine.js';
 
@@ -115,8 +115,11 @@ let _arrivalShown = false;
 let _lastMoveKeyAt = 0;
 let _warpStartedAt = 0;
 
-// Arrival state — the opening shot: glide in along the sun line and
-// settle behind a body so it silhouettes against the Sun.
+// Arrival state — the universal landing grammar. Used by the opening
+// shot (glide along the sun line, gaze settling from Sun onto Earth)
+// and by warp arrivals (dolly deeper into the destination with a slight
+// lateral drift). Always ends in orbit capture — which is what wakes the
+// field notes, the ship computer, the arrival tone, and the voyage log.
 let arrival = null;
 const _arrFrom = new THREE.Vector3();
 const _arrTo = new THREE.Vector3();
@@ -317,6 +320,7 @@ export function updateFlight(dt, allBodies, dtWall) {
     // backgrounded tab still arrives; free-flight physics uses clamped dt.
     const dtTravel = Math.min(dtWall ?? dt, 2.0);
     _feel.free = false; // set true only when free-flight physics runs
+    _feel.warp = 0;      // set during warp travel — drives the dust stream
     if (starMapOpen) return; // freeze flight when map is open
 
     // Store reference for number key fly-to
@@ -437,13 +441,19 @@ export function updateFlight(dt, allBodies, dtWall) {
         const t = Math.min(arrival.t, 1);
         const ease = 1 - Math.pow(1 - t, 3); // ease-out: cross fast, settle soft
         camPos.lerpVectors(_arrFrom, _arrTo, ease);
-        // Gaze: locked on the Sun for the crossing, then settling onto the
-        // destination in the final stretch — so the orientation at t=1 is
-        // EXACTLY what orbit mode computes and the handoff has no snap.
         const arrBodyPos = arrival.body.g.userData._worldPos || arrival.body.g.position;
-        _dir.set(0, 0, 0); // look target: sun → body
-        const lookBlend = smoothstep(0.7, 1, ease);
-        if (lookBlend > 0) _dir.lerp(arrBodyPos, lookBlend);
+        if (arrival.lookAtBody) {
+          // Warp arrival: gaze stays on the destination the whole glide
+          _dir.copy(arrBodyPos);
+        } else {
+          // Opening: locked on the Sun for the crossing, then settling onto
+          // the destination in the final stretch — so the orientation at
+          // t=1 is EXACTLY what orbit mode computes and the handoff has no
+          // snap.
+          _dir.set(0, 0, 0);
+          const lookBlend = smoothstep(0.7, 1, ease);
+          if (lookBlend > 0) _dir.lerp(arrBodyPos, lookBlend);
+        }
         _lookMat.lookAt(camPos, _dir, _upVec);
         camQuat.setFromRotationMatrix(_lookMat);
         cam.quaternion.copy(camQuat);
@@ -497,28 +507,37 @@ export function updateFlight(dt, allBodies, dtWall) {
         }
 
         if (warpTarget) {
-            // Three-phase easing
+            // Four-phase easing: a charge beat (held while the drive spools
+            // and the nose swings onto the target), then accelerate, cruise,
+            // decelerate. The anticipation is what makes the leap feel big.
+            const HOLD = 0.06;
             let eased;
             let speedFeeling;
-            if (warpT < 0.15) {
-                // Accelerating: quadratic ease-in (0-15%)
-                const p = warpT / 0.15;
-                eased = 0.15 * (p * p);
-                speedFeeling = p * p;
-                warpPhase = 'accelerating';
-            } else if (warpT < 0.85) {
-                // Cruising: linear (15-85%)
-                const p = (warpT - 0.15) / 0.70;
-                eased = 0.15 + 0.70 * p;
-                speedFeeling = 1.0;
-                warpPhase = 'cruising';
+            if (warpT < HOLD) {
+                eased = 0;
+                speedFeeling = 0.12 * (warpT / HOLD); // faint tremble while charging
+                warpPhase = 'charging';
             } else {
-                // Decelerating: quadratic ease-out (85-100%)
-                const p = (warpT - 0.85) / 0.15;
-                eased = 0.85 + 0.15 * (1 - (1 - p) * (1 - p));
-                speedFeeling = (1 - p) * (1 - p);
-                warpPhase = 'decelerating';
+                const t2 = (warpT - HOLD) / (1 - HOLD);
+                if (t2 < 0.15) {
+                    const p = t2 / 0.15;
+                    eased = 0.15 * (p * p);
+                    speedFeeling = p * p;
+                    warpPhase = 'accelerating';
+                } else if (t2 < 0.85) {
+                    const p = (t2 - 0.15) / 0.70;
+                    eased = 0.15 + 0.70 * p;
+                    speedFeeling = 1.0;
+                    warpPhase = 'cruising';
+                } else {
+                    const p = (t2 - 0.85) / 0.15;
+                    eased = 0.85 + 0.15 * (1 - (1 - p) * (1 - p));
+                    speedFeeling = (1 - p) * (1 - p);
+                    warpPhase = 'decelerating';
+                }
             }
+            _feel.warp = speedFeeling;
+            _feel.govDist = 150000; // dust shell at interstellar scale
 
             // Interpolate position
             camPos.lerpVectors(warpFromP, warpTargetP, Math.min(eased, 1));
@@ -555,7 +574,10 @@ export function updateFlight(dt, allBodies, dtWall) {
             // (hud.js) already shows the name and description on proximity,
             // and two cards at once felt like duplicate UI.
 
-            // Complete at 100%
+            // Complete at 100% — the drive lets go and the arrival glide
+            // begins: a slow dolly deeper into the destination with a slight
+            // lateral drift for parallax, ending in orbit capture (which
+            // wakes the notes, the tone, the log, the ship computer).
             if (warpT >= 1) {
                 camPos.copy(warpTargetP);
                 cam.fov = BASE_FOV;
@@ -563,6 +585,18 @@ export function updateFlight(dt, allBodies, dtWall) {
                 if (streakEl) streakEl.style.opacity = 0;
                 if (vignetteEl) vignetteEl.style.opacity = 0;
                 emit('warp:end', { name: warpTarget.name, reason: 'arrived' });
+
+                const dsBody = getDeepSpaceObjects().find(o => o.name === warpTarget.name);
+                if (dsBody && dsBody.g) {
+                    const lmPos = dsBody.g.userData._worldPos || dsBody.g.position;
+                    _arrFrom.copy(camPos);
+                    // Dolly 35% closer, drifting sideways ~9 degrees around
+                    // the destination for parallax as we settle
+                    _dir.copy(camPos).sub(lmPos).multiplyScalar(0.65);
+                    _dir.applyAxisAngle(_upVec, 0.16);
+                    _arrTo.copy(lmPos).add(_dir);
+                    arrival = { t: 0, dur: 5, body: dsBody, lookAtBody: true };
+                }
                 warpTarget = null;
                 warpPhase = 'none';
                 velocity.set(0, 0, 0);

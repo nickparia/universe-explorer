@@ -38,6 +38,8 @@ const offsets = [];          // unit-cube offsets, the source of truth
 let shellR = 200;
 const _shift = new THREE.Vector3();
 const _streakVec = new THREE.Vector3();
+const _prevCam = new THREE.Vector3();
+let _hasPrev = false;
 
 export function initDust(scene) {
   const colorsP = new Float32Array(COUNT * 3);
@@ -121,18 +123,26 @@ function wrap01(v) {
 export function updateDust(dt, camPos, velocity, feel) {
   if (!points) return;
 
+  // Motion comes from the camera's actual frame-to-frame displacement, so
+  // dust streams identically in free flight, fly-to, and warp — scripted
+  // travel moves the camera without touching `velocity`.
+  if (!_hasPrev) { _prevCam.copy(camPos); _hasPrev = true; }
+  const dtSafe = Math.max(dt, 1 / 240);
+  _shift.copy(camPos).sub(_prevCam); // world units moved this frame
+  _prevCam.copy(camPos);
+
   // Shell tracks the local scale, smoothed so scale changes breathe
   const targetR = Math.min(SHELL_MAX, Math.max(SHELL_MIN, feel.govDist * SHELL_FACTOR));
   shellR += (targetR - shellR) * (1 - Math.exp(-dt / 0.8));
 
   // Streak vector: how far a particle smears this frame, in world units,
   // opposite to travel. Capped so streaks never span the whole shell.
-  _streakVec.copy(velocity).multiplyScalar(-STREAK_TIME);
+  _streakVec.copy(_shift).multiplyScalar(-STREAK_TIME / dtSafe);
   const maxLen = shellR * STREAK_MAX_FRAC;
   if (_streakVec.lengthSq() > maxLen * maxLen) _streakVec.setLength(maxLen);
 
   // Stream particles opposite to travel (in unit-cube space)
-  _shift.copy(velocity).multiplyScalar(dt / shellR);
+  _shift.multiplyScalar(1 / shellR);
   for (let i = 0; i < COUNT; i++) {
     const o = offsets[i];
     o.x = wrap01(o.x - _shift.x);
@@ -150,13 +160,14 @@ export function updateDust(dt, camPos, velocity, feel) {
   setWorldPos(points, camPos);
   setWorldPos(streaks, camPos);
 
-  // Visible only in free flight and only when meaningfully moving relative
-  // to the local scale. Scripted travel (warp/fly-to) has its own effects.
-  const t = Math.max(0, Math.min(1, (feel.ratio - 0.15) / 0.85));
-  const base = feel.free ? t * t * (3 - 2 * t) * 0.55 : 0;
+  // Visible in free flight (scaled by how hard you push the ceiling) and
+  // during warp (the 3D dust stream IS the tunnel).
+  const drive = feel.free ? feel.ratio : (feel.warp ? 0.55 + feel.warp * 0.65 : 0);
+  const t = Math.max(0, Math.min(1, (drive - 0.15) / 0.85));
+  const base = t * t * (3 - 2 * t) * 0.55;
 
-  // Crossfade motes → streaks as you push the ceiling
-  const sb = Math.max(0, Math.min(1, (feel.ratio - 0.45) / 0.45));
+  // Crossfade motes → streaks as apparent speed rises
+  const sb = Math.max(0, Math.min(1, (drive - 0.45) / 0.45));
   const streakBlend = sb * sb * (3 - 2 * sb);
   const targetP = base * (1 - streakBlend * 0.65);
   const targetL = base * streakBlend;
