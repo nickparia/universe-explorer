@@ -39,41 +39,96 @@ function getNebulaParticleTex() {
 
 
 /**
- * Prepare a NASA photo for floating in space: leave colors untouched but
- * feather the edges with a wide elliptical falloff so the photo's star
- * field dissolves into the real sky instead of ending at a rectangle.
- * Rendered additively, the photo's black sky contributes nothing — dark
- * nebular structure reads as dark voids against the added glow, exactly
- * as it does in reality against black space.
+ * 2.5D layer factory: split a NASA photo into depth layers so the object
+ * has real internal parallax instead of reading as one flat picture.
+ *  - base:  the full photo, edge-feathered (rendered additively, far)
+ *  - glow:  bright/blue nebulosity matte (additive, middle)
+ *  - dark:  dark-structure matte — pixels darker than their local
+ *           neighborhood, i.e. dust columns against glow (rendered with
+ *           NORMAL blending so it truly occludes what lies behind)
  */
-function photoToFeatheredTexture(tex) {
+function makePhotoLayers(tex) {
   if (!tex || !tex.image) return null;
   try {
     const img = tex.image;
-    const cv = document.createElement('canvas');
-    cv.width = img.width; cv.height = img.height;
-    const ctx = cv.getContext('2d');
-    ctx.drawImage(img, 0, 0);
-    const data = ctx.getImageData(0, 0, cv.width, cv.height);
-    const px = data.data;
-    const cx = cv.width / 2, cy = cv.height / 2;
-    for (let y = 0; y < cv.height; y++) {
-      for (let x = 0; x < cv.width; x++) {
-        // Elliptical distance from center, 1.0 at the corners
-        const dx = (x - cx) / cx;
-        const dy = (y - cy) / cy;
-        const d = Math.sqrt(dx * dx + dy * dy);
-        // Solid to 55%, then a long dissolve to nothing by 98%
-        const t = Math.max(0, Math.min(1, (d - 0.55) / 0.43));
-        const feather = 1 - t * t * (3 - 2 * t);
-        const i = (y * cv.width + x) * 4;
-        px[i + 3] = Math.round(255 * feather);
+    const W = img.width, H = img.height;
+
+    const draw = () => {
+      const cv = document.createElement('canvas');
+      cv.width = W; cv.height = H;
+      const ctx = cv.getContext('2d');
+      ctx.drawImage(img, 0, 0);
+      return { cv, ctx };
+    };
+
+    // Blurred copy = local neighborhood brightness
+    const blur = document.createElement('canvas');
+    blur.width = W; blur.height = H;
+    const bctx = blur.getContext('2d');
+    bctx.filter = `blur(${Math.round(W / 55)}px)`;
+    bctx.drawImage(img, 0, 0);
+    const blurPx = bctx.getImageData(0, 0, W, H).data;
+
+    const feather = (px) => {
+      const cx = W / 2, cy = H / 2;
+      for (let y = 0; y < H; y++) {
+        for (let x = 0; x < W; x++) {
+          const dx = (x - cx) / cx, dy = (y - cy) / cy;
+          const d = Math.sqrt(dx * dx + dy * dy);
+          const t = Math.max(0, Math.min(1, (d - 0.5) / 0.47));
+          const f = 1 - t * t * (3 - 2 * t);
+          const i = (y * W + x) * 4;
+          px[i + 3] = Math.round(px[i + 3] * f);
+        }
       }
+    };
+
+    const finish = (cv, ctx, data) => {
+      ctx.putImageData(data, 0, 0);
+      const t = new THREE.CanvasTexture(cv);
+      t.colorSpace = THREE.SRGBColorSpace;
+      return t;
+    };
+
+    // ── base: full photo, feathered ──
+    const b = draw();
+    const bData = b.ctx.getImageData(0, 0, W, H);
+    for (let i = 0; i < bData.data.length; i += 4) bData.data[i + 3] = 255;
+    feather(bData.data);
+    const baseTex = finish(b.cv, b.ctx, bData);
+
+    // ── glow: bright + blue nebulosity ──
+    const g = draw();
+    const gData = g.ctx.getImageData(0, 0, W, H);
+    {
+      const px = gData.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+        const blueness = Math.max(0, px[i + 2] - Math.max(px[i], px[i + 1]) * 0.6);
+        px[i + 3] = Math.min(255, blueness * 2.2 + Math.max(0, lum - 90) * 1.4);
+      }
+      feather(px);
     }
-    ctx.putImageData(data, 0, 0);
-    const t2 = new THREE.CanvasTexture(cv);
-    t2.colorSpace = THREE.SRGBColorSpace;
-    return t2;
+    const glowTex = finish(g.cv, g.ctx, gData);
+
+    // ── dark: structure darker than its neighborhood (the columns) ──
+    const d = draw();
+    const dData = d.ctx.getImageData(0, 0, W, H);
+    {
+      const px = dData.data;
+      for (let i = 0; i < px.length; i += 4) {
+        const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
+        const nLum = blurPx[i] * 0.299 + blurPx[i + 1] * 0.587 + blurPx[i + 2] * 0.114;
+        // Opaque where markedly darker than surroundings AND surroundings glow
+        const darkness = Math.max(0, nLum - lum - 6) * 2.6;
+        const context = Math.min(1, nLum / 70);
+        px[i + 3] = Math.min(235, darkness * context);
+      }
+      feather(px);
+    }
+    const darkTex = finish(d.cv, d.ctx, dData);
+
+    return { baseTex, glowTex, darkTex };
   } catch (e) {
     return null;
   }
@@ -83,46 +138,81 @@ function photoToFeatheredTexture(tex) {
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
 export function createPillars(group, def, textures) {
-  // The real thing: Hubble's near-infrared portrait, edge-feathered and
-  // blended additively so it belongs to the sky rather than hanging in
-  // it — plus a volume of matching golden stars scattered in 3D around
-  // the photo plane, so approach and orbit produce true parallax.
+  // Hubble's near-infrared Pillars as a 2.5D object inside an extended
+  // environment: three depth-separated layers of the real photograph
+  // (deep field, blue gas, occluding dark columns) so the structure has
+  // internal parallax — plus vast faint wisps continuing the Eagle
+  // Nebula complex far beyond the photo, so the region never "ends".
   const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
+  const ASPECT = 3045 / 3249;
 
-  const photo = textures && textures.landmarkPillars
-    ? photoToFeatheredTexture(textures.landmarkPillars)
+  const layers = textures && textures.landmarkPillars
+    ? makePhotoLayers(textures.landmarkPillars)
     : null;
 
-  if (photo) {
-    const mat = new THREE.SpriteMaterial({
-      map: photo,
-      transparent: true,
-      opacity: 1.0,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    const sprite = new THREE.Sprite(mat);
-    sprite.scale.set(s * 1.6, s * 1.5, 1); // image aspect 3249:3045
-    sprite.renderOrder = 2;
-    group.add(sprite);
+  if (layers) {
+    const addLayer = (map, z, scale, opacity, blending, order) => {
+      const mat = new THREE.SpriteMaterial({
+        map, transparent: true, opacity, blending, depthWrite: false,
+      });
+      const sp = new THREE.Sprite(mat);
+      sp.scale.set(s * 1.6 * scale, s * 1.6 * ASPECT * scale, 1);
+      sp.position.z = z;
+      sp.renderOrder = order;
+      group.add(sp);
+      return sp;
+    };
+    // Far field, larger and behind
+    addLayer(layers.baseTex, -s * 0.34, 1.3, 0.62, THREE.AdditiveBlending, 2);
+    // Nebular gas at the heart
+    addLayer(layers.glowTex, -s * 0.06, 1.02, 0.95, THREE.AdditiveBlending, 3);
+    // The columns — occluding, in front
+    addLayer(layers.darkTex, s * 0.24, 0.86, 1.0, THREE.NormalBlending, 4);
   }
 
-  // ── Parallax star volume — golden stars matching the photo's field,
-  // scattered through real depth on BOTH sides of the photo plane ──
+  // ── Extended environment — the complex continues beyond the frame ──
   {
-    const count = 700;
+    const count = 130;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      // Denser near the plane, thinning outward — the cluster continues
-      // into three dimensions
-      const depth = gaussRandom() * s * 0.55;
-      positions[i * 3]     = (Math.random() - 0.5) * s * 2.1;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 1.9;
-      positions[i * 3 + 2] = depth + (depth > 0 ? s * 0.1 : -s * 0.1);
+      const r = s * (1.1 + Math.random() * 1.9);
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3]     = Math.cos(a) * r;
+      positions[i * 3 + 1] = gaussRandom() * s * 0.9;
+      positions[i * 3 + 2] = Math.sin(a) * r * 0.7 - s * 0.3;
+      const warm = Math.random() < 0.3;
+      const b = 0.05 + Math.random() * 0.075;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.5);
+      colors[i * 3 + 1] = b * (warm ? 0.72 : 0.62);
+      colors[i * 3 + 2] = b * (warm ? 0.45 : 1.0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size: s * 0.85, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.16,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 1;
+    group.add(pts);
+  }
+
+  // ── Parallax star volume threading through all layers ──
+  {
+    const count = 900;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const depth = gaussRandom() * s * 0.7;
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.6;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.2;
+      positions[i * 3 + 2] = depth;
       const warm = Math.random() < 0.8;
-      const b = 0.18 + Math.random() * 0.5;
+      const b = 0.15 + Math.random() * 0.5;
       colors[i * 3]     = b * (warm ? 1.0 : 0.75);
       colors[i * 3 + 1] = b * (warm ? 0.8 : 0.85);
       colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
@@ -132,40 +222,11 @@ export function createPillars(group, def, textures) {
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
       vertexColors: true, map: tex, size: s * 0.011, sizeAttenuation: true,
-      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8,
       depthWrite: false,
     });
     const pts = new THREE.Points(geom, mat);
-    pts.renderOrder = 3;
-    group.add(pts);
-  }
-
-  // ── Ambient halo — soft blue breath extending beyond the photo ──
-  {
-    const count = 220;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      const r = s * (0.7 + Math.random() * 0.7);
-      const a = Math.random() * Math.PI * 2;
-      positions[i * 3]     = Math.cos(a) * r;
-      positions[i * 3 + 1] = gaussRandom() * s * 0.55;
-      positions[i * 3 + 2] = Math.sin(a) * r * 0.5 - s * 0.2;
-      const b = 0.04 + Math.random() * 0.06;
-      colors[i * 3]     = b * 0.55;
-      colors[i * 3 + 1] = b * 0.72;
-      colors[i * 3 + 2] = b * 1.0;
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const mat = new THREE.PointsMaterial({
-      vertexColors: true, map: tex, size: s * 0.5, sizeAttenuation: true,
-      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.22,
-      depthWrite: false,
-    });
-    const pts = new THREE.Points(geom, mat);
-    pts.renderOrder = 1;
+    pts.renderOrder = 5;
     group.add(pts);
   }
 }
