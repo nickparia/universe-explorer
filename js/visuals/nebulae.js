@@ -38,8 +38,15 @@ function getNebulaParticleTex() {
 }
 
 
-/** Convert a photo's dark sky to transparency (luminance → alpha) */
-function photoToAlphaTexture(tex) {
+/**
+ * Prepare a NASA photo for floating in space: leave colors untouched but
+ * feather the edges with a wide elliptical falloff so the photo's star
+ * field dissolves into the real sky instead of ending at a rectangle.
+ * Rendered additively, the photo's black sky contributes nothing — dark
+ * nebular structure reads as dark voids against the added glow, exactly
+ * as it does in reality against black space.
+ */
+function photoToFeatheredTexture(tex) {
   if (!tex || !tex.image) return null;
   try {
     const img = tex.image;
@@ -49,15 +56,24 @@ function photoToAlphaTexture(tex) {
     ctx.drawImage(img, 0, 0);
     const data = ctx.getImageData(0, 0, cv.width, cv.height);
     const px = data.data;
-    for (let i = 0; i < px.length; i += 4) {
-      const lum = px[i] * 0.299 + px[i + 1] * 0.587 + px[i + 2] * 0.114;
-      // Gentle curve: sky (near-black) fully transparent, structure solid
-      px[i + 3] = Math.min(255, Math.pow(lum / 255, 0.75) * 460);
+    const cx = cv.width / 2, cy = cv.height / 2;
+    for (let y = 0; y < cv.height; y++) {
+      for (let x = 0; x < cv.width; x++) {
+        // Elliptical distance from center, 1.0 at the corners
+        const dx = (x - cx) / cx;
+        const dy = (y - cy) / cy;
+        const d = Math.sqrt(dx * dx + dy * dy);
+        // Solid to 55%, then a long dissolve to nothing by 98%
+        const t = Math.max(0, Math.min(1, (d - 0.55) / 0.43));
+        const feather = 1 - t * t * (3 - 2 * t);
+        const i = (y * cv.width + x) * 4;
+        px[i + 3] = Math.round(255 * feather);
+      }
     }
     ctx.putImageData(data, 0, 0);
-    const t = new THREE.CanvasTexture(cv);
-    t.colorSpace = THREE.SRGBColorSpace;
-    return t;
+    const t2 = new THREE.CanvasTexture(cv);
+    t2.colorSpace = THREE.SRGBColorSpace;
+    return t2;
   } catch (e) {
     return null;
   }
@@ -67,86 +83,89 @@ function photoToAlphaTexture(tex) {
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
 export function createPillars(group, def, textures) {
-  // The real thing. Principle: the best, most accurate pictures available —
-  // this renders NASA's Hubble near-infrared portrait of the Pillars with
-  // its sky luminance-keyed to transparency, so the actual pillars float
-  // in space, wrapped in a soft ambient halo and a whisper of parallax
-  // dust. Accuracy first; the atmosphere layers only support the photo.
+  // The real thing: Hubble's near-infrared portrait, edge-feathered and
+  // blended additively so it belongs to the sky rather than hanging in
+  // it — plus a volume of matching golden stars scattered in 3D around
+  // the photo plane, so approach and orbit produce true parallax.
   const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
   const photo = textures && textures.landmarkPillars
-    ? photoToAlphaTexture(textures.landmarkPillars)
+    ? photoToFeatheredTexture(textures.landmarkPillars)
     : null;
 
   if (photo) {
     const mat = new THREE.SpriteMaterial({
       map: photo,
       transparent: true,
-      opacity: 0.98,
+      opacity: 1.0,
+      blending: THREE.AdditiveBlending,
       depthWrite: false,
     });
     const sprite = new THREE.Sprite(mat);
-    // Image aspect 3249:3045
-    sprite.scale.set(s * 1.5, s * 1.41, 1);
+    sprite.scale.set(s * 1.6, s * 1.5, 1); // image aspect 3249:3045
     sprite.renderOrder = 2;
     group.add(sprite);
   }
 
-  // ── Ambient halo — faint blue-teal breath around the photograph ──
+  // ── Parallax star volume — golden stars matching the photo's field,
+  // scattered through real depth on BOTH sides of the photo plane ──
   {
-    const count = 260;
+    const count = 700;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
     for (let i = 0; i < count; i++) {
-      const r = s * (0.55 + Math.random() * 0.75);
-      const a = Math.random() * Math.PI * 2;
-      const y = gaussRandom() * s * 0.5;
-      positions[i * 3]     = Math.cos(a) * r;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = Math.sin(a) * r * 0.6 - s * 0.15;
-      const b = 0.05 + Math.random() * 0.08;
-      colors[i * 3]     = b * 0.55;
-      colors[i * 3 + 1] = b * 0.75;
-      colors[i * 3 + 2] = b * 1.0;
+      // Denser near the plane, thinning outward — the cluster continues
+      // into three dimensions
+      const depth = gaussRandom() * s * 0.55;
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.1;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 1.9;
+      positions[i * 3 + 2] = depth + (depth > 0 ? s * 0.1 : -s * 0.1);
+      const warm = Math.random() < 0.8;
+      const b = 0.18 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.75);
+      colors[i * 3 + 1] = b * (warm ? 0.8 : 0.85);
+      colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
     }
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
     const mat = new THREE.PointsMaterial({
-      vertexColors: true, map: tex, size: s * 0.55, sizeAttenuation: true,
-      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.3,
-      depthWrite: false,
-    });
-    const pts = new THREE.Points(geom, mat);
-    pts.renderOrder = 1;
-    group.add(pts);
-  }
-
-  // ── Parallax dust — sparse foreground motes so approach has depth ──
-  {
-    const count = 160;
-    const positions = new Float32Array(count * 3);
-    const colors = new Float32Array(count * 3);
-    for (let i = 0; i < count; i++) {
-      positions[i * 3]     = (Math.random() - 0.5) * s * 2.2;
-      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 1.8;
-      positions[i * 3 + 2] = s * (0.35 + Math.random() * 1.1); // in front
-      const b = 0.10 + Math.random() * 0.16;
-      colors[i * 3]     = b * 0.8;
-      colors[i * 3 + 1] = b * 0.85;
-      colors[i * 3 + 2] = b * 1.0;
-    }
-    const geom = new THREE.BufferGeometry();
-    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-    const mat = new THREE.PointsMaterial({
-      vertexColors: true, map: tex, size: s * 0.012, sizeAttenuation: true,
-      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.5,
+      vertexColors: true, map: tex, size: s * 0.011, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.85,
       depthWrite: false,
     });
     const pts = new THREE.Points(geom, mat);
     pts.renderOrder = 3;
+    group.add(pts);
+  }
+
+  // ── Ambient halo — soft blue breath extending beyond the photo ──
+  {
+    const count = 220;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = s * (0.7 + Math.random() * 0.7);
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3]     = Math.cos(a) * r;
+      positions[i * 3 + 1] = gaussRandom() * s * 0.55;
+      positions[i * 3 + 2] = Math.sin(a) * r * 0.5 - s * 0.2;
+      const b = 0.04 + Math.random() * 0.06;
+      colors[i * 3]     = b * 0.55;
+      colors[i * 3 + 1] = b * 0.72;
+      colors[i * 3 + 2] = b * 1.0;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size: s * 0.5, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.22,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 1;
     group.add(pts);
   }
 }
