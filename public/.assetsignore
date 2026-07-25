@@ -1,0 +1,7 @@
+# These are served from R2 by the worker (see worker/index.js), not as
+# static assets — keeps deploys small and lets the media library grow
+# without redeploying. They stay in public/ so `vite dev` serves them locally.
+audio
+textures
+models
+locations

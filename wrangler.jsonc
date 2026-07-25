@@ -1,0 +1,21 @@
+{
+  "$schema": "node_modules/wrangler/config-schema.json",
+  "name": "solace",
+  "main": "worker/index.js",
+  "compatibility_date": "2026-07-25",
+  "assets": {
+    "directory": "./dist",
+    "binding": "ASSETS",
+    // Media paths bypass static assets and hit the worker → R2.
+    "run_worker_first": ["/audio/*", "/textures/*", "/models/*", "/locations/*"]
+  },
+  "r2_buckets": [
+    {
+      "binding": "MEDIA",
+      "bucket_name": "solace-media"
+    }
+  ],
+  "observability": {
+    "enabled": true
+  }
+}

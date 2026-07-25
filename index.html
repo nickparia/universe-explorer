@@ -438,21 +438,11 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
 <div id="atmo-fog" style="position:fixed;inset:0;pointer-events:none;z-index:4;opacity:0;
   background:rgba(115,140,184,1);transition:opacity 0.3s"></div>
 
-<!-- Three.js r170 ES module importmap -->
-<script type="importmap">
-{
-  "imports": {
-    "three": "https://cdn.jsdelivr.net/npm/three@0.170.0/build/three.module.js",
-    "three/addons/": "https://cdn.jsdelivr.net/npm/three@0.170.0/examples/jsm/"
-  }
-}
-</script>
-
 <!-- Prevent context menu on canvas for right-click look -->
 <script>
 document.getElementById('c').addEventListener('contextmenu', e => e.preventDefault());
 </script>
 
-<script type="module" src="js/main.js?v=54"></script>
+<script type="module" src="/js/main.js"></script>
 </body>
 </html>
