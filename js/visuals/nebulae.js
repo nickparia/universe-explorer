@@ -41,78 +41,181 @@ function getNebulaParticleTex() {
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
 export function createPillars(group, def) {
-  const scale = def.size * 3000;
+  // The Eagle Nebula's pillars — layered composition tuned for the arrival
+  // view at ~3.5 radii: a luminous teal emission backdrop, three dark
+  // sculpted dust columns silhouetted against it, golden rim light on the
+  // side facing the ionizing cluster, and newborn stars at the tips.
+  const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
-  // Three pillars: left (tallest), center, right (shortest)
-  const pillarDefs = [
-    { xOff: -0.25, height: 1.0, width: 0.12 },
-    { xOff:  0.0,  height: 0.75, width: 0.10 },
-    { xOff:  0.22, height: 0.55, width: 0.09 },
-  ];
+  // Ionizing light from the upper-left (NGC 6611 cluster direction)
+  const lightDir = new THREE.Vector3(-0.38, 0.82, 0.3).normalize();
+  const baseY = -0.42 * s;
 
-  for (const pDef of pillarDefs) {
-    const count = 6000;
+  // ── A. Emission backdrop — the glowing wall the pillars stand against ──
+  {
+    const count = 520;
     const positions = new Float32Array(count * 3);
     const colors = new Float32Array(count * 3);
-
     for (let i = 0; i < count; i++) {
-      // Gaussian distribution in x/z for columnar shape
-      const x = pDef.xOff * scale + gaussRandom() * pDef.width * scale;
-      const z = gaussRandom() * pDef.width * scale;
-      // Uniform y distribution along pillar height
-      const y = Math.random() * pDef.height * scale;
-
-      positions[i * 3]     = x;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = z;
-
-      // Warm amber/brown palette with brighter tips
-      const heightFrac = y / (pDef.height * scale);
-      const tipBrightness = smoothstep(0.7, 1.0, heightFrac);
-      const base = 0.3 + Math.random() * 0.3 + tipBrightness * 0.4;
-
-      colors[i * 3]     = base;                  // R dominant
-      colors[i * 3 + 1] = base * 0.55;           // G ~0.55 of R
-      colors[i * 3 + 2] = base * 0.2;            // B ~0.2 of R
+      // Flattened shell behind the columns
+      positions[i * 3]     = gaussRandom() * s * 0.6;
+      positions[i * 3 + 1] = baseY + Math.random() * s * 1.25;
+      positions[i * 3 + 2] = -s * 0.28 - Math.random() * s * 0.5;
+      // Hubble-palette teal-green, occasional warm patch
+      const warm = Math.random() < 0.18;
+      const b = 0.14 + Math.random() * 0.2;
+      colors[i * 3]     = (warm ? 0.9 : 0.38) * b;
+      colors[i * 3 + 1] = (warm ? 0.62 : 0.72) * b;
+      colors[i * 3 + 2] = (warm ? 0.38 : 0.62) * b;
     }
-
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
     const mat = new THREE.PointsMaterial({
-      vertexColors: true,
-      size: scale * 0.02,
-      map: tex,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.15,
+      vertexColors: true, map: tex, size: s * 0.5, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.35,
       depthWrite: false,
     });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 1;
+    group.add(pts);
+  }
 
-    group.add(new THREE.Points(geom, mat));
+  // ── The three columns ──
+  const pillarDefs = [
+    { xOff: -0.27, tilt:  0.10, height: 1.00, width: 0.105 },
+    { xOff:  0.03, tilt: -0.05, height: 0.66, width: 0.085 },
+    { xOff:  0.27, tilt: -0.15, height: 0.46, width: 0.072 },
+  ];
+  const H = s * 0.95;
+  const _pos = new THREE.Vector3();
+  const _nrm = new THREE.Vector3();
 
-    // Bright star sprites at pillar tips (star-forming regions)
-    const tipStarCount = 5;
-    for (let s = 0; s < tipStarCount; s++) {
-      const starMat = new THREE.SpriteMaterial({
-        map: tex,
-        color: 0xffffcc,
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        opacity: 0.8,
+  for (let pi = 0; pi < pillarDefs.length; pi++) {
+    const pDef = pillarDefs[pi];
+
+    // Lumpy taper: radius narrows toward the tip with sinusoidal knots
+    const radiusAt = (t) =>
+      pDef.width * s * (1 - 0.52 * t) *
+      (1 + 0.32 * Math.sin(t * 9 + pi * 2.1) * (0.4 + t));
+
+    const axisXAt = (t) => (pDef.xOff + pDef.tilt * t) * s;
+
+    // ── B. Dark dust body — NormalBlending so it occludes the backdrop ──
+    {
+      const count = 5200;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        const t = Math.pow(Math.random(), 0.85); // denser toward base
+        const r = radiusAt(t) * Math.abs(gaussRandom()) * 0.55;
+        const a = Math.random() * Math.PI * 2;
+        positions[i * 3]     = axisXAt(t) + Math.cos(a) * r;
+        positions[i * 3 + 1] = baseY + t * pDef.height * H;
+        positions[i * 3 + 2] = Math.sin(a) * r;
+        // Dark sepia, slightly lighter where thin
+        const b = 0.035 + Math.random() * 0.06;
+        colors[i * 3]     = b * 1.55;
+        colors[i * 3 + 1] = b * 1.0;
+        colors[i * 3 + 2] = b * 0.62;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({
+        vertexColors: true, map: tex, size: s * 0.062, sizeAttenuation: true,
+        blending: THREE.NormalBlending, transparent: true, opacity: 0.95,
         depthWrite: false,
       });
+      const pts = new THREE.Points(geom, mat);
+      pts.renderOrder = 2;
+      group.add(pts);
+    }
+
+    // ── C. Golden rim light on the illuminated flank ──
+    {
+      const count = 1900;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      let placed = 0;
+      while (placed < count) {
+        const t = Math.random();
+        const a = Math.random() * Math.PI * 2;
+        _nrm.set(Math.cos(a), 0.18, Math.sin(a)).normalize();
+        if (_nrm.dot(lightDir) < 0.48) continue; // lit flank only
+        const r = radiusAt(t) * (0.92 + Math.random() * 0.22);
+        _pos.set(axisXAt(t) + Math.cos(a) * r, baseY + t * pDef.height * H, Math.sin(a) * r);
+        positions[placed * 3]     = _pos.x;
+        positions[placed * 3 + 1] = _pos.y;
+        positions[placed * 3 + 2] = _pos.z;
+        // Amber rim, brighter toward tips where ionization is fiercest
+        const b = 0.16 + Math.random() * 0.2 + t * 0.3;
+        colors[placed * 3]     = b * 1.0;
+        colors[placed * 3 + 1] = b * 0.68;
+        colors[placed * 3 + 2] = b * 0.36;
+        placed++;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({
+        vertexColors: true, map: tex, size: s * 0.02, sizeAttenuation: true,
+        blending: THREE.AdditiveBlending, transparent: true, opacity: 0.34,
+        depthWrite: false,
+      });
+      const pts = new THREE.Points(geom, mat);
+      pts.renderOrder = 3;
+      group.add(pts);
+    }
+
+    // ── D. Newborn stars at the tip ──
+    const tipX = axisXAt(1) - pDef.tilt * 0.1 * s;
+    const tipY = baseY + pDef.height * H;
+    for (let st = 0; st < 4; st++) {
+      const starMat = new THREE.SpriteMaterial({
+        map: tex, color: st === 0 ? 0xcfe8ff : 0xffe9c9,
+        blending: THREE.AdditiveBlending, transparent: true,
+        opacity: 0.85, depthWrite: false,
+      });
       const star = new THREE.Sprite(starMat);
-      const sx = pDef.xOff * scale + (Math.random() - 0.5) * pDef.width * scale * 0.5;
-      const sy = pDef.height * scale * (0.9 + Math.random() * 0.1);
-      const sz = (Math.random() - 0.5) * pDef.width * scale * 0.5;
-      star.position.set(sx, sy, sz);
-      star.scale.set(scale * 0.03, scale * 0.03, 1);
+      star.position.set(
+        tipX + (Math.random() - 0.5) * pDef.width * s * 0.7,
+        tipY - Math.random() * 0.06 * H,
+        (Math.random() - 0.5) * pDef.width * s * 0.7
+      );
+      const sc = s * (0.012 + Math.random() * 0.014);
+      star.scale.set(sc, sc, 1);
+      star.renderOrder = 4;
       group.add(star);
     }
+  }
+
+  // ── E. Common dust bank the columns rise from ──
+  {
+    const count = 2600;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * s * 0.95;
+      positions[i * 3 + 1] = baseY - Math.abs(gaussRandom()) * s * 0.07;
+      positions[i * 3 + 2] = (Math.random() - 0.5) * s * 0.3;
+      const b = 0.045 + Math.random() * 0.075;
+      colors[i * 3]     = b * 1.5;
+      colors[i * 3 + 1] = b * 0.95;
+      colors[i * 3 + 2] = b * 0.6;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size: s * 0.055, sizeAttenuation: true,
+      blending: THREE.NormalBlending, transparent: true, opacity: 0.8,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 2;
+    group.add(pts);
   }
 }
 
@@ -120,7 +223,7 @@ export function createPillars(group, def) {
 // 2. Crab Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createCrabNebula(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
   // Spherical shell of filamentary particles
@@ -234,7 +337,7 @@ export function createCrabNebula(group, def) {
 // 3. Carina Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createCarinaNebula(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
   // "Cosmic cliffs" — wide in X, tall in Y, thin in Z
@@ -302,7 +405,7 @@ export function createCarinaNebula(group, def) {
 // 4. Horsehead Nebula
 // ═══════════════════════════════════════════════════════════════════════
 export function createHorsehead(group, def) {
-  const scale = def.size * 3000;
+  const scale = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
   // Background: red hydrogen emission glow (flat backdrop)
