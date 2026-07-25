@@ -20,6 +20,12 @@ const SPEED_DIST_K = 0.9;     // allowed speed = 0.9 × gap per second
 const SPEED_MIN    = 3;       // u/s — crawl floor at a surface
 const SPEED_MAX    = 1.5e6;   // u/s — ceiling in the intergalactic gulf
 const BOOST_MULT   = 3;       // Shift raises the ceiling while energy lasts
+// The governor is split by direction: only the velocity component CLOSING on
+// the nearest body is capped by the gap (that is the whole no-overshoot
+// guarantee — tangential motion past a sphere cannot hit it). Tangential
+// speed gets a looser ceiling scaled by gap + body size, so passing a planet
+// is a sweeping flyby instead of wading through invisible molasses. Far from
+// everything the two ceilings converge and the split disappears.
 
 // Velocity chases the input direction with critically-damped smoothing.
 // Different time constants per intent: slow cinematic ramp-up, authoritative
@@ -73,6 +79,7 @@ let warpActive  = false;
 let _pendYaw = 0, _pendPitch = 0, _rollVel = 0;
 const _wish = new THREE.Vector3();
 const _govBodyPos = new THREE.Vector3();
+const _toBody = new THREE.Vector3();
 
 // Speed feel — consumed by the dust field & HUD
 const _feel = { ratio: 0, govDist: Infinity, speed: 0, free: false };
@@ -671,6 +678,7 @@ export function updateFlight(dt, allBodies) {
     // ── 5. Speed governor — ceiling proportional to gap to nearest surface ──
     let govDist = Infinity;
     let govBody = null;
+    let govEffR = 0;
     if (allBodies) {
       for (let i = 0; i < allBodies.length; i++) {
         const body = allBodies[i];
@@ -681,12 +689,15 @@ export function updateFlight(dt, allBodies) {
         if (d < govDist) {
           govDist = d;
           govBody = body;
+          govEffR = effR;
           _govBodyPos.copy(bodyPos);
         }
       }
     }
     govDist = Math.max(govDist, 0.5);
-    let allowed = Math.min(SPEED_MAX, Math.max(SPEED_MIN, govDist * SPEED_DIST_K));
+    if (govBody) _toBody.copy(_govBodyPos).sub(camPos).normalize();
+    let allowed    = Math.min(SPEED_MAX, Math.max(SPEED_MIN, govDist * SPEED_DIST_K));
+    let allowedTan = Math.min(SPEED_MAX, Math.max(SPEED_MIN, (govDist + govEffR) * SPEED_DIST_K));
 
     // ── 6. Boost — Shift raises the ceiling while energy lasts ──────────────
     const shiftHeld = keys['ShiftLeft'] || keys['ShiftRight'];
@@ -697,7 +708,10 @@ export function updateFlight(dt, allBodies) {
         boostEnergy += dt * 0.125;
     }
     boostEnergy = Math.max(0, Math.min(1, boostEnergy));
-    if (warpActive) allowed = Math.min(SPEED_MAX, allowed * BOOST_MULT);
+    if (warpActive) {
+        allowed    = Math.min(SPEED_MAX, allowed * BOOST_MULT);
+        allowedTan = Math.min(SPEED_MAX, allowedTan * BOOST_MULT);
+    }
 
     _approachInfo.maxSpeed = allowed;
     _approachInfo.bodyName = govBody ? govBody.name : null;
@@ -715,7 +729,13 @@ export function updateFlight(dt, allBodies) {
     if (keys['KeyA'] || keys['ArrowLeft'])  { _wish.sub(right); thrusting = true; }
     if (keys['Space']) { _wish.add(up); thrusting = true; }
     if (keys['KeyC'])  { _wish.sub(up); thrusting = true; }
-    if (thrusting && _wish.lengthSq() > 0) _wish.normalize().multiplyScalar(allowed);
+    if (thrusting && _wish.lengthSq() > 0) {
+        _wish.normalize().multiplyScalar(allowedTan);
+        if (govBody) {
+            const closing = _wish.dot(_toBody);
+            if (closing > allowed) _wish.addScaledVector(_toBody, allowed - closing);
+        }
+    }
 
     // ── 8. Velocity chases wish — critically damped, frame-rate independent ─
     const speed0 = velocity.length();
@@ -745,15 +765,16 @@ export function updateFlight(dt, allBodies) {
     }
 
     // ── 10. Inbound overspeed clamp ──────────────────────────────────────────
-    // Hard-cap only while closing on the governor body: that's the overshoot
-    // guarantee. Outbound overspeed is self-correcting (the gap grows, the
-    // ceiling rises) and must stay free so gas-giant ejection and escapes
-    // aren't strangled by the near-surface ceiling.
-    const speed = velocity.length();
-    const hardCap = allowed * 1.2;
-    if (speed > hardCap && govBody) {
-        _dir.copy(_govBodyPos).sub(camPos).normalize();
-        if (velocity.dot(_dir) > 0) velocity.multiplyScalar(hardCap / speed);
+    // Shave only the excess CLOSING component: that's the overshoot
+    // guarantee. Tangential and outbound motion stay free — outbound is
+    // self-correcting (the gap grows, the ceiling rises) and must not be
+    // strangled, or gas-giant ejection and escapes break.
+    if (govBody) {
+        const closingSpeed = velocity.dot(_toBody);
+        const capR = allowed * 1.2;
+        if (closingSpeed > capR) {
+            velocity.addScaledVector(_toBody, capR - closingSpeed);
+        }
     }
 
     // ── 11. Surface collision — planets only, not spacecraft ────────────────
@@ -779,7 +800,7 @@ export function updateFlight(dt, allBodies) {
     // and the dust field identically near a moon and between galaxies.
     {
       const spd = velocity.length();
-      const ratio = Math.min(spd / Math.max(allowed, 1e-6), 1.5);
+      const ratio = Math.min(spd / Math.max(allowedTan, 1e-6), 1.5);
       _feel.ratio = ratio;
       _feel.govDist = govDist;
       _feel.speed = spd;
