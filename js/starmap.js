@@ -9,6 +9,7 @@
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getBodies } from './bodies.js';
 import { warpTo, flyTo } from './flight.js';
+import { emit } from './bus.js';
 import { AU } from './constants.js';
 
 // ── Destination metadata ────────────────────────────────────────────────
@@ -312,6 +313,7 @@ function onSelect(item, isLandmark) {
 // ── Toggle / state ────────────────────────────────────────────────────
 export function toggleStarMap() {
   active = !active;
+  emit('starmap:toggled', active);
   if (active) {
     buildList();
     // Slide in from the left edge

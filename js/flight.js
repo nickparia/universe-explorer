@@ -1,13 +1,13 @@
 import * as THREE from 'three';
 import { AU } from './constants.js';
 import { getAltitude } from './altitude.js';
-import { setActivePlanet } from './navigation.js';
 import { getLandmarks } from './deepspace.js';
-import { isStarMapOpen } from './starmap.js';
+import { emit, on } from './bus.js';
 import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GALACTIC_CENTER } from './engine.js';
 
-// ── Warp state flag (read by music.js to avoid circular imports) ─────────────
-window._isWarping = false;
+// Star map open state — tracked via bus events so flight doesn't import starmap
+let starMapOpen = false;
+on('starmap:toggled', (isOpen) => { starMapOpen = isOpen; });
 
 // ── Constants ────────────────────────────────────────────────────────────────
 const THRUST_ACCEL       = 12;      // gentler initial acceleration
@@ -274,7 +274,7 @@ export function initFlight(camera) {
 
 export function updateFlight(dt, allBodies) {
     if (!cam) return;
-    if (isStarMapOpen()) return; // freeze flight when map is open
+    if (starMapOpen) return; // freeze flight when map is open
 
     // Store reference for number key fly-to
     _allBodies = allBodies;
@@ -399,9 +399,9 @@ export function updateFlight(dt, allBodies) {
                 if (streakEl) streakEl.style.opacity = 0;
                 const vignetteCancel = document.getElementById('warp-vignette');
                 if (vignetteCancel) vignetteCancel.style.opacity = 0;
+                emit('warp:end', { name: warpTarget.name, reason: 'cancelled' });
                 warpTarget = null;
                 warpPhase = 'none';
-                window._isWarping = false;
                 setStarFieldOpacity(1.0); // restore stars on cancel
                 updateHUD();
                 // Fall through to normal flight
@@ -474,9 +474,9 @@ export function updateFlight(dt, allBodies) {
                 cam.updateProjectionMatrix();
                 if (streakEl) streakEl.style.opacity = 0;
                 if (vignetteEl) vignetteEl.style.opacity = 0;
+                emit('warp:end', { name: warpTarget.name, reason: 'arrived' });
                 warpTarget = null;
                 warpPhase = 'none';
-                window._isWarping = false;
                 velocity.set(0, 0, 0);
                 angularVelocity.set(0, 0, 0);
             }
@@ -871,7 +871,8 @@ export function flyTo(bodyName) {
     flyFromQ.copy(camQuat);
     flyTarget = { bodyRef: body };
     flyT = 0;
-    setActivePlanet(bodyName);
+    emit('nav:target', bodyName);
+    emit('flyto:start', { name: bodyName });
     // Duration based on distance: 2-6 seconds
     flyDuration = Math.max(2, Math.min(6, dist / 6000));
     velocity.set(0, 0, 0);
@@ -1031,7 +1032,7 @@ export function warpTo(targetName) {
   // far wall — gives depth and scale. For everything else, stop short so
   // the object frames nicely.
   const approachDir = new THREE.Vector3().copy(landmark.pos).sub(camPos).normalize();
-  const arrivalOffset = landmark.visualType === 'void'
+  const arrivalOffset = landmark.visual === 'void'
     ? landmark.radius * 1.0   // inside the void, ~halfway between near wall and center
     : landmark.radius * 0.5;
   warpTargetP.copy(landmark.pos).addScaledVector(approachDir, -arrivalOffset);
@@ -1045,7 +1046,8 @@ export function warpTo(targetName) {
   warpT = 0;
   warpPhase = 'accelerating';
   _arrivalShown = false;
-  window._isWarping = true;
+  emit('nav:target', landmark.name);
+  emit('warp:start', { name: landmark.name, duration: warpDuration });
 
   // Clear velocity
   velocity.set(0, 0, 0);

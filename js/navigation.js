@@ -1,6 +1,7 @@
 // navigation.js — Planet carousel, time control, fly-to coordination
 import { AU } from './constants.js';
-import { flyTo, isFlyingTo } from './flight.js';
+import { flyTo, warpTo, isFlyingTo } from './flight.js';
+import { on } from './bus.js';
 import { getDeepSpaceObjects } from './deepspace.js';
 
 // ═══════════════════════════════════════════════════════════════
@@ -46,8 +47,8 @@ let _userSelected = false; // only highlight after user interaction
 
 export function getActivePlanet() { return _userSelected ? _currentNearest : null; }
 
-// Called when user clicks carousel or uses fly-to
-export function setActivePlanet(name) {
+// Driven by the 'nav:target' bus event (fly-to / warp from any entry point)
+function setActivePlanet(name) {
   _currentNearest = name;
   _userSelected = true;
   for (let i = 0; i < barItems.length; i++) {
@@ -81,7 +82,7 @@ function createBar(allBodies) {
     const el = document.createElement('div');
     el.className = 'pb-item';
     el.innerHTML = `<div class="pb-name">${PLANET_LABELS[i]}</div><div class="pb-dist"></div>`;
-    el.addEventListener('click', () => { setActivePlanet(name); flyTo(name); });
+    el.addEventListener('click', () => flyTo(name));
     barContainer.appendChild(el);
 
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
@@ -97,7 +98,7 @@ function createBar(allBodies) {
     const el = document.createElement('div');
     el.className = 'pb-item pb-craft';
     el.innerHTML = `<div class="pb-name">${SPACECRAFT_LABELS[i]}</div><div class="pb-dist"></div>`;
-    el.addEventListener('click', () => { setActivePlanet(name); flyTo(name); });
+    el.addEventListener('click', () => flyTo(name));
     barContainer.appendChild(el);
 
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name, bodyRef: body });
@@ -110,10 +111,7 @@ function createBar(allBodies) {
     const el = document.createElement('div');
     el.className = 'pb-item pb-landmark';
     el.innerHTML = `<div class="pb-name">${lm.name}</div><div class="pb-dist"></div>`;
-    el.addEventListener('click', () => {
-      setActivePlanet(lm.name);
-      import('./flight.js').then(m => m.warpTo(lm.name));
-    });
+    el.addEventListener('click', () => warpTo(lm.name));
     barContainer.appendChild(el);
 
     barItems.push({ el, distEl: el.querySelector('.pb-dist'), name: lm.name, bodyRef: lm });
@@ -179,6 +177,8 @@ let _initialized = false;
 
 export function initNavigation(camera) {
   elTimeScale = document.getElementById('time-scale');
+
+  on('nav:target', setActivePlanet);
 
   window.addEventListener('keydown', (e) => {
     if (e.code === 'BracketRight' || e.code === 'Period') cycleTimeScale(1);

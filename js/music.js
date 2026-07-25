@@ -2,6 +2,8 @@
 
 import { AU } from './constants.js';
 import { getLandmarks } from './deepspace.js';
+import { WARP_MUSIC } from './catalog.js';
+import { on } from './bus.js';
 
 // ── Track catalog ──────────────────────────────────────────────
 const TRACKS = {
@@ -41,12 +43,16 @@ const ZONES = [
   { name: 'deep',      check: () => true },
 ];
 
+// Warp state — tracked via bus events from flight.js
+let warping = false;
+on('warp:start', () => { warping = true; });
+on('warp:end', () => { warping = false; });
+
 // ── Zone detection with landmark & warp support ──────────────
 function detectZone(pos, allBodies) {
-  // Warp travel overrides all zones — uses window flag set by flight.js
-  // to avoid tight import coupling between music and flight modules
-  if (window._isWarping) {
-    return { name: 'warp', track: 'audio/bach_chaconne.mp3' };
+  // Warp travel overrides all zones
+  if (warping) {
+    return { name: 'warp', track: WARP_MUSIC[0] };
   }
 
   // Check landmark-specific zones first
@@ -54,7 +60,7 @@ function detectZone(pos, allBodies) {
   for (const lm of landmarks) {
     const d = pos.distanceTo(lm.pos);
     if (d < lm.radius * 3) {
-      return { name: lm.name, track: lm.musicTrack };
+      return { name: lm.name, track: lm.music[0] };
     }
   }
 
