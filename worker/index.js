@@ -20,9 +20,11 @@ export default {
     }
 
     // Range support matters: <audio> seeking and progressive texture
-    // loading both issue Range requests.
+    // loading both issue Range requests. R2 sets object.range even for
+    // a header set with no Range header, so only pass it when present.
+    const hasRange = request.headers.has('range');
     const object = await env.MEDIA.get(key, {
-      range: request.headers,
+      range: hasRange ? request.headers : undefined,
       onlyIf: request.headers,
     });
 
@@ -37,7 +39,7 @@ export default {
     // Media files are content-stable: a changed asset gets a new key.
     headers.set('cache-control', 'public, max-age=31536000, immutable');
 
-    if (object.range) {
+    if (hasRange && object.range) {
       const offset = object.range.offset ?? 0;
       const length = object.range.length ?? object.size - offset;
       headers.set(
@@ -52,7 +54,7 @@ export default {
     }
 
     return new Response(request.method === 'HEAD' ? null : object.body, {
-      status: object.range ? 206 : 200,
+      status: hasRange && object.range ? 206 : 200,
       headers,
     });
   },
