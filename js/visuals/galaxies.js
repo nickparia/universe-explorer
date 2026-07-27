@@ -44,7 +44,7 @@ export function createSupermassiveBH(group, def, textures) {
   const layers = textures && textures.landmarkSgra
     ? makePhotoLayers(textures.landmarkSgra, [
         { kind: 'full' },
-        { kind: 'bright', lumLo: 60 },
+        { kind: 'bright', lumLo: 60, context: true }, // EHT frame is near-all-bright — its matte keeps the square photo footprint at range
       ])
     : null;
   if (layers) {

@@ -1314,7 +1314,7 @@ export function warpTo(targetName) {
     (targetName === 'SATURN' || targetName === 'URANUS' || targetName === 'BLACK HOLE');
   const arrivalOffset = landmark
     ? (isVoid ? targetR * 0.45 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
-    : Math.max(targetR * (isRinged ? 11 : 6), 80);
+    : Math.max(targetR * (isRinged ? 11 : 6), 55);
   warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
   if (!landmark) {
     // Settle slightly above the ecliptic: rings, poles, and orbital

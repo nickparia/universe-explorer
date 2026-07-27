@@ -332,6 +332,19 @@ export const PLANET_CONFIGS = {
     },
   },
 
+  ERIS: {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    info: {
+      type: 'DWARF PLANET',
+      facts: [
+        'Diameter: 2,326 km — Pluto\u2019s near-twin',
+        'Distance: 68-97 AU — three times Pluto\u2019s distance',
+        'One year on Eris lasts 559 Earth years',
+        'Surface: frozen nitrogen and methane, -240\u00b0C',
+      ],
+      lore: 'The discovery that ended planethood as we knew it \u2014 Eris is why Pluto was reclassified. Named for the goddess of discord, fittingly. Out here the Sun is just the brightest star.',
+    },
+  },
   PLUTO: {
     terrain: {
       type: 'ice',
