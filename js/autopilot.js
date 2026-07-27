@@ -12,8 +12,8 @@ import {
 } from './flight.js';
 
 const IDLE_ENGAGE = 100;        // s of stillness before SOLACE takes the helm
-const DWELL_MIN = 150;          // s in orbit before moving on
-const DWELL_VAR = 170;
+const DWELL_MIN = 110;          // s in orbit before moving on
+const DWELL_VAR = 130;
 
 const PLANET_POOL = ['SATURN', 'JUPITER', 'NEPTUNE', 'URANUS', 'EARTH', 'MARS', 'PLUTO', 'BLACK HOLE'];
 
@@ -93,16 +93,22 @@ export function initAutopilot() {
   for (const ev of ['keydown', 'mousedown', 'touchstart']) {
     window.addEventListener(ev, deliberateInput, { passive: true });
   }
-  window.addEventListener('wheel', presenceInput, { passive: true });
+  // Release requires UNMISTAKABLE intent. A Magic Mouse with a finger
+  // resting on it emits micro wheel events continuously; sensors drift a
+  // few px. If those release the helm, autopilot lives in a 'tries to
+  // move, freezes, tries again' loop and never completes a dwell.
+  window.addEventListener('wheel', (e) => {
+    if (Math.abs(e.deltaY) + Math.abs(e.deltaX) > 20) presenceInput();
+  }, { passive: true });
   let lmx = null, lmy = null;
   window.addEventListener('mousemove', (e) => {
-    const moved = lmx !== null && Math.hypot(e.clientX - lmx, e.clientY - lmy) > 4;
+    const d = lmx !== null ? Math.hypot(e.clientX - lmx, e.clientY - lmy) : 0;
     lmx = e.clientX; lmy = e.clientY;
-    if (!moved) return;
+    if (d < 4) return;
     // Movement with a button held is active flying (look-drag) —
-    // deliberate. Bare movement is just a human nearby — presence.
+    // deliberate. Bare movement releases only on a real flick.
     if (e.buttons) deliberateInput();
-    else presenceInput();
+    else if (d > 15) presenceInput();
   }, { passive: true });
   on('starmap:toggled', (open) => { chartOpen = open; });
   on('orbit:enter', () => {

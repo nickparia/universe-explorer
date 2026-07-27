@@ -762,10 +762,10 @@ export function updateFlight(dt, allBodies, dtWall) {
             // eases in and out — every dwell composes different shots.
             _cinemaT += dt;
             if (_cinemaBaseDist <= 0) _cinemaBaseDist = orbitDistance;
-            orbitTheta += dt * (0.028 + 0.018 * Math.sin(_cinemaT * 0.013 + _cinemaSeed));
-            const phiTarget = 1.05 + Math.sin(_cinemaT * 0.0085 + _cinemaSeed * 2.1) * 0.5;
-            orbitPhi += (phiTarget - orbitPhi) * (1 - Math.exp(-dt / 14));
-            const distTarget = _cinemaBaseDist * (1 + 0.22 * Math.sin(_cinemaT * 0.006 + _cinemaSeed * 3.7));
+            orbitTheta += dt * (0.04 + 0.022 * Math.sin(_cinemaT * 0.013 + _cinemaSeed));
+            const phiTarget = 1.05 + Math.sin(_cinemaT * 0.011 + _cinemaSeed * 2.1) * 0.5;
+            orbitPhi += (phiTarget - orbitPhi) * (1 - Math.exp(-dt / 12));
+            const distTarget = _cinemaBaseDist * (1 + 0.22 * Math.sin(_cinemaT * 0.008 + _cinemaSeed * 3.7));
             orbitDistance += (distTarget - orbitDistance) * (1 - Math.exp(-dt / 16));
         } else {
             orbitTheta += dt * 0.04;
