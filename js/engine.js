@@ -517,9 +517,14 @@ function makeMilkyWay(photoTex) {
   // disc radius equals MILKY_WAY_RADIUS around the Sgr A* center.
   const K = MILKY_WAY_RADIUS / 624000;
 
-  // ── Spiral arm disk (main component) ──────────────────────────────
-  const count = 220000;
-  const arms  = 4;
+  // ── Disc star haze ─────────────────────────────────────────────────
+  // Deliberately STRUCTURELESS: the R. Hurt photograph carries the arm
+  // structure, and any procedural spiral fights it (two mismatched arm
+  // patterns superimposed). Under additive blending even faint particles
+  // saturate where they clump, so these are spread smooth — a volumetric
+  // star fog that gives the disc thickness and parallax when crossing
+  // the rim, nothing more.
+  const count = 90000;
   const positions = new Float32Array(count * 3);
   const colors    = new Float32Array(count * 3);
 
@@ -527,28 +532,15 @@ function makeMilkyWay(photoTex) {
   let attempts = 0;
   while (written < count && attempts < count * 3) {
     attempts++;
-    const armIndex  = Math.floor(Math.random() * arms);
-    const armAngle  = (armIndex / arms) * Math.PI * 2;
-
-    // Biased radial distribution — more particles toward the core
+    // Biased radial distribution — denser toward the core
     const t = Math.pow(Math.random(), 0.7);
     const radius = (4000 + t * 620000) * K;
+    const angle = Math.random() * Math.PI * 2;
+    const thickness = radius * (0.03 + Math.random() * 0.05);
 
-    // Tighter spiral winding in the inner disk
-    const spiralAngle = armAngle + t * Math.PI * 3.2;
-
-    // Angular spread narrows in the middle of each arm (creates dust-lane gaps)
-    const jitter = (Math.random() - 0.5) * 0.35;
-    // Skip particles in the "dust lane" — low-density band on the inner edge of each arm
-    if (Math.abs(jitter) < 0.06 && Math.random() < 0.75) continue;
-
-    const angle = spiralAngle + jitter;
-    const thickness = radius * (0.025 + Math.random() * 0.035); // thin disk
-    const armSpread = radius * 0.07;
-
-    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * armSpread;
+    const x = Math.cos(angle) * radius + (Math.random() - 0.5) * radius * 0.1;
     const y = (Math.random() - 0.5) * thickness;
-    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * armSpread;
+    const z = Math.sin(angle) * radius + (Math.random() - 0.5) * radius * 0.1;
 
     positions[written * 3]     = x;
     positions[written * 3 + 1] = y;
@@ -618,9 +610,8 @@ function makeMilkyWay(photoTex) {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    // The photo disc carries the face-on structure; particles are the
-    // volumetric filler that gives the rim crossing real depth.
-    opacity: 0.34
+    // A whisper — the photograph is the galaxy; this is just depth.
+    opacity: 0.16
   });
 
   group.add(new THREE.Points(geo, mat));
@@ -651,7 +642,7 @@ function makeMilkyWay(photoTex) {
   const haloMat = new THREE.PointsMaterial({
     size: 2.2, map: getPointTexture(), vertexColors: true,
     sizeAttenuation: false, blending: THREE.AdditiveBlending,
-    depthWrite: false, transparent: true, opacity: 0.55
+    depthWrite: false, transparent: true, opacity: 0.3
   });
   group.add(new THREE.Points(haloGeo, haloMat));
 
@@ -770,8 +761,8 @@ export function createStars(textures) {
     { r: 140000, color: 0xffe4a8, opacity: 0.018 },  // far halo haze
     { r: 80000,  color: 0xffe8b8, opacity: 0.035 },  // outer haze
     { r: 40000,  color: 0xffddaa, opacity: 0.06  },  // mid
-    { r: 18000,  color: 0xffeecc, opacity: 0.10  },  // bright bulge
-    { r: 7000,   color: 0xfff3d8, opacity: 0.18  },  // hot center
+    { r: 18000,  color: 0xffeecc, opacity: 0.07  },  // bright bulge
+    { r: 7000,   color: 0xfff3d8, opacity: 0.12  },  // hot center
   ];
   const shellK = MILKY_WAY_RADIUS / 624000;
   for (const s of coreShells) {
