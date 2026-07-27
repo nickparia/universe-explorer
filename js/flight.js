@@ -127,6 +127,7 @@ const _arrTo = new THREE.Vector3();
 const _arrFromRel = new THREE.Vector3(); // glide endpoints relative to a moving body
 const _arrToRel = new THREE.Vector3();
 let warpChaseBody = null;                // moving destination to track during warp
+const warpAimP = new THREE.Vector3();    // what the camera LOOKS at — the body itself, never the standoff point
 const warpApproachDir = new THREE.Vector3();
 let warpArrOffset = 0;
 
@@ -445,7 +446,10 @@ export function updateFlight(dt, allBodies, dtWall) {
     if (arrival) {
         arrival.t += dtTravel / arrival.dur;
         const t = Math.min(arrival.t, 1);
-        const ease = 1 - Math.pow(1 - t, 3); // ease-out: cross fast, settle soft
+        // Warp arrivals (rel) start from a near-stationary exponential
+        // settle, so the glide must open slow too: smoothstep. The opening
+        // cinematic keeps its tuned ease-out (it enters moving fast).
+        const ease = arrival.rel ? t * t * (3 - 2 * t) : 1 - Math.pow(1 - t, 3);
         const arrBodyPos = arrival.body.g.userData._worldPos || arrival.body.g.position;
         if (arrival.rel) {
             _arrFrom.copy(arrBodyPos).add(_arrFromRel);
@@ -467,7 +471,7 @@ export function updateFlight(dt, allBodies, dtWall) {
         _lookMat.lookAt(camPos, _dir, _upVec);
         camQuat.setFromRotationMatrix(_lookMat);
         cam.quaternion.copy(camQuat);
-        cam.fov = BASE_FOV + (1 - ease) * 12; // settles as we arrive
+        cam.fov = BASE_FOV + (arrival.rel ? 0 : (1 - ease) * 12); // opening settles; warp stays seamless
         cam.updateProjectionMatrix();
 
         if (t >= 1) {
@@ -554,6 +558,7 @@ export function updateFlight(dt, allBodies, dtWall) {
             // WAS at launch and visibly jumps to where it IS on handoff.
             if (warpChaseBody && warpChaseBody.g) {
                 const bp = warpChaseBody.g.userData._worldPos || warpChaseBody.g.position;
+                warpAimP.copy(bp);
                 warpTargetP.copy(bp)
                     .addScaledVector(warpApproachDir, -warpArrOffset)
                     .addScaledVector(_upVec, warpArrOffset * 0.35);
@@ -562,8 +567,12 @@ export function updateFlight(dt, allBodies, dtWall) {
             // Interpolate position
             camPos.lerpVectors(warpFromP, warpTargetP, Math.min(eased, 1));
 
-            // Look toward destination — snap quickly
-            _lookMat.lookAt(camPos, warpTargetP, _upVec);
+            // Look at the DESTINATION BODY, never the standoff point:
+            // planetary standoffs sit above the ecliptic, and aiming at
+            // the point while the glide aims at the body meant a ~19-degree
+            // gaze snap at handoff. Aiming at the body keeps it fixed in
+            // frame through deceleration and into the glide seamlessly.
+            _lookMat.lookAt(camPos, warpAimP, _upVec);
             const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
             camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
             cam.quaternion.copy(camQuat);
@@ -592,7 +601,9 @@ export function updateFlight(dt, allBodies, dtWall) {
             // lateral drift for parallax, ending in orbit capture (which
             // wakes the notes, the tone, the log, the ship computer).
             if (warpT >= 1) {
-                camPos.copy(warpTargetP);
+                // No snap to warpTargetP: the profile ends a settle-gap
+                // short, and the glide carries us the rest of the way from
+                // exactly here — position stays continuous.
                 cam.fov = BASE_FOV;
                 cam.updateProjectionMatrix();
                 if (streakEl) streakEl.style.opacity = 0;
@@ -1283,6 +1294,7 @@ export function warpTo(targetName) {
   // Set warp origin
   warpFromP.copy(camPos);
   warpFromQ.copy(camQuat);
+  warpAimP.copy(targetPos);
 
   // Compute the standoff: for voids, arrive inside (the near wall behind
   // you, the far wall across the emptiness). For landmarks, stop inside
