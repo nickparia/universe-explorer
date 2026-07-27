@@ -6,12 +6,19 @@ import { WARP_MUSIC } from './catalog.js';
 import { on } from './bus.js';
 
 // ── Track catalog ──────────────────────────────────────────────
+// Lofi is the foundation (long ambient sessions; sits over the synth
+// layers); classical survives as SIGNATURE pieces for monuments —
+// Zarathustra at the Sun, Clair de Lune for the Moon's neighborhood,
+// Jupiter among the giants, Part in the deep, the Adagio at the hole.
 const TRACKS = {
   sun:       ['audio/sun_zarathustra.mp3'],
-  inner:     ['audio/inner_clair_de_lune.mp3', 'audio/inner_moonlight.mp3', 'audio/moonlight_sonata.mp3', 'audio/satie_gymnopedie.mp3'],
-  giants:    ['audio/giants_jupiter.mp3', 'audio/giants_new_world.mp3', 'audio/pachelbel_canon.mp3'],
-  deep:      ['audio/deep_reverie.mp3', 'audio/part_spiegel.mp3', 'audio/vivaldi_spring_largo.mp3'],
-  nebula:    ['audio/nebula_air.mp3'],
+  inner:     ['audio/lofi_tokyo_cafe.mp3', 'audio/lofi_study.mp3', 'audio/lofi_chill_beat.mp3',
+              'audio/inner_clair_de_lune.mp3', 'audio/satie_gymnopedie.mp3'],
+  giants:    ['audio/lofi_smooth.mp3', 'audio/lofi_calm_chillout.mp3', 'audio/lofi_autumn_leaves.mp3',
+              'audio/giants_jupiter.mp3'],
+  deep:      ['audio/lofi_lost_ambient.mp3', 'audio/lofi_watr_fluid.mp3', 'audio/lofi_mountain.mp3',
+              'audio/lofi_midnight_piano.mp3', 'audio/part_spiegel.mp3'],
+  nebula:    ['audio/lofi_watr_fluid.mp3', 'audio/nebula_air.mp3', 'audio/lofi_midnight_piano.mp3'],
   blackhole: ['audio/blackhole_adagio.ogg'],
 };
 
