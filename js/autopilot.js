@@ -40,7 +40,10 @@ function engage() {
   emit('autopilot:engaged');
   requestWake();
   if (isOrbiting()) {
-    dwell = DWELL_MIN + Math.random() * DWELL_VAR;
+    // You've already been looking at this place for the whole idle
+    // wait — the first departure comes quickly, so taking the helm is
+    // something you can SEE happen.
+    dwell = 20 + Math.random() * 25;
   } else {
     planNext();
   }
@@ -72,9 +75,17 @@ function onInput() {
 }
 
 export function initAutopilot() {
-  for (const ev of ['keydown', 'mousedown', 'wheel', 'mousemove', 'touchstart']) {
+  for (const ev of ['keydown', 'mousedown', 'wheel', 'touchstart']) {
     window.addEventListener(ev, onInput, { passive: true });
   }
+  // mousemove needs a displacement gate: Chrome fires phantom mousemove
+  // events under a STATIONARY cursor whenever animated content moves
+  // beneath it — a mouse parked over the canvas froze the idle timer.
+  let lmx = null, lmy = null;
+  window.addEventListener('mousemove', (e) => {
+    if (lmx !== null && Math.hypot(e.clientX - lmx, e.clientY - lmy) > 4) onInput();
+    lmx = e.clientX; lmy = e.clientY;
+  }, { passive: true });
   on('starmap:toggled', (open) => { chartOpen = open; });
   on('orbit:enter', () => {
     if (engaged) {
