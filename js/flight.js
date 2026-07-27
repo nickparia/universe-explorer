@@ -167,6 +167,8 @@ function niceOrbitDist(b) {
   const ringed = b.name === 'SATURN' || b.name === 'URANUS' || b.name === 'BLACK HOLE';
   if (ringed) return b.r * 7;
   if (b.isLandmark) return b.r * 2.3;
+  // Spacecraft are metres across — planetary multiples leave them specks
+  if (b.r < 10) return b.r * 3;
   return b.r * 4.2;
 }
 let _cinemaT = 0;
@@ -1406,7 +1408,9 @@ export function warpTo(targetName) {
     (targetName === 'SATURN' || targetName === 'URANUS' || targetName === 'BLACK HOLE');
   const arrivalOffset = landmark
     ? (isVoid ? targetR * 0.45 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
-    : Math.max(targetR * (isRinged ? 11 : 6), 55);
+    : targetR < 10
+      ? Math.max(targetR * 5, 14)   // spacecraft: close enough to READ it
+      : Math.max(targetR * (isRinged ? 11 : 6), 55);
   warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
   if (!landmark) {
     // Settle slightly above the ecliptic: rings, poles, and orbital
