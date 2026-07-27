@@ -361,21 +361,10 @@ function createBlackHole(scene) {
     blackHoleGroup.add(accretionDiskMesh);
   }
 
-  // 5. Relativistic jets — faint, fast, perpendicular to the disc
-  for (const sign of [1, -1]) {
-    const jetGeo = new THREE.CylinderGeometry(S * 0.06, S * 0.5, S * 14, 12, 1, true);
-    const jetMat = new THREE.MeshBasicMaterial({
-      color: 0x86c8ff, transparent: true, opacity: 0.05,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    });
-    const jet = new THREE.Mesh(jetGeo, jetMat);
-    jet.position.y = sign * S * 7.5;
-    if (sign < 0) jet.rotation.z = Math.PI;
-    const jetHolder = new THREE.Group();
-    jetHolder.rotation.x = Math.PI * 0.28;
-    jetHolder.add(jet);
-    blackHoleGroup.add(jetHolder);
-  }
+  // 5. (no jets) — even at whisper opacity a giant uniform cylinder
+  // reads as solid geometry, glowing brightest where it crosses the
+  // black silhouette. This is a QUIESCENT hole: silhouette, burning
+  // rim, photon ring, disc. Restraint is the design.
 
   // 6. Faint heat shells
   for (const g of [
