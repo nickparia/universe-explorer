@@ -17,7 +17,10 @@ const DWELL_VAR = 130;
 
 const PLANET_POOL = ['SATURN', 'JUPITER', 'NEPTUNE', 'URANUS', 'EARTH', 'MARS', 'PLUTO', 'BLACK HOLE'];
 
-let idle = 0;
+// Boot grace is SHORT: a freshly loaded page with no input isn't an
+// active pilot to protect — the ship should come alive in ~30s. The
+// full 100s window applies only after deliberate input.
+let idle = IDLE_ENGAGE - 30;
 let engaged = false;
 let dwell = 0;
 let driftGrace = 0;
@@ -123,7 +126,7 @@ export function initAutopilot() {
 }
 
 export function updateAutopilot(dt) {
-  if (isIntroPlaying() || chartOpen) { idle = 0; return; }
+  if (isIntroPlaying() || chartOpen) { idle = Math.min(idle, IDLE_ENGAGE - 30); return; }
 
   if (!engaged) {
     idle += dt;
