@@ -274,11 +274,30 @@ export function initFlight(camera) {
     });
 
     window.addEventListener('mousemove', (e) => {
+        // Self-heal: if the right button was released OUTSIDE the window,
+        // our mouseup never fired and the look would stick to bare mouse
+        // movement on re-entry. e.buttons is ground truth — trust it.
+        if (rightDown && !(e.buttons & 2)) {
+            rightDown = false;
+            canvas.style.cursor = '';
+            return;
+        }
         if (rightDown) {
             mouseDX += e.movementX;
             mouseDY += e.movementY;
         }
     });
+
+    // Leaving the window or tab releases everything — no stuck look, no
+    // stuck thrust keys after a cmd-tab.
+    const _releaseAll = () => {
+        rightDown = false;
+        canvas.style.cursor = '';
+        mouseDX = 0; mouseDY = 0;
+        for (const k in keys) keys[k] = false;
+    };
+    window.addEventListener('blur', _releaseAll);
+    document.addEventListener('mouseleave', _releaseAll);
 
     // ── Touch ────────────────────────────────────────────────────────────────
     canvas.addEventListener('touchstart', (e) => {
