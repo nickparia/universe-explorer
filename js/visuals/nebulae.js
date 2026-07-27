@@ -128,6 +128,7 @@ export function makePhotoLayers(tex, recipes, maxDim = 2200) {
       t.colorSpace = THREE.SRGBColorSpace;
       t.userData._recipeKind = recipe.kind;
       t.userData._context = !!recipe.context;
+      t.userData._blurred = !!recipe.blurPx;
       out.push(t);
     }
     return out;
@@ -149,6 +150,7 @@ export function addPhotoLayerStack(group, layers, spec, width, aspect) {
     // context that must dissolve at range (see the landmark loop in main).
     mat.userData._contextPhoto =
       !!(layers[i].userData &&
+         !layers[i].userData._blurred &&
          (layers[i].userData._recipeKind === 'full' || layers[i].userData._context));
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(width * sp.scale, width * aspect * sp.scale, 1);

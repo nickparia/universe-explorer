@@ -95,6 +95,9 @@ export function createRingNebula(group, def, textures) {
   const layers = textures && textures.landmarkRing
     ? makePhotoLayers(textures.landmarkRing, [
         { kind: 'full' },
+        { kind: 'full', blurPx: 12 }, // star-free twin, SAME geometry — the
+                                      // far identity; resolve = sharpen in
+                                      // place, never a positional crossfade
         { kind: 'cool', lumLo: 150 },
         { kind: 'warm' },
       ])
@@ -102,6 +105,7 @@ export function createRingNebula(group, def, textures) {
   if (layers) {
     addPhotoLayerStack(group, layers, [
       { z: -s * 0.26, scale: 1.2, opacity: 0.5, order: 2 },
+      { z: -s * 0.26, scale: 1.2, opacity: 0.4, order: 2 },
       { z: -s * 0.06, scale: 1.0, opacity: 0.9, order: 3 },
       { z:  s * 0.16, scale: 0.98, opacity: 1.0, order: 4 },
     ], s * 1.25, 1.0);

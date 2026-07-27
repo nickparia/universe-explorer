@@ -375,9 +375,16 @@ function animate() {
         const hasContext = PHOTO_CONTEXT_VISUALS.has(lm.visual);
         let c = 1;
         if (hasContext) {
+          // Log-spaced band (200r -> 30r, most of a distance decade) plus
+          // time smoothing: at warp approach speeds a linear band is
+          // crossed in under a second and the resolve reads as a pop.
           const d = camP.distanceTo(lm.pos);
-          const t = Math.max(0, Math.min(1, (d - lm.radius * 18) / (lm.radius * 22)));
-          c = 1 - t * t * (3 - 2 * t);
+          const x = Math.log(Math.max(1e-6, d / (lm.radius * 30))) / Math.log(200 / 30);
+          const t = Math.max(0, Math.min(1, x));
+          const target = 1 - t * t * (3 - 2 * t);
+          const prev = lm._ctxSmooth ?? target;
+          c = prev + (target - prev) * (1 - Math.exp(-dt / 1.2));
+          lm._ctxSmooth = c;
         }
         if (Math.abs((lm._ctx ?? -1) - c) > 0.02) {
           lm._ctx = c;
