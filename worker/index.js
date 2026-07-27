@@ -26,7 +26,17 @@ export default {
     }
 
     if (!MEDIA_PREFIX.test(key)) {
-      return env.ASSETS.fetch(request);
+      const res = await env.ASSETS.fetch(request);
+      // HTML must NEVER be stale: hashed JS/CSS bundles are immutable, but
+      // a cached index.html keeps pointing at the PREVIOUS bundle for up
+      // to ~90s after a deploy — every rapid test cycle hit old code.
+      const ct = res.headers.get('content-type') || '';
+      if (ct.includes('text/html')) {
+        const h = new Headers(res.headers);
+        h.set('cache-control', 'no-store, must-revalidate');
+        return new Response(res.body, { status: res.status, headers: h });
+      }
+      return res;
     }
 
     if (request.method !== 'GET' && request.method !== 'HEAD') {
