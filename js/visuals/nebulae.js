@@ -389,7 +389,7 @@ export function createCarinaNebula(group, def, textures) {
   const layers = textures && textures.landmarkCarina
     ? makePhotoLayers(textures.landmarkCarina, [
         { kind: 'full' },
-        { kind: 'cool', lumLo: 130 , context: true } // JWST cliffs field: star-dense,
+        { kind: 'cool', lumLo: 130, context: true }, // JWST cliffs: star-dense
         { kind: 'warm' },
       ])
     : null;
@@ -472,7 +472,7 @@ export function createHorsehead(group, def, textures) {
   const layers = textures && textures.landmarkHorsehead
     ? makePhotoLayers(textures.landmarkHorsehead, [
         { kind: 'full' },
-        { kind: 'cool', lumLo: 140 , context: true } // Orion IR field: star-dense,
+        { kind: 'cool', lumLo: 140, context: true }, // Orion IR field: star-dense
         { kind: 'warm' },
       ])
     : null;
