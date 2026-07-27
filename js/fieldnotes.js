@@ -34,6 +34,23 @@ export function initFieldNotes() {
 
   on('orbit:enter', ({ name }) => start(name));
   on('orbit:exit', stop);
+
+  // Helm whispers — their own element so they never fight the deck
+  const helmEl = document.createElement('div');
+  helmEl.style.cssText = el.style.cssText;
+  helmEl.style.top = 'auto';
+  helmEl.style.bottom = '10%';
+  helmEl.style.fontSize = '11px';
+  document.body.appendChild(helmEl);
+  let helmTimer = null;
+  const whisper = (text) => {
+    helmEl.textContent = text;
+    helmEl.style.opacity = '1';
+    if (helmTimer) clearTimeout(helmTimer);
+    helmTimer = setTimeout(() => { helmEl.style.opacity = '0'; }, 5000);
+  };
+  on('autopilot:engaged', () => whisper('\u2014 solace has the helm \u2014'));
+  on('autopilot:released', () => whisper('\u2014 helm yours \u2014'));
 }
 
 function buildDeck(name) {

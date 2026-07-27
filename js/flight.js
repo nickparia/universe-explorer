@@ -156,6 +156,10 @@ let orbitDistance = 0;
 let orbitTheta = 0;
 let orbitPhi = Math.PI / 3; // start 60 degrees from pole
 let orbitTransition = false;
+let _autoCinema = false;   // hands-free helm: composed orbit drifting
+let _cinemaT = 0;
+let _cinemaSeed = 0;
+let _cinemaBaseDist = 0;
 let orbitTransT = 0;
 const orbitFromP = new THREE.Vector3();
 const orbitFromQ = new THREE.Quaternion();
@@ -752,7 +756,20 @@ export function updateFlight(dt, allBodies, dtWall) {
         // Auto-rotation — slow drift, ~2.5 minutes per full orbit. Visibly
         // alive (a static opening reads as frozen) while keeping the
         // vista sunlit for the first minute.
-        orbitTheta += dt * 0.04;
+        if (_autoCinema) {
+            // Cinematography, not rotation: theta breathes, the camera
+            // swings slowly between low and high vantage, the distance
+            // eases in and out — every dwell composes different shots.
+            _cinemaT += dt;
+            if (_cinemaBaseDist <= 0) _cinemaBaseDist = orbitDistance;
+            orbitTheta += dt * (0.028 + 0.018 * Math.sin(_cinemaT * 0.013 + _cinemaSeed));
+            const phiTarget = 1.05 + Math.sin(_cinemaT * 0.0085 + _cinemaSeed * 2.1) * 0.5;
+            orbitPhi += (phiTarget - orbitPhi) * (1 - Math.exp(-dt / 14));
+            const distTarget = _cinemaBaseDist * (1 + 0.22 * Math.sin(_cinemaT * 0.006 + _cinemaSeed * 3.7));
+            orbitDistance += (distTarget - orbitDistance) * (1 - Math.exp(-dt / 16));
+        } else {
+            orbitTheta += dt * 0.04;
+        }
 
         // Compute orbit position
         const x = orbitDistance * Math.sin(orbitPhi) * Math.cos(orbitTheta);
@@ -1512,6 +1529,16 @@ function toggleOrbit() {
 }
 
 export function isOrbiting() { return orbitMode; }
+
+/** Hands-free helm: composed orbit drifting while autopilot holds. */
+export function setAutoCinema(onFlag) {
+  _autoCinema = !!onFlag;
+  if (_autoCinema) {
+    _cinemaT = 0;
+    _cinemaSeed = Math.random() * 6.28;
+    _cinemaBaseDist = orbitMode ? orbitDistance : 0;
+  }
+}
 export function getOrbitBodyName() { return (orbitMode && orbitBody) ? orbitBody.name : null; }
 
 /**

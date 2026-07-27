@@ -11,6 +11,7 @@ import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
 import { initTransit, updateTransit } from './transit.js';
+import { initAutopilot, updateAutopilot } from './autopilot.js';
 import { initSession, getResumePose } from './session.js';
 import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
 import { restorePose } from './flight.js';
@@ -68,6 +69,7 @@ async function boot() {
   createDeepSpace(scene, textures);
   initDust(scene);
   initTransit(scene);
+  initAutopilot();
 
   // 6b. Pre-warm the GPU behind the boot veil: compile every shader and
   // upload every texture NOW — three.js does both lazily on first draw,
@@ -368,6 +370,9 @@ function animate() {
 
     // Route furniture — the things that pass the window during warp
     updateTransit(dt, getCamPos(), getSpeedFeel());
+
+    // Hands-free helm — SOLACE takes over when you go quiet
+    updateAutopilot(dt);
 
     // Nothing pops: every landmark renders from any distance — a glowing
     // patch among the stars that grows by perspective alone (the no-pop
