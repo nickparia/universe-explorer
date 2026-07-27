@@ -157,6 +157,18 @@ let orbitTheta = 0;
 let orbitPhi = Math.PI / 3; // start 60 degrees from pole
 let orbitTransition = false;
 let _autoCinema = false;   // hands-free helm: composed orbit drifting
+let _orbitSettleTarget = 0; // ease orbitDistance here (0 = off) — framing glide
+
+// The distance at which an object FILLS the view well — per class.
+// Ringed things need room for their spans; landmark visuals are huge
+// and diffuse; plain bodies read best at ~4 radii.
+function niceOrbitDist(b) {
+  if (!b || !b.r) return 0;
+  const ringed = b.name === 'SATURN' || b.name === 'URANUS' || b.name === 'BLACK HOLE';
+  if (ringed) return b.r * 7;
+  if (b.isLandmark) return b.r * 2.3;
+  return b.r * 4.2;
+}
 let _cinemaT = 0;
 let _cinemaSeed = 0;
 let _cinemaBaseDist = 0;
@@ -750,12 +762,19 @@ export function updateFlight(dt, allBodies, dtWall) {
         mouseDY = 0;
 
         // W/S zoom in/out
+        if (keys['KeyW'] || keys['ArrowUp'] || keys['KeyS'] || keys['ArrowDown']) _orbitSettleTarget = 0;
         if (keys['KeyW'] || keys['ArrowUp'])    orbitDistance = Math.max(orbitBody.r * 1.5, orbitDistance - orbitBody.r * 2 * dt);
         if (keys['KeyS'] || keys['ArrowDown'])  orbitDistance += orbitBody.r * 2 * dt;
 
         // Auto-rotation — slow drift, ~2.5 minutes per full orbit. Visibly
         // alive (a static opening reads as frozen) while keeping the
         // vista sunlit for the first minute.
+        if (_orbitSettleTarget > 0) {
+            orbitDistance += (_orbitSettleTarget - orbitDistance) * (1 - Math.exp(-dt / 7));
+            if (Math.abs(orbitDistance - _orbitSettleTarget) < _orbitSettleTarget * 0.03) {
+                _orbitSettleTarget = 0;
+            }
+        }
         if (_autoCinema) {
             // Cinematography, not rotation: theta breathes, the camera
             // swings slowly between low and high vantage, the distance
@@ -1556,6 +1575,10 @@ export function settleIntoNearestOrbit(bodies, maxMult = 26) {
   orbitMode = true;
   orbitTransition = false;
   velocity.set(0, 0, 0);
+  // Captured far out (a session saved mid-flight can be 20+ radii away):
+  // glide gently in until the object actually frames the view.
+  const nice = niceOrbitDist(best);
+  _orbitSettleTarget = orbitDistance > nice * 1.4 ? nice : 0;
   emit('orbit:enter', { name: best.name });
   return true;
 }
@@ -1566,7 +1589,12 @@ export function setAutoCinema(onFlag) {
   if (_autoCinema) {
     _cinemaT = 0;
     _cinemaSeed = Math.random() * 6.28;
-    _cinemaBaseDist = orbitMode ? orbitDistance : 0;
+    // Breathe around the object's framing distance — an orbit captured
+    // 20 radii out would otherwise compose around an egg in the dark.
+    const nice = orbitMode ? niceOrbitDist(orbitBody) : 0;
+    _cinemaBaseDist = orbitMode
+      ? (nice > 0 ? Math.min(orbitDistance, nice * 1.35) : orbitDistance)
+      : 0;
   }
 }
 export function getOrbitBodyName() { return (orbitMode && orbitBody) ? orbitBody.name : null; }
