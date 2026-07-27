@@ -298,7 +298,9 @@ export function createSolarSystem(scene, textures) {
     sunLensflare.addElement(new LensflareElement(flareTexOrange, 120, 0.2, new THREE.Color(0xffaa44)));
     sunLensflare.addElement(new LensflareElement(flareTexBlue, 80, 0.4, new THREE.Color(0x8899ff)));
 
-    sunLensflare.userData._solarSystemOnly = true;
+    // NOT tagged _solarSystemOnly: a Lensflare can't be opacity-faded by
+    // the belt traverse, so it popped on at the 280 AU boundary. It is
+    // distance-gated in the occlusion block below instead.
     const sunLight = getSunLight();
     if (sunLight) sunLight.add(sunLensflare);
   }
@@ -1133,7 +1135,7 @@ export function updateBodies(dt, camWorldPos) {
     const scale = Math.min(500000, Math.max(1500, dist * 0.012));
     _homeBeacon.scale.set(scale, scale, 1);
     _homeHalo.scale.set(scale * 4.2, scale * 4.2, 1);
-    const t = Math.max(0, Math.min(1, (dist - 40000) / 60000));
+    const t = Math.max(0, Math.min(1, (dist - 60000) / 100000));
     const f = t * t * (3 - 2 * t) * _beaconEnv;
     _homeBeacon.material.opacity = 0.9 * f;
     _homeHalo.material.opacity = 0.13 * f;
@@ -1280,7 +1282,11 @@ export function updateBodies(dt, camWorldPos) {
       const separation = closest.distanceTo(bodyPos);
       if (separation < p.r * 1.1) { occluded = true; break; }
     }
-    sunLensflare.visible = !occluded;
+    // Flare is an up-close optical artifact: it joins only once the sun
+    // disc itself is prominent (~2 degrees), after the beacon has fully
+    // dissolved — never over the long approach, where a 200px screen-
+    // space smear read as "a big gold blur".
+    sunLensflare.visible = !occluded && sunDist < 45000;
   }
 
   // ── Comets ──

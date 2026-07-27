@@ -107,7 +107,7 @@ const _upVec = new THREE.Vector3(0, 1, 0);
 let warpTarget = null;
 let warpT = 0;
 let warpDuration = 0;
-let warpLogK = 6; // ln(journey distance / arrival gap) — decades of scale to traverse
+let warpU0 = -8, warpU1 = 8; // log-odds endpoints of the sigmoid travel profile
 const warpFromP = new THREE.Vector3();
 const warpFromQ = new THREE.Quaternion();
 const warpTargetP = new THREE.Vector3();
@@ -529,26 +529,22 @@ export function updateFlight(dt, allBodies, dtWall) {
                 warpPhase = 'charging';
             } else {
                 const t2 = Math.min(1, (warpT - HOLD) / (1 - HOLD));
-                // Powers-of-ten arrival: remaining distance decays
-                // exponentially in eased time, so every SCALE of approach
-                // gets its own seconds — the galaxy grows, the star-band
-                // blooms, the sun ignites, worlds resolve: separate acts,
-                // not one blink. s = t^1.6 spools up softly and gives the
-                // opening sweep a little extra time.
-                const s = Math.pow(t2, 1.6);
-                eased = 1 - Math.exp(-warpLogK * s);
-                if (t2 < 0.3) {
-                    const p = t2 / 0.3;
-                    speedFeeling = p * p;
-                    warpPhase = 'accelerating';
-                } else if (t2 < 0.82) {
-                    speedFeeling = 1.0;
-                    warpPhase = 'cruising';
-                } else {
-                    const p = (t2 - 0.82) / 0.18;
-                    speedFeeling = 1 - p * p;
-                    warpPhase = 'decelerating';
-                }
+                // Log-symmetric travel: the sigmoid in log-odds space makes
+                // BOTH ends exponential. Departure: distance from the start
+                // point doubles on a steady beat — the ship visibly backs
+                // out through every scale, like a car leaving a car park.
+                // Arrival: remaining distance halves on the same beat — the
+                // solar system is a multi-second traverse, worlds resolving
+                // in stages, never a blink. The middle is the grand sweep.
+                const u = warpU0 + (warpU1 - warpU0) * t2;
+                eased = 1 / (1 + Math.exp(-u));
+                // Perceived rush is steady through both exponential legs
+                // (scales stream past at a constant beat) — ramp in as the
+                // ship backs out, ease off through the final settle.
+                speedFeeling = t2 < 0.28 ? Math.pow(t2 / 0.28, 2)
+                    : t2 > 0.78 ? Math.max(0, 1 - Math.pow((t2 - 0.78) / 0.22, 2))
+                    : 1.0;
+                warpPhase = t2 < 0.33 ? 'accelerating' : t2 < 0.75 ? 'cruising' : 'decelerating';
             }
             _feel.warp = speedFeeling;
             _feel.govDist = 150000; // dust shell at interstellar scale
@@ -1304,7 +1300,7 @@ export function warpTo(targetName) {
   // 6r standoff crops them out of frame entirely.
   const isRinged = !landmark && (targetName === 'SATURN' || targetName === 'URANUS');
   const arrivalOffset = landmark
-    ? (isVoid ? targetR * 1.0 : isGalaxy ? targetR * 6.0 : targetR * 0.9)
+    ? (isVoid ? targetR * 1.0 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
     : Math.max(targetR * (isRinged ? 11 : 6), 80);
   warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
   if (!landmark) {
@@ -1317,8 +1313,10 @@ export function warpTo(targetName) {
   warpArrOffset = arrivalOffset;
   {
     const journey = camPos.distanceTo(warpTargetP);
-    const remEnd = Math.max(400, arrivalOffset * 0.02);
-    warpLogK = Math.log(Math.max(3, journey / remEnd));
+    const startGap = 150;                              // departure creep scale
+    const endGap = Math.max(400, arrivalOffset * 0.02); // arrival settle scale
+    warpU0 = -Math.log(Math.max(3, journey / startGap));
+    warpU1 = Math.log(Math.max(3, journey / endGap));
   }
 
   // Duration grows logarithmically: every 10x the distance adds ~4s.
@@ -1326,7 +1324,7 @@ export function warpTo(targetName) {
   // proportional without long ones becoming tedious. Sensation of speed
   // comes from the tunnel, not the clock.
   const dist = camPos.distanceTo(targetPos);
-  warpDuration = Math.min(32, Math.max(8, 8 + 4 * Math.log10(Math.max(dist, 10000) / 10000)));
+  warpDuration = Math.min(40, Math.max(9, 10 + 4.6 * Math.log10(Math.max(dist, 10000) / 10000)));
 
   // Set warp target
   warpTarget = { name: targetName, desc: landmark ? landmark.desc : '', pos: targetPos.clone ? targetPos.clone() : targetPos };
