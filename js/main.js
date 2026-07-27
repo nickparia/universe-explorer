@@ -264,7 +264,9 @@ async function boot() {
   const bootesVoidLandmark = getLandmarks().find(lm => lm.name === 'BOOTES VOID');
 
   let _frameCount = 0;
-  function animate() {
+  let _galIn = null, _galEx = 0, _galVol = 1; // smoothed galaxy-membership fades
+
+function animate() {
     requestAnimationFrame(animate);
     if (++_frameCount === 2) revealWorld();
     const now = performance.now();
@@ -400,12 +402,25 @@ async function boot() {
       const u = getCamPos().distanceTo(GALACTIC_CENTER) / MILKY_WAY_RADIUS;
       const tIn = Math.max(0, Math.min(1, (u - 0.92) / (1.45 - 0.92)));
       const interior = 1 - tIn * tIn * (3 - 2 * tIn);
-      const tOut = Math.max(0, Math.min(1, (u - 1.02) / (2.1 - 1.02)));
+      const tOut = Math.max(0, Math.min(1, (u - 1.02) / (2.6 - 1.02)));
       const exterior = tOut * tOut * (3 - 2 * tOut);
-      setSkyboxOpacity(0.9 * interior);
-      setMilkyWayOpacity(exterior);
-      setGalaxyInteriorFactor(interior);
-      setHomeBeaconFactor(interior);
+      // Particle volume belongs to the rim crossing only — at range the
+      // pixel-sized points fuse into a cotton ball over the photograph,
+      // so distant views are handed to the photo disc (a whisper stays
+      // for edge-on body).
+      const tVol = Math.max(0, Math.min(1, (u - 1.5) / (2.9 - 1.5)));
+      const volume = 0.22 + 0.78 * (1 - tVol * tVol * (3 - 2 * tVol));
+      // Time-smoothing: a rim crossed at warp speed still dissolves like
+      // a slow breath — the fade can never happen faster than this.
+      if (_galIn === null) { _galIn = interior; _galEx = exterior; _galVol = volume; }
+      const gk = 1 - Math.exp(-dt / 1.4);
+      _galIn += (interior - _galIn) * gk;
+      _galEx += (exterior - _galEx) * gk;
+      _galVol += (volume - _galVol) * gk;
+      setSkyboxOpacity(0.9 * _galIn);
+      setMilkyWayOpacity(_galEx, _galVol);
+      setGalaxyInteriorFactor(_galIn);
+      setHomeBeaconFactor(_galIn);
     }
 
     // Milky Way rotation — noticeable sweep while the landing page /

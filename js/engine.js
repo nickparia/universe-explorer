@@ -376,7 +376,11 @@ function makeDriftGlows(count, half) {
     opacity: 0.12,
   });
   const pts = new THREE.Points(geo, mat);
-  _localStarBuckets.push({ positions, geo, half, count });
+  // fadeShift: these are physically huge and pass CLOSE, so the limit that
+  // matters is transit rate across the view, not wrap rate — above ~9M/s
+  // they'd smear past as constant colored blurs. ignoreGalaxy: from
+  // intergalactic space they read as distant galaxies, so they stay.
+  _localStarBuckets.push({ positions, geo, half, count, material: mat, fadeShift: 150000, ignoreGalaxy: true });
   return pts;
 }
 
@@ -442,11 +446,13 @@ export function updateStarParallax(camPos) {
 
   const mag = Math.sqrt(magSq);
   for (const b of _localStarBuckets) {
-    // Wrap-rate fade: when one frame crosses a meaningful fraction of the
-    // volume, its stars are shimmer noise — fade the volume out until the
-    // speed drops back into its regime. Each shell serves its own scale.
-    const ratio = mag / b.half;
-    const target = ratio > 0.3 ? 0 : ratio > 0.12 ? 1 - (ratio - 0.12) / 0.18 : 1;
+    // Speed fade: when one frame crosses a meaningful fraction of a
+    // volume (or a bucket's own transit threshold), its contents are
+    // shimmer noise — fade the bucket out until speed drops back into
+    // its regime. Each shell serves its own scale.
+    const fs = b.fadeShift !== undefined ? b.fadeShift : b.half * 0.2;
+    const ratio = mag / fs;
+    const target = ratio > 1.5 ? 0 : ratio > 0.6 ? 1 - (ratio - 0.6) / 0.9 : 1;
     b._speedFade = (b._speedFade ?? 1) + (target - (b._speedFade ?? 1)) * 0.12;
     const p = b.positions;
     const span = b.half * 2;
@@ -766,7 +772,10 @@ export function createStars(textures) {
   ];
   const shellK = MILKY_WAY_RADIUS / 624000;
   for (const s of coreShells) {
+    // Flattened: from a distance the bulge must read as a lens in the
+    // disc plane, not a golden ball.
     const geo = new THREE.SphereGeometry(s.r * shellK, 40, 40);
+    geo.scale(1.25, 0.5, 1.25);
     const mat = new THREE.MeshBasicMaterial({
       color: s.color,
       transparent: true,
@@ -788,7 +797,14 @@ export function createStars(textures) {
   // galaxy uniformly during the intro arrival.
   mwOuter.traverse((o) => {
     if (o.material && o.material.opacity !== undefined) {
-      _milkyWayMats.push({ material: o.material, baseOpacity: o.material.opacity });
+      // 'volume' = particle layers (pixel-sized points that fuse into a
+      // cotton ball at range); 'surface' = the photo plane + bulge shells
+      // that carry every distant view.
+      _milkyWayMats.push({
+        material: o.material,
+        baseOpacity: o.material.opacity,
+        kind: o.isPoints ? 'volume' : 'surface',
+      });
     }
   });
 
@@ -811,10 +827,11 @@ export function createStars(textures) {
  * starfield from inside the Sun's neighbourhood, rather than a distinct
  * spiral object off in the distance.
  */
-export function setMilkyWayOpacity(opacity) {
+export function setMilkyWayOpacity(opacity, volumeK = 1) {
   const m = Math.max(0, Math.min(1, opacity));
+  const v = Math.max(0, Math.min(1, volumeK));
   for (const entry of _milkyWayMats) {
-    entry.material.opacity = entry.baseOpacity * m;
+    entry.material.opacity = entry.baseOpacity * m * (entry.kind === 'volume' ? v : 1);
   }
 }
 
@@ -883,7 +900,7 @@ export function updateStarFieldOpacity(dt) {
   const galaxyStarF = 0.25 + 0.75 * _galaxyF;
   for (const b of _localStarBuckets) {
     if (!b.material) continue;
-    let m = (b._speedFade ?? 1) * galaxyStarF;
+    let m = (b._speedFade ?? 1) * (b.ignoreGalaxy ? 1 : galaxyStarF);
     if (b.isNear) m *= (1 - 0.9 * _warpK);
     b.material.opacity *= m;
   }
