@@ -11,10 +11,10 @@ import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
 import { initSession, getResumePose } from './session.js';
-import { initSoundscape, startSoundscape, updateSoundscape } from './soundscape.js';
+import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
 import { restorePose } from './flight.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
-import { initMusic, updateMusic } from './music.js';
+import { initMusic, updateMusic, setMusicDuck } from './music.js';
 import { initHud, updateHud } from './hud.js';
 import { initNavigation, updateNavigation, getTimeScale } from './navigation.js';
 import { initStarMap, updateStarMap, isStarMapOpen, toggleStarMap } from './starmap.js';
@@ -349,8 +349,14 @@ function animate() {
         // more stars than anywhere else." The starmap image was wrapping
         // the camera even at the void, showing the Milky Way band.
         setSkyboxOpacity(smoothed * 0.4);
+        // Engineered silence: music presses toward nothing, the hull
+        // bed thins — absence you can hear. Same law as the visuals.
+        setMusicDuck(1 - smoothed);
+        setVoidHush(1 - smoothed);
       } else {
         setStarFieldOpacity(1.0);
+        setMusicDuck(0);
+        setVoidHush(0);
       }
     }
     updateStarFieldOpacity(dt);

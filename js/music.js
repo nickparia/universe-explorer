@@ -78,6 +78,19 @@ let channelA, channelB;
 let activeChannel = 'A';        // which channel is currently playing
 let currentZone   = null;
 let masterVol     = 0.25;
+let musicDuck     = 0;   // 0..1 — the void presses music toward silence
+
+function effVol() {
+  return masterVol * (1 - 0.94 * musicDuck);
+}
+
+/** External duck (Bootes Void): 1 = near-silence. Applied live. */
+export function setMusicDuck(d) {
+  musicDuck = Math.max(0, Math.min(1, d));
+  const active = typeof getActiveEl === 'function' ? getActiveEl() : null;
+  if (active && !active.paused) active.volume = effVol();
+  if (usingSynth && masterGain) masterGain.gain.value = effVol();
+}
 let musicStarted  = false;
 let paused        = false;
 let zoneCheckAccum = 0;
@@ -166,7 +179,7 @@ function crossfadeTo(zone) {
     });
   }
 
-  fadeIn(next, masterVol);
+  fadeIn(next, effVol());
 
   // Update label
   if (trackLbl) {
@@ -191,7 +204,7 @@ function crossfadeToTrack(trackPath, zoneName) {
       if (failCount >= 2 && !usingSynth) activateSynthFallback();
     });
   }
-  fadeIn(next, masterVol);
+  fadeIn(next, effVol());
   if (trackLbl) {
     const label = zoneName.split(' ').map(w => w.charAt(0) + w.slice(1).toLowerCase()).join(' ');
     trackLbl.textContent = label;
@@ -242,9 +255,9 @@ export function initMusic() {
       masterVol = parseFloat(volSlider.value);
       // Update active channel volume live
       const active = getActiveEl();
-      if (active && !active.paused) active.volume = masterVol;
+      if (active && !active.paused) active.volume = effVol();
       // Update synth volume if active
-      if (usingSynth && masterGain) masterGain.gain.value = masterVol;
+      if (usingSynth && masterGain) masterGain.gain.value = effVol();
     });
   }
 
@@ -485,7 +498,7 @@ function schedMusic(from, chordCount) {
 function startSynth() {
   AC = new (window.AudioContext || window.webkitAudioContext)();
   masterGain = AC.createGain();
-  masterGain.gain.value = masterVol;
+  masterGain.gain.value = effVol();
   reverbNode = buildReverb(AC);
   dryGain = AC.createGain();
   dryGain.gain.value = 0.4;
