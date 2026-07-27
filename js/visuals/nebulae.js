@@ -121,6 +121,7 @@ export function makePhotoLayers(tex, recipes, maxDim = 2200) {
       ctx.putImageData(data, 0, 0);
       const t = new THREE.CanvasTexture(cv);
       t.colorSpace = THREE.SRGBColorSpace;
+      t.userData._recipeKind = recipe.kind;
       out.push(t);
     }
     return out;
@@ -138,6 +139,10 @@ export function addPhotoLayerStack(group, layers, spec, width, aspect) {
       blending: sp.normal ? THREE.NormalBlending : THREE.AdditiveBlending,
       depthWrite: false,
     });
+    // The 'full' layer carries the photograph's own background starfield —
+    // context that must dissolve at range (see the landmark loop in main).
+    mat.userData._contextPhoto =
+      !!(layers[i].userData && layers[i].userData._recipeKind === 'full');
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(width * sp.scale, width * aspect * sp.scale, 1);
     sprite.position.z = sp.z;

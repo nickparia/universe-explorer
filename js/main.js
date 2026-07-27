@@ -264,7 +264,8 @@ async function boot() {
   const bootesVoidLandmark = getLandmarks().find(lm => lm.name === 'BOOTES VOID');
 
   let _frameCount = 0;
-  let _galIn = null, _galEx = 0, _galVol = 1; // smoothed galaxy-membership fades
+  let _galIn = null, _galEx = 0, _galVol = 1;
+const PHOTO_CONTEXT_VISUALS = new Set(['pillars', 'crab', 'carina', 'horsehead', 'ring', 'eta_carinae', 'supermassive_bh']); // smoothed galaxy-membership fades
 
 function animate() {
     requestAnimationFrame(animate);
@@ -355,23 +356,38 @@ function animate() {
     updateStarFieldOpacity(dt);
 
     // Nothing pops: every landmark renders from any distance — a glowing
-    // patch among the stars that grows by perspective alone across the
-    // whole journey, the same law as the galaxies and the sun beacon.
-    // (These are the brightest objects in the sky; you WOULD see the
-    // Crab from across the galaxy.) The old 7-16r proximity fade made
-    // destinations materialize mid-approach — a fourth-wall break.
+    // patch among the stars that grows by perspective alone (the no-pop
+    // law). But CONTEXT must resolve with proximity: the photograph's own
+    // background starfield and the companion-star corridors are faint
+    // stars that are physically unresolvable from light-years away — at
+    // range they collapsed into a fixed speckle patch that read as "a
+    // photo pasted on the sky". So the keyed emission layers carry the
+    // distant identity (a small colored glow), and the star context
+    // dissolves in over ~40r -> 18r as you approach — resolution
+    // improving, exactly like a real telescope closing in.
     {
+      const camP = getCamPos();
       const allLandmarks = getLandmarks();
       for (const lm of allLandmarks) {
         lm.anchor.visible = true;
-        if (lm._fade !== 1) {
-          lm._fade = 1;
+        // Photo-based visuals only: galaxies ARE their full layer, the
+        // void is emptiness, and the procedural three are all-particle.
+        const hasContext = PHOTO_CONTEXT_VISUALS.has(lm.visual);
+        let c = 1;
+        if (hasContext) {
+          const d = camP.distanceTo(lm.pos);
+          const t = Math.max(0, Math.min(1, (d - lm.radius * 18) / (lm.radius * 22)));
+          c = 1 - t * t * (3 - 2 * t);
+        }
+        if (Math.abs((lm._ctx ?? -1) - c) > 0.02) {
+          lm._ctx = c;
           lm.anchor.traverse((o) => {
             if (o.material) {
               if (o.material.userData._baseOpacity === undefined) {
                 o.material.userData._baseOpacity = o.material.opacity;
               }
-              o.material.opacity = o.material.userData._baseOpacity;
+              const isContext = o.isPoints || o.material.userData._contextPhoto;
+              o.material.opacity = o.material.userData._baseOpacity * (isContext ? c : 1);
             }
           });
         }
