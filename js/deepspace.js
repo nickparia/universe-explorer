@@ -304,7 +304,7 @@ function createBlackHole(scene) {
 
   // 3. Accretion disc — thin, white-hot inner edge to deep red rim,
   // Doppler-beamed: brightness leans hard to the approaching side
-  const diskCount = 14000;
+  const diskCount = 9000;
   const diskPositions = new Float32Array(diskCount * 3);
   const diskColors = new Float32Array(diskCount * 3);
   for (let i = 0; i < diskCount; i++) {
@@ -327,12 +327,14 @@ function createBlackHole(scene) {
   diskGeom.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
   const diskMat = new THREE.PointsMaterial({
     vertexColors: true,
-    size: S * 0.045,
+    // Small and restrained: size-attenuated points near the disc plane
+    // otherwise swell into overlapping blobs and fuse into solid paint.
+    size: S * 0.018,
     map: getPointTexture(),
     sizeAttenuation: true,
     blending: THREE.AdditiveBlending,
     transparent: true,
-    opacity: 0.85,
+    opacity: 0.55,
     depthWrite: false,
   });
   accretionParticles = new THREE.Points(diskGeom, diskMat);
@@ -369,7 +371,6 @@ function createBlackHole(scene) {
     const jet = new THREE.Mesh(jetGeo, jetMat);
     jet.position.y = sign * S * 7.5;
     if (sign < 0) jet.rotation.z = Math.PI;
-    jet.rotation.x = Math.PI * 0.28 - Math.PI / 2 + Math.PI / 2; // align to disc normal
     const jetHolder = new THREE.Group();
     jetHolder.rotation.x = Math.PI * 0.28;
     jetHolder.add(jet);
