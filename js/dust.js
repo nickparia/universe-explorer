@@ -21,7 +21,34 @@ import * as THREE from 'three';
 import { setWorldPos } from './engine.js';
 import { getPointTexture } from './textures.js';
 
-const COUNT = 480;
+// Grainy, slightly irregular mote — a fleck of matter, not a UI blob
+let _grainTex = null;
+function getGrainTexture() {
+  if (_grainTex) return _grainTex;
+  const sz = 96;
+  const cv = document.createElement('canvas');
+  cv.width = sz; cv.height = sz;
+  const ctx = cv.getContext('2d');
+  const grd = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+  grd.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grd.addColorStop(0.35, 'rgba(255,255,255,0.4)');
+  grd.addColorStop(0.75, 'rgba(255,255,255,0.08)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, sz, sz);
+  // Speckle: irregular grain so no two look alike at different rotations
+  const data = ctx.getImageData(0, 0, sz, sz);
+  const px = data.data;
+  for (let i = 0; i < px.length; i += 4) {
+    const n = 0.72 + Math.random() * 0.42;
+    px[i + 3] = Math.min(255, px[i + 3] * n);
+  }
+  ctx.putImageData(data, 0, 0);
+  _grainTex = new THREE.CanvasTexture(cv);
+  return _grainTex;
+}
+
+const COUNT = 360;
 const SHELL_MIN = 30;        // units — near-surface scale
 const SHELL_MAX = 400000;    // units — intergalactic scale
 const SHELL_FACTOR = 0.55;   // shell radius = factor × gap to nearest object
@@ -52,15 +79,16 @@ export function initDust(scene) {
       Math.random() - 0.5,
       Math.random() - 0.5
     ));
-    // Squared distribution: most streaks short and faint, a few long —
-    // reads as depth instead of a uniform line burst
+    // Cubed distribution: most streaks are short flecks, a rare few long —
+    // variety reads as depth instead of a uniform line burst
     const lf = Math.random();
-    lenFactor.push(0.12 + lf * lf * 0.88);
+    lenFactor.push(0.06 + lf * lf * lf * 0.94);
 
     // Subtle tint variation — mostly ice-blue/white, a few warm motes,
     // varied brightness so the field doesn't read as a uniform grid.
     const warm = Math.random() < 0.12;
-    const b = 0.35 + Math.random() * 0.65;
+    const dim = Math.random() < 0.45; // many barely-there flecks
+    const b = (dim ? 0.12 : 0.4) + Math.random() * (dim ? 0.2 : 0.6);
     const r = (warm ? 1.0 : 0.72 + Math.random() * 0.2) * b;
     const g = (warm ? 0.82 : 0.82 + Math.random() * 0.12) * b;
     const bl = (warm ? 0.6 : 1.0) * b;
@@ -78,7 +106,7 @@ export function initDust(scene) {
   geoP.setAttribute('color', new THREE.BufferAttribute(colorsP, 3));
 
   matP = new THREE.PointsMaterial({
-    map: getPointTexture(),
+    map: getGrainTexture(),
     vertexColors: true,
     size: 1,
     sizeAttenuation: true,
@@ -167,7 +195,7 @@ export function updateDust(dt, camPos, velocity, feel) {
 
   // Visible in free flight (scaled by how hard you push the ceiling) and
   // during warp (the 3D dust stream IS the tunnel).
-  const drive = feel.free ? feel.ratio : (feel.warp ? 0.45 + feel.warp * 0.42 : 0);
+  const drive = feel.free ? feel.ratio : (feel.warp ? 0.36 + feel.warp * 0.36 : 0);
   const t = Math.max(0, Math.min(1, (drive - 0.15) / 0.85));
   const base = t * t * (3 - 2 * t) * 0.5;
 
@@ -177,7 +205,7 @@ export function updateDust(dt, camPos, velocity, feel) {
   const sb = Math.max(0, Math.min(1, (drive - 0.45) / 0.45));
   const streakBlend = sb * sb * (3 - 2 * sb);
   const targetP = base * (1 - streakBlend * 0.5);
-  const targetL = base * streakBlend * 0.6;
+  const targetL = base * streakBlend * 0.48;
   matP.opacity += (targetP - matP.opacity) * (1 - Math.exp(-dt / 0.3));
   matL.opacity += (targetL - matL.opacity) * (1 - Math.exp(-dt / 0.3));
   matP.size = shellR * 0.006;

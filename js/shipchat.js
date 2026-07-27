@@ -34,14 +34,22 @@ export function initShipChat() {
   input.type = 'text';
   input.placeholder = 'ask solace';
   input.maxLength = 240;
+  // No box, no slab: just words with a dark halo (readable over bright
+  // nebulae and black space alike) and a hairline that wakes on focus.
   input.style.cssText =
-    'width:100%;box-sizing:border-box;padding:9px 12px;' +
-    'background:rgba(8,12,22,0.55);border:1px solid rgba(140,180,255,0.18);' +
-    'border-radius:2px;outline:none;color:rgba(255,255,255,0.85);' +
+    'width:100%;box-sizing:border-box;padding:7px 2px;' +
+    'background:transparent;border:none;' +
+    'border-bottom:1px solid rgba(255,255,255,0.16);' +
+    'border-radius:0;outline:none;color:rgba(255,255,255,0.88);' +
     'font-size:11px;letter-spacing:2px;font-family:inherit;font-weight:300;' +
-    'backdrop-filter:blur(8px);-webkit-backdrop-filter:blur(8px);transition:border-color 0.2s;';
-  input.addEventListener('focus', () => { input.style.borderColor = 'rgba(140,180,255,0.45)'; });
-  input.addEventListener('blur', () => { input.style.borderColor = 'rgba(140,180,255,0.18)'; });
+    'text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 10px rgba(0,0,0,0.55);' +
+    'transition:border-color 0.25s;';
+  const phStyle = document.createElement('style');
+  phStyle.textContent = '#ship-chat input::placeholder{color:rgba(255,255,255,0.45);' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 10px rgba(0,0,0,0.55);}';
+  document.head.appendChild(phStyle);
+  input.addEventListener('focus', () => { input.style.borderBottomColor = 'rgba(255,255,255,0.5)'; });
+  input.addEventListener('blur', () => { input.style.borderBottomColor = 'rgba(255,255,255,0.16)'; });
   input.addEventListener('keydown', (e) => {
     e.stopPropagation(); // never fly the ship while typing
     if (e.key === 'Enter') send();
@@ -69,7 +77,7 @@ function addLine(text, who) {
   const line = document.createElement('div');
   line.style.cssText =
     'font-size:11px;letter-spacing:1.5px;line-height:1.9;' +
-    'text-shadow:0 1px 4px rgba(0,0,0,0.9);transition:opacity 1s;' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 10px rgba(0,0,0,0.6);transition:opacity 1s;' +
     (who === 'you'
       ? 'color:rgba(255,255,255,0.45);'
       : 'color:rgba(170,205,255,0.8);');

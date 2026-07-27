@@ -176,6 +176,69 @@ const STAR_COLORS = [
   [0.85, 0.90, 1]
 ];
 
+function makeLocalStarVolume(count, half, size, opacity) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    positions[i * 3]     = (Math.random() * 2 - 1) * half;
+    positions[i * 3 + 1] = (Math.random() * 2 - 1) * half;
+    positions[i * 3 + 2] = (Math.random() * 2 - 1) * half;
+    const c = STAR_COLORS[Math.floor(Math.random() * STAR_COLORS.length)];
+    const b = 0.55 + Math.random() * 0.45; // brightness variance
+    colors[i * 3]     = c[0] * b;
+    colors[i * 3 + 1] = c[1] * b;
+    colors[i * 3 + 2] = c[2] * b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size,
+    map: getPointTexture(),
+    vertexColors: true,
+    sizeAttenuation: false,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity,
+  });
+  const pts = new THREE.Points(geo, mat);
+  _localStarBuckets.push({ positions, geo, half, count });
+  return pts;
+}
+
+/**
+ * True stellar parallax: positions are offsets from the camera; keeping a
+ * star's offset fixed while the camera moves would drag it along, so we
+ * subtract the camera's displacement — the star stays put in WORLD space —
+ * and wrap it to the far side of the volume when it falls too far behind.
+ * Call once per frame.
+ */
+export function updateStarParallax(camPos) {
+  if (!_spHasPrev) { _spPrevCam.copy(camPos); _spHasPrev = true; return; }
+  const dx = camPos.x - _spPrevCam.x;
+  const dy = camPos.y - _spPrevCam.y;
+  const dz = camPos.z - _spPrevCam.z;
+  _spPrevCam.copy(camPos);
+  const magSq = dx * dx + dy * dy + dz * dz;
+  if (magSq < 0.25) return; // stationary — skip the work
+
+  for (const b of _localStarBuckets) {
+    const p = b.positions;
+    const span = b.half * 2;
+    for (let i = 0; i < b.count; i++) {
+      let x = p[i * 3]     - dx;
+      let y = p[i * 3 + 1] - dy;
+      let z = p[i * 3 + 2] - dz;
+      if (x >  b.half) x -= span; else if (x < -b.half) x += span;
+      if (y >  b.half) y -= span; else if (y < -b.half) y += span;
+      if (z >  b.half) z -= span; else if (z < -b.half) z += span;
+      p[i * 3] = x; p[i * 3 + 1] = y; p[i * 3 + 2] = z;
+    }
+    b.geo.attributes.position.needsUpdate = true;
+  }
+}
+
 function makeStarLayer(count, minR, maxR, size, opacity) {
   const positions = new Float32Array(count * 3);
   const colors    = new Float32Array(count * 3);
@@ -371,6 +434,9 @@ function makeMilkyWay() {
 // ── Star field state (for opacity fading, e.g. Bootes Void) ──
 let _starGroup = null;
 const _starBaseOpacities = []; // stores { material, baseOpacity } for each star child
+const _localStarBuckets = [];  // wrapping local-star volumes (true parallax)
+const _spPrevCam = new THREE.Vector3();
+let _spHasPrev = false;
 let _starTargetOpacity = 1.0;
 let _starCurrentOpacity = 1.0;
 
@@ -385,14 +451,17 @@ export function createStars() {
   const group = new THREE.Group();
   group.renderOrder = -10; // render before all planets
 
-  // Layer 1: main star field
-  group.add(makeStarLayer(30000, 4000, 150000, 1.4, 1.0));
+  // Layers 1+3 are now LOCAL star volumes with true parallax: stars hold
+  // fixed world positions inside a cube that wraps around the camera
+  // (dust-field technique at stellar scale). At cruising speeds the drift
+  // is imperceptible — physically honest — but at warp the near field
+  // sweeps past while distant layers crawl. Layer 2 stays camera-locked:
+  // the truly distant sky.
+  group.add(makeLocalStarVolume(9000, 170000, 1.5, 0.95));
+  group.add(makeLocalStarVolume(2400, 120000, 3.2, 0.85));
 
-  // Layer 2: distant stars
-  group.add(makeStarLayer(12000, 150000, 800000, 0.8, 0.5));
-
-  // Layer 3: nearby bright stars (but far enough to not overlap planets)
-  group.add(makeStarLayer(2500, 2000, 8000, 3.5, 0.9));
+  // Layer 2: distant stars (static backdrop)
+  group.add(makeStarLayer(14000, 180000, 800000, 0.8, 0.5));
 
   // Milky Way galaxy — three nested groups:
   //   mwOuter    → positioned at the galactic center (camera-relative)
