@@ -1567,7 +1567,11 @@ export function settleIntoNearestOrbit(bodies, maxMult = 26) {
     if (!b.g || !b.r) continue;
     const p = b.g.userData._worldPos || b.g.position;
     const d = camPos.distanceTo(p);
-    if (d < b.r * maxMult && d < bestGap) { bestGap = d; best = b; }
+    // Absolute floor on the search window: 26 radii is ~150 units for a
+    // spacecraft, so a session saved just beyond that resumed as a
+    // frozen frame in the dark. 'Near' has a human scale too.
+    const near = Math.max(b.r * maxMult, 1600);
+    if (d < near && d < bestGap) { bestGap = d; best = b; }
   }
   if (!best) return false;
   const bodyPos = best.g.userData._worldPos || best.g.position;
