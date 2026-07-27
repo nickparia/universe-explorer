@@ -338,23 +338,17 @@ export function createBootesVoid(group, def) {
 
   const shellOuter = scale * 0.42;
 
-  // ── 1. Inner darkening sphere ──────────────────────────────────────
-  // Very faint cool-tinted BackSide sphere; subtly desaturates the view
-  // toward screen center when the camera is inside, selling the void.
-  const voidGeo = new THREE.SphereGeometry(shellOuter * 0.9, 48, 48);
-  const voidMat = new THREE.MeshBasicMaterial({
-    color: 0x060814,
-    side: THREE.BackSide,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
-  });
-  group.add(new THREE.Mesh(voidGeo, voidMat));
+  // ── 1. (deliberately nothing) ─────────────────────────────────────
+  // You cannot paint darkness: on a black sky every pigment BRIGHTENS.
+  // The old dark-blue "darkening sphere" rendered as a glowing ball —
+  // the exact opposite of a void. Absence is built purely by
+  // subtraction: the proximity fade kills the star field and skybox,
+  // and we add almost nothing back.
 
   // ── 2. Sparse interior galaxies ────────────────────────────────────
   // Enough to give parallax motion cues, but dim and few so the void
   // still reads as empty.
-  const innerCount = 35;
+  const innerCount = 12; // 'contains only ~60 galaxies' — keep it TRUE to feel
   for (let i = 0; i < innerCount; i++) {
     // Bias toward the outer half of the interior so center stays darker
     const rFrac = 0.25 + Math.pow(Math.random(), 0.6) * 0.55;
@@ -369,7 +363,7 @@ export function createBootesVoid(group, def) {
       color: Math.random() < 0.25 ? 0x88aabb : 0x4a5a70,
       blending: THREE.AdditiveBlending,
       transparent: true,
-      opacity: 0.05 + Math.random() * 0.07,
+      opacity: 0.025 + Math.random() * 0.045,
       rotation: Math.random() * Math.PI,
       depthWrite: false,
     });
@@ -389,12 +383,13 @@ export function createBootesVoid(group, def) {
   // Each layer uses colored sprite galaxies with size & color variety,
   // so the "wall" has thickness and visible individual galaxies rather
   // than reading as a uniform particle ring.
-  // Whisper-faint: from inside, the walls should be something you FIND
-  // by staring, not a bright bubble around you.
+  // The far walls of the cosmic web: sparse, DISTANT, whisper-faint —
+  // something you find by staring. 140 smudges, not 590: from inside,
+  // most of any sightline must hit nothing at all.
   const shellLayers = [
-    { radius: shellOuter * 0.93, count: 180, sizeMul: 1.0, opacity: 0.16 },
-    { radius: shellOuter * 1.00, count: 260, sizeMul: 1.15, opacity: 0.2 },
-    { radius: shellOuter * 1.10, count: 150, sizeMul: 0.85, opacity: 0.1 },
+    { radius: shellOuter * 1.35, count: 60, sizeMul: 1.0, opacity: 0.10 },
+    { radius: shellOuter * 1.55, count: 50, sizeMul: 1.2, opacity: 0.07 },
+    { radius: shellOuter * 1.85, count: 30, sizeMul: 0.9, opacity: 0.05 },
   ];
 
   // Galaxy color palette — warm cores, cool spirals, occasional red giants

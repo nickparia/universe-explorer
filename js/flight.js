@@ -1312,7 +1312,7 @@ export function warpTo(targetName) {
   // 6r standoff crops them out of frame entirely.
   const isRinged = !landmark && (targetName === 'SATURN' || targetName === 'URANUS');
   const arrivalOffset = landmark
-    ? (isVoid ? targetR * 1.0 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
+    ? (isVoid ? targetR * 0.45 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
     : Math.max(targetR * (isRinged ? 11 : 6), 80);
   warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
   if (!landmark) {

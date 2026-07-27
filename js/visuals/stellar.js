@@ -354,22 +354,47 @@ export function createMagnetar(group, def) {
         transparent: true, opacity: 0.0,
         blending: THREE.AdditiveBlending, depthWrite: false,
       });
-      fieldMats.push({ mat, base: 0.30 - li * 0.07, f: 2.1 + Math.random() * 4.2, ph: Math.random() * 6.28 });
+      fieldMats.push({ mat, base: 0.42 - li * 0.09, f: 3.2 + Math.random() * 6.0, ph: Math.random() * 6.28 });
       fieldGroup.add(new THREE.Line(geo, mat));
     }
   }
 
-  // ── Polar beams — along the magnetic axis, so they sweep as it spins
+  // ── Polar beams — soft light shafts, not solid cones: two crossed
+  // gradient planes per pole (bright core line, feathered edges, fading
+  // with length), aligned to the magnetic axis so they sweep as it spins
+  const beamTex = (() => {
+    const cv = document.createElement('canvas');
+    cv.width = 128; cv.height = 256;
+    const ctx = cv.getContext('2d');
+    const gx = ctx.createLinearGradient(0, 0, 128, 0);
+    gx.addColorStop(0, 'rgba(255,255,255,0)');
+    gx.addColorStop(0.5, 'rgba(255,255,255,1)');
+    gx.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.fillStyle = gx;
+    ctx.fillRect(0, 0, 128, 256);
+    const gy = ctx.createLinearGradient(0, 0, 0, 256);
+    gy.addColorStop(0, 'rgba(255,255,255,0.9)');
+    gy.addColorStop(0.75, 'rgba(255,255,255,0.25)');
+    gy.addColorStop(1, 'rgba(255,255,255,0)');
+    ctx.globalCompositeOperation = 'destination-in';
+    ctx.fillStyle = gy;
+    ctx.fillRect(0, 0, 128, 256);
+    const t = new THREE.CanvasTexture(cv);
+    return t;
+  })();
   for (const sign of [1, -1]) {
-    const beamGeo = new THREE.CylinderGeometry(scale * 0.004, scale * 0.06, scale * 1.5, 12, 1, true);
-    const beamMat = new THREE.MeshBasicMaterial({
-      color: 0x9fd8ff, transparent: true, opacity: 0.09,
-      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
-    });
-    const beam = new THREE.Mesh(beamGeo, beamMat);
-    beam.position.y = sign * scale * 0.76;
-    if (sign < 0) beam.rotation.z = Math.PI;
-    fieldGroup.add(beam);
+    for (const rot of [0, Math.PI / 2]) {
+      const beamGeo = new THREE.PlaneGeometry(scale * 0.16, scale * 1.25);
+      const beamMat = new THREE.MeshBasicMaterial({
+        map: beamTex, color: 0x9fd8ff, transparent: true, opacity: 0.3,
+        blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+      });
+      const beam = new THREE.Mesh(beamGeo, beamMat);
+      beam.position.y = sign * scale * 0.66;
+      if (sign < 0) beam.rotation.z = Math.PI;
+      beam.rotation.y = rot;
+      fieldGroup.add(beam);
+    }
     const cap = new THREE.Sprite(new THREE.SpriteMaterial({
       map: tex, color: 0xbfe4ff, blending: THREE.AdditiveBlending,
       transparent: true, opacity: 0.35, depthWrite: false,
@@ -395,26 +420,26 @@ export function createMagnetar(group, def) {
   }));
   group.add(shock);
 
-  let t = 0, quake = 0, quakeTimer = 5 + Math.random() * 6, shockAge = 1e9;
+  let t = 0, quake = 0, quakeTimer = 3 + Math.random() * 4, shockAge = 1e9;
   fieldGroup.userData._onUpdate = (dt) => {
     t += dt;
     // Seconds-long rigid rotation: the lighthouse
     fieldGroup.rotation.y += dt * (Math.PI * 2 / 9);
     // Starquakes: the crust snaps, the whole field flashes
     quakeTimer -= dt;
-    if (quakeTimer <= 0) { quake = 1; shockAge = 0; quakeTimer = 8 + Math.random() * 9; }
+    if (quakeTimer <= 0) { quake = 1; shockAge = 0; quakeTimer = 5 + Math.random() * 7; }
     quake *= Math.exp(-dt / 0.35);
     shockAge += dt;
     for (const e of fieldMats) {
-      e.mat.opacity = e.base * (0.72 + 0.28 * Math.sin(t * e.f + e.ph)) * (1 + quake * 2.2);
+      e.mat.opacity = e.base * (0.6 + 0.4 * Math.sin(t * e.f + e.ph)) * (1 + quake * 3.0);
     }
     spark.material.opacity = Math.min(1, 0.82 + 0.18 * Math.sin(t * 9.4) + quake);
     innerGlow.material.opacity = 0.5 + quake * 0.5;
     // Expanding flash shell after each quake
-    if (shockAge < 1.6) {
-      const p = shockAge / 1.6;
-      shock.material.opacity = (1 - p) * (1 - p) * 0.5;
-      shock.scale.setScalar(scale * (0.1 + p * 1.5));
+    if (shockAge < 1.9) {
+      const p = shockAge / 1.9;
+      shock.material.opacity = (1 - p) * (1 - p) * 0.7;
+      shock.scale.setScalar(scale * (0.1 + p * 2.2));
     } else {
       shock.material.opacity = 0;
     }
