@@ -557,19 +557,11 @@ export function updateFlight(dt, allBodies, dtWall) {
             const vignetteEl = document.getElementById('warp-vignette');
             if (vignetteEl) vignetteEl.style.opacity = speedFeeling * 0.18;
 
-            // Star fade during warp — keep a faint layer visible so that
-            // camera-relative motion against the near-star field gives a real
-            // sense of moving through space. Full blackness during cruise
-            // made the warp look like a static loading screen.
-            const CRUISE_STAR_OPACITY = 0.22;
-            if (warpPhase === 'accelerating') {
-              setStarFieldOpacity(1.0 - speedFeeling * (1.0 - CRUISE_STAR_OPACITY));
-            } else if (warpPhase === 'cruising') {
-              setStarFieldOpacity(CRUISE_STAR_OPACITY);
-            } else {
-              // Decelerating — fade stars back in as we slow down
-              setStarFieldOpacity(CRUISE_STAR_OPACITY + (1.0 - CRUISE_STAR_OPACITY) * (1.0 - speedFeeling));
-            }
+            // Stars stay at full brightness through warp: the parallax
+            // volumes ARE the sensation of travel now — dimming them was a
+            // relic from before the sky could move. (Void proximity fading
+            // is handled independently in the main loop.)
+            setStarFieldOpacity(1.0);
 
             // Arrival notification disabled — the bottom-left info card
             // (hud.js) already shows the name and description on proximity,

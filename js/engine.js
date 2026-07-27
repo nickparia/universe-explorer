@@ -459,6 +459,11 @@ export function createStars() {
   // the truly distant sky.
   group.add(makeLocalStarVolume(9000, 170000, 1.5, 0.95));
   group.add(makeLocalStarVolume(2400, 120000, 3.2, 0.85));
+  // Warp-scale parallax shells: stars at millions of units, so at cruise
+  // (~2M u/s) the near shell whooshes and the far shell sweeps stately.
+  // Below warp speeds they are, correctly, motionless sky.
+  group.add(makeLocalStarVolume(3000, 3500000, 1.8, 0.8));
+  group.add(makeLocalStarVolume(1400, 10000000, 2.6, 0.75));
 
   // Layer 2: distant stars (static backdrop)
   group.add(makeStarLayer(14000, 180000, 800000, 0.8, 0.5));
