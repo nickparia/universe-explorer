@@ -364,11 +364,13 @@ export function createBootesVoid(group, def) {
 
     const mat = new THREE.SpriteMaterial({
       map: tex,
-      // Cool dim galaxies — mostly blue-grey with a hint of warm
+      // Cool dim galaxies — mostly blue-grey with a hint of warm.
+      // Barely there: the void's power is absence.
       color: Math.random() < 0.25 ? 0x88aabb : 0x4a5a70,
       blending: THREE.AdditiveBlending,
       transparent: true,
-      opacity: 0.18 + Math.random() * 0.12,
+      opacity: 0.05 + Math.random() * 0.07,
+      rotation: Math.random() * Math.PI,
       depthWrite: false,
     });
     const sprite = new THREE.Sprite(mat);
@@ -378,7 +380,8 @@ export function createBootesVoid(group, def) {
       r * Math.cos(phi)
     );
     const s = scale * (0.006 + Math.random() * 0.008);
-    sprite.scale.set(s, s, 1);
+    // Tilted ellipse — a galaxy seen at an angle, not a round blob
+    sprite.scale.set(s, s * (0.3 + Math.random() * 0.7), 1);
     group.add(sprite);
   }
 
@@ -386,10 +389,12 @@ export function createBootesVoid(group, def) {
   // Each layer uses colored sprite galaxies with size & color variety,
   // so the "wall" has thickness and visible individual galaxies rather
   // than reading as a uniform particle ring.
+  // Whisper-faint: from inside, the walls should be something you FIND
+  // by staring, not a bright bubble around you.
   const shellLayers = [
-    { radius: shellOuter * 0.93, count: 180, sizeMul: 1.0, opacity: 0.55 },
-    { radius: shellOuter * 1.00, count: 260, sizeMul: 1.15, opacity: 0.70 },
-    { radius: shellOuter * 1.10, count: 150, sizeMul: 0.85, opacity: 0.40 },
+    { radius: shellOuter * 0.93, count: 180, sizeMul: 1.0, opacity: 0.16 },
+    { radius: shellOuter * 1.00, count: 260, sizeMul: 1.15, opacity: 0.2 },
+    { radius: shellOuter * 1.10, count: 150, sizeMul: 0.85, opacity: 0.1 },
   ];
 
   // Galaxy color palette — warm cores, cool spirals, occasional red giants

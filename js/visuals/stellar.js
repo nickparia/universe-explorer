@@ -78,7 +78,7 @@ export function createHypergiant(group, def) {
         vec3 q = n * 2.6 + vec3(0.0, t * 0.6, t);
         vec3 warp = vec3(fbm(q + vec3(3.1)), fbm(q + vec3(7.7)), fbm(q + vec3(1.3)));
         float cells = fbm(q * 1.6 + warp * 1.9 - t * 0.5);
-        cells = cells * cells * 1.6;
+        cells = pow(max(cells, 0.0), 2.6) * 2.6;
         vec3 c1 = vec3(0.24, 0.045, 0.012);  // maroon shadow lanes
         vec3 c2 = vec3(0.62, 0.13, 0.03);    // deep red
         vec3 c3 = vec3(0.97, 0.42, 0.10);    // bright granule orange
@@ -88,7 +88,7 @@ export function createHypergiant(group, def) {
         col = mix(col, c4, smoothstep(0.88, 1.05, cells));
         // Deep limb darkening + rim reddening — cool molecular edge
         float mu = clamp(dot(n, normalize(vView)), 0.0, 1.0);
-        col *= pow(mu, 0.85) * 1.12 + 0.05;
+        col *= pow(mu, 1.2) * 0.92 + 0.04;
         col = mix(vec3(col.r * 0.85, col.g * 0.35, col.b * 0.2), col,
                   smoothstep(0.0, 0.35, mu));
         // Semi-regular variable: two incommensurate slow pulsations
@@ -126,10 +126,10 @@ export function createHypergiant(group, def) {
     sp.position.set(ox * starRadius, oy * starRadius, 0);
     group.add(sp);
   };
-  mkGlow(3.4, 0xff5512, 0.30, 0, 0);       // inner radiance
-  mkGlow(6.5, 0xc02a06, 0.12, 0, 0);       // warm envelope
-  mkGlow(11.0, 0x701403, 0.06, 0.9, 0.35); // offset dust plume
-  mkGlow(16.0, 0x400b02, 0.03, -0.5, -0.2); // far cold dust
+  mkGlow(1.9, 0xff5512, 0.14, 0, 0);       // inner radiance
+  mkGlow(4.0, 0xc02a06, 0.07, 0, 0);       // warm envelope
+  mkGlow(8.0, 0x701403, 0.04, 0.9, 0.35);  // offset dust plume
+  mkGlow(13.0, 0x400b02, 0.02, -0.5, -0.2); // far cold dust
 
   // Reference stars threading the Scutum field — scale needs witnesses
   {
@@ -296,103 +296,152 @@ export function createEtaCarinae(group, def, textures) {
 }
 
 export function createMagnetar(group, def) {
+  // A magnetar is the most violent compact object there is — but it is
+  // 20 km wide. The design law: CONCENTRATION. A blinding spark you
+  // never resolve, wrapped in a twisted glowing magnetosphere, tilted
+  // lighthouse beams sweeping on a seconds-long spin, and periodic
+  // starquakes that flash the whole field structure. Menace, not bulk.
   const scale = def.size * (def._scaleUnit || 500);
   const tex = getGlowTex();
 
-  // Tiny neutron star sphere
-  const nsRadius = scale * 0.01;
-  const nsGeo = new THREE.SphereGeometry(nsRadius, 16, 16);
-  const nsMat = new THREE.MeshBasicMaterial({ color: 0xddeeff });
-  group.add(new THREE.Mesh(nsGeo, nsMat));
+  // ── The spark ──────────────────────────────────────────────────────
+  const spark = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0xdfeeff, blending: THREE.AdditiveBlending,
+    transparent: true, opacity: 1.0, depthWrite: false,
+  }));
+  spark.scale.setScalar(scale * 0.05);
+  group.add(spark);
+  const innerGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0x9db8ff, blending: THREE.AdditiveBlending,
+    transparent: true, opacity: 0.5, depthWrite: false,
+  }));
+  innerGlow.scale.setScalar(scale * 0.16);
+  group.add(innerGlow);
+  const violetGlow = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0x7a5cff, blending: THREE.AdditiveBlending,
+    transparent: true, opacity: 0.12, depthWrite: false,
+  }));
+  violetGlow.scale.setScalar(scale * 0.55);
+  group.add(violetGlow);
 
-  // Bright glow sprite
-  const glowMat = new THREE.SpriteMaterial({
-    map: tex,
-    color: 0x88aaff,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false,
-  });
-  const glow = new THREE.Sprite(glowMat);
-  glow.scale.set(scale * 0.04, scale * 0.04, 1);
-  group.add(glow);
-
-  // 12 magnetic field lines as THREE.Line objects — dipole curves
-  const r0 = scale * 0.15; // max dipole extent
-  const fieldLineCount = 12;
-
-  for (let f = 0; f < fieldLineCount; f++) {
-    const azimuth = (f / fieldLineCount) * Math.PI * 2;
-    const points = [];
-    const steps = 64;
-
-    for (let s = 0; s <= steps; s++) {
-      // Latitude from -PI/2 (south pole) to PI/2 (north pole)
-      const lat = -Math.PI / 2 + (s / steps) * Math.PI;
-      // Dipole field line: r = r0 * cos²(latitude)
-      const cosLat = Math.cos(lat);
-      const r = r0 * cosLat * cosLat;
-
-      const x = r * Math.cos(lat) * Math.cos(azimuth);
-      const y = r * Math.sin(lat);
-      const z = r * Math.cos(lat) * Math.sin(azimuth);
-
-      points.push(new THREE.Vector3(x, y, z));
+  // ── Twisted magnetosphere ──────────────────────────────────────────
+  // Dipole field lines at three L-shells, each line's azimuth advancing
+  // with latitude — the twisted field that defines a magnetar. Rigidly
+  // co-rotating, individually crackling.
+  const fieldGroup = new THREE.Group();
+  fieldGroup.rotation.z = 0.34; // magnetic axis tilted off the spin axis
+  const fieldMats = [];
+  const L_SHELLS = [0.15, 0.26, 0.4];
+  for (let li = 0; li < L_SHELLS.length; li++) {
+    const L = scale * L_SHELLS[li];
+    const lines = 10;
+    for (let f = 0; f < lines; f++) {
+      const az0 = (f / lines) * Math.PI * 2 + li * 0.21;
+      const pts = [];
+      const steps = 90;
+      for (let st = 0; st <= steps; st++) {
+        const lat = -1.42 + (st / steps) * 2.84; // stop short of the poles
+        const cosLat = Math.cos(lat);
+        const r = L * cosLat * cosLat;
+        if (r < scale * 0.012) continue;
+        const az = az0 + Math.sin(lat) * 1.6; // the twist
+        pts.push(new THREE.Vector3(
+          r * cosLat * Math.cos(az), r * Math.sin(lat), r * cosLat * Math.sin(az)));
+      }
+      const geo = new THREE.BufferGeometry().setFromPoints(pts);
+      const mat = new THREE.LineBasicMaterial({
+        color: li === 1 ? 0x9a6bff : 0x59c8ff,
+        transparent: true, opacity: 0.0,
+        blending: THREE.AdditiveBlending, depthWrite: false,
+      });
+      fieldMats.push({ mat, base: 0.30 - li * 0.07, f: 2.1 + Math.random() * 4.2, ph: Math.random() * 6.28 });
+      fieldGroup.add(new THREE.Line(geo, mat));
     }
-
-    const lineGeom = new THREE.BufferGeometry().setFromPoints(points);
-    const lineMat = new THREE.LineBasicMaterial({
-      color: 0x6688ff,
-      transparent: true,
-      opacity: 0.15,
-      blending: THREE.AdditiveBlending,
-      depthWrite: false,
-    });
-    group.add(new THREE.Line(lineGeom, lineMat));
   }
 
-  // Two radiation jets along Y axis (800 particles each, narrow cone, blue tint)
-  for (const dir of [1, -1]) {
-    const jetCount = 800;
-    const positions = new Float32Array(jetCount * 3);
-    const colors = new Float32Array(jetCount * 3);
-
-    for (let i = 0; i < jetCount; i++) {
-      const t = Math.random(); // 0 = star, 1 = far tip
-      const dist = t * scale * 0.5;
-      const coneRadius = t * scale * 0.015; // very narrow cone
-
-      const angle = Math.random() * Math.PI * 2;
-      const rx = Math.cos(angle) * coneRadius * Math.abs(gaussRandom()) * 0.3;
-      const rz = Math.sin(angle) * coneRadius * Math.abs(gaussRandom()) * 0.3;
-
-      positions[i * 3]     = rx;
-      positions[i * 3 + 1] = dir * dist;
-      positions[i * 3 + 2] = rz;
-
-      // Blue tint, fading with distance
-      const brightness = (1 - t * 0.5) * (0.5 + Math.random() * 0.5);
-      colors[i * 3]     = 0.3 * brightness;
-      colors[i * 3 + 1] = 0.5 * brightness;
-      colors[i * 3 + 2] = 1.0 * brightness;
-    }
-
-    const jetGeom = new THREE.BufferGeometry();
-    jetGeom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-    jetGeom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-    const jetMat = new THREE.PointsMaterial({
-      vertexColors: true,
-      size: scale * 0.006,
-      map: tex,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.25,
-      depthWrite: false,
+  // ── Polar beams — along the magnetic axis, so they sweep as it spins
+  for (const sign of [1, -1]) {
+    const beamGeo = new THREE.CylinderGeometry(scale * 0.004, scale * 0.06, scale * 1.5, 12, 1, true);
+    const beamMat = new THREE.MeshBasicMaterial({
+      color: 0x9fd8ff, transparent: true, opacity: 0.09,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
     });
-
-    group.add(new THREE.Points(jetGeom, jetMat));
+    const beam = new THREE.Mesh(beamGeo, beamMat);
+    beam.position.y = sign * scale * 0.76;
+    if (sign < 0) beam.rotation.z = Math.PI;
+    fieldGroup.add(beam);
+    const cap = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: tex, color: 0xbfe4ff, blending: THREE.AdditiveBlending,
+      transparent: true, opacity: 0.35, depthWrite: false,
+    }));
+    cap.scale.setScalar(scale * 0.1);
+    cap.position.y = sign * scale * 0.09;
+    fieldGroup.add(cap);
   }
+  group.add(fieldGroup);
+
+  // ── Plasma wind haze — squashed magenta torus glow in the spin plane
+  const torus = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0xc84a9a, blending: THREE.AdditiveBlending,
+    transparent: true, opacity: 0.05, depthWrite: false,
+  }));
+  torus.scale.set(scale * 1.0, scale * 0.3, 1);
+  group.add(torus);
+
+  // ── Starquake flash machinery ──────────────────────────────────────
+  const shock = new THREE.Sprite(new THREE.SpriteMaterial({
+    map: tex, color: 0xe8f4ff, blending: THREE.AdditiveBlending,
+    transparent: true, opacity: 0, depthWrite: false,
+  }));
+  group.add(shock);
+
+  let t = 0, quake = 0, quakeTimer = 5 + Math.random() * 6, shockAge = 1e9;
+  fieldGroup.userData._onUpdate = (dt) => {
+    t += dt;
+    // Seconds-long rigid rotation: the lighthouse
+    fieldGroup.rotation.y += dt * (Math.PI * 2 / 9);
+    // Starquakes: the crust snaps, the whole field flashes
+    quakeTimer -= dt;
+    if (quakeTimer <= 0) { quake = 1; shockAge = 0; quakeTimer = 8 + Math.random() * 9; }
+    quake *= Math.exp(-dt / 0.35);
+    shockAge += dt;
+    for (const e of fieldMats) {
+      e.mat.opacity = e.base * (0.72 + 0.28 * Math.sin(t * e.f + e.ph)) * (1 + quake * 2.2);
+    }
+    spark.material.opacity = Math.min(1, 0.82 + 0.18 * Math.sin(t * 9.4) + quake);
+    innerGlow.material.opacity = 0.5 + quake * 0.5;
+    // Expanding flash shell after each quake
+    if (shockAge < 1.6) {
+      const p = shockAge / 1.6;
+      shock.material.opacity = (1 - p) * (1 - p) * 0.5;
+      shock.scale.setScalar(scale * (0.1 + p * 1.5));
+    } else {
+      shock.material.opacity = 0;
+    }
+  };
+
+  // ── Isolation: sparse, cold, dim witnesses — no cozy star corridor
+  {
+    const count = 240;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * scale * 4.0;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * scale * 4.0;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * scale * 1.6;
+      const b = 0.08 + Math.random() * 0.3;
+      colors[i * 3] = 0.72 * b; colors[i * 3 + 1] = 0.8 * b; colors[i * 3 + 2] = b;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    group.add(new THREE.Points(geom, new THREE.PointsMaterial({
+      size: 1.4, map: getPointTexture(), vertexColors: true,
+      sizeAttenuation: false, blending: THREE.AdditiveBlending,
+      transparent: true, opacity: 0.8, depthWrite: false,
+    })));
+  }
+
+  const light = new THREE.PointLight(0x88aaff, 3, scale * 4);
+  group.add(light);
 }
