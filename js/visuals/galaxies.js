@@ -348,7 +348,7 @@ export function createBootesVoid(group, def) {
   // ── 2. Sparse interior galaxies ────────────────────────────────────
   // Enough to give parallax motion cues, but dim and few so the void
   // still reads as empty.
-  const innerCount = 12; // 'contains only ~60 galaxies' — keep it TRUE to feel
+  const innerCount = 9; // the void's actual residents — most of its ~60 galaxies stay beyond seeing
   for (let i = 0; i < innerCount; i++) {
     // Bias toward the outer half of the interior so center stays darker
     const rFrac = 0.25 + Math.pow(Math.random(), 0.6) * 0.55;
@@ -363,7 +363,7 @@ export function createBootesVoid(group, def) {
       color: Math.random() < 0.25 ? 0x88aabb : 0x4a5a70,
       blending: THREE.AdditiveBlending,
       transparent: true,
-      opacity: 0.025 + Math.random() * 0.045,
+      opacity: 0.018 + Math.random() * 0.032,
       rotation: Math.random() * Math.PI,
       depthWrite: false,
     });
@@ -383,53 +383,10 @@ export function createBootesVoid(group, def) {
   // Each layer uses colored sprite galaxies with size & color variety,
   // so the "wall" has thickness and visible individual galaxies rather
   // than reading as a uniform particle ring.
-  // The far walls of the cosmic web: sparse, DISTANT, whisper-faint —
-  // something you find by staring. 140 smudges, not 590: from inside,
-  // most of any sightline must hit nothing at all.
-  const shellLayers = [
-    { radius: shellOuter * 1.35, count: 60, sizeMul: 1.0, opacity: 0.10 },
-    { radius: shellOuter * 1.55, count: 50, sizeMul: 1.2, opacity: 0.07 },
-    { radius: shellOuter * 1.85, count: 30, sizeMul: 0.9, opacity: 0.05 },
-  ];
-
-  // Galaxy color palette — warm cores, cool spirals, occasional red giants
-  const PALETTE = [
-    0xfff0d8, 0xffe6b8, 0xddc8a0,  // warm yellow-white (elliptical galaxy bulges)
-    0xb8c8ff, 0xa0b8e0, 0xc8d8ff,  // cool blue (spiral arms)
-    0xffccaa, 0xffb890,             // reddish (distant / dusty)
-    0xe8e8e8, 0xc8c8d0,             // neutral white
-  ];
-
-  for (const layer of shellLayers) {
-    for (let i = 0; i < layer.count; i++) {
-      // Jitter radial position within the layer for thickness
-      const r = layer.radius * (0.97 + Math.random() * 0.06);
-      const theta = Math.random() * Math.PI * 2;
-      const phi = Math.acos(2 * Math.random() - 1);
-
-      const mat = new THREE.SpriteMaterial({
-        map: tex,
-        color: PALETTE[Math.floor(Math.random() * PALETTE.length)],
-        blending: THREE.AdditiveBlending,
-        transparent: true,
-        // Individual galaxies vary in brightness
-        opacity: layer.opacity * (0.5 + Math.random() * 0.5),
-        depthWrite: false,
-      });
-      const sprite = new THREE.Sprite(mat);
-      sprite.position.set(
-        r * Math.sin(phi) * Math.cos(theta),
-        r * Math.sin(phi) * Math.sin(theta),
-        r * Math.cos(phi)
-      );
-      // Galaxies vary: most small, occasional larger nearby one
-      const sizeRoll = Math.random();
-      const base = sizeRoll < 0.05 ? 0.022 : (sizeRoll < 0.25 ? 0.012 : 0.006);
-      const s = scale * base * layer.sizeMul * (0.7 + Math.random() * 0.6);
-      sprite.scale.set(s, s, 1);
-      group.add(sprite);
-    }
-  }
+  // No walls. In reality the void's boundary galaxies are far beyond
+  // naked-eye visibility — every sprite we added came back as "stuff",
+  // and its bloom read as a navy fog. The void is the one place in the
+  // catalog built almost entirely out of what is NOT rendered.
 
   // ── 4. Faint outer halo — soft glow suggesting denser space beyond
   const haloMat = new THREE.SpriteMaterial({
