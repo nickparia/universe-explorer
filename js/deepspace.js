@@ -340,6 +340,10 @@ function updateLandmarks(dt) {
       if (child.userData._isAccretion) {
         child.rotation.y += dt * 0.5;
       }
+      // Generic animation hook (shader stars, etc.)
+      if (child.userData._onUpdate) {
+        child.userData._onUpdate(dt, child);
+      }
     }
   }
 }

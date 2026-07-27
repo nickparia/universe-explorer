@@ -1,5 +1,6 @@
 import * as THREE from 'three';
 import { makePhotoLayers, addPhotoLayerStack } from './nebulae.js';
+import { getPointTexture } from '../textures.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Shared helpers
@@ -36,50 +37,128 @@ function gaussRandom() {
 // 1. UY Scuti — Hypergiant star
 // ═══════════════════════════════════════════════════════════════════════
 export function createHypergiant(group, def) {
+  // UY Scuti — a red hypergiant ~1700x the Sun's radius. No telescope
+  // resolves its disc, so the accuracy source is what ALMA/VLT imaging
+  // shows of Betelgeuse: a boiling surface with only a handful of
+  // continent-sized convection cells, deep limb darkening, semi-regular
+  // pulsation, and a vast dusty envelope shed by mass loss. Rendered as
+  // an animated shader star — the only honest depiction is motion.
   const scale = def.size * (def._scaleUnit || 500);
-  const starRadius = scale * 0.4;
+  const starRadius = scale * 0.3;
 
-  // Main red star sphere
-  const starGeo = new THREE.SphereGeometry(starRadius, 48, 48);
-  const starMat = new THREE.MeshBasicMaterial({ color: 0xff3311 });
-  const star = new THREE.Mesh(starGeo, starMat);
+  const starMat = new THREE.ShaderMaterial({
+    uniforms: { time: { value: 0 } },
+    vertexShader: `
+      varying vec3 vN; varying vec3 vView;
+      void main() {
+        vec4 mv = modelViewMatrix * vec4(position, 1.0);
+        vN = normalMatrix * normal;
+        vView = -mv.xyz;
+        gl_Position = projectionMatrix * mv;
+      }`,
+    fragmentShader: `
+      uniform float time;
+      varying vec3 vN; varying vec3 vView;
+      float hash(vec3 p) { p = fract(p * 0.3183099 + 0.1); p *= 17.0;
+        return fract(p.x * p.y * p.z * (p.x + p.y + p.z)); }
+      float noise(vec3 x) { vec3 i = floor(x), f = fract(x);
+        f = f * f * (3.0 - 2.0 * f);
+        return mix(mix(mix(hash(i), hash(i + vec3(1,0,0)), f.x),
+                       mix(hash(i + vec3(0,1,0)), hash(i + vec3(1,1,0)), f.x), f.y),
+                   mix(mix(hash(i + vec3(0,0,1)), hash(i + vec3(1,0,1)), f.x),
+                       mix(hash(i + vec3(0,1,1)), hash(i + vec3(1,1,1)), f.x), f.y), f.z); }
+      float fbm(vec3 p) { float v = 0.0, a = 0.55;
+        for (int i = 0; i < 5; i++) { v += a * noise(p); p = p * 2.07 + 11.3; a *= 0.5; }
+        return v; }
+      void main() {
+        vec3 n = normalize(vN);
+        float t = time * 0.03;
+        // Domain-warped fbm: a few huge cells churning slowly — the
+        // granulation scale that makes a hypergiant NOT look like a sun
+        vec3 q = n * 2.6 + vec3(0.0, t * 0.6, t);
+        vec3 warp = vec3(fbm(q + vec3(3.1)), fbm(q + vec3(7.7)), fbm(q + vec3(1.3)));
+        float cells = fbm(q * 1.6 + warp * 1.9 - t * 0.5);
+        cells = cells * cells * 1.6;
+        vec3 c1 = vec3(0.24, 0.045, 0.012);  // maroon shadow lanes
+        vec3 c2 = vec3(0.62, 0.13, 0.03);    // deep red
+        vec3 c3 = vec3(0.97, 0.42, 0.10);    // bright granule orange
+        vec3 c4 = vec3(1.0, 0.82, 0.45);     // rare hotspot
+        vec3 col = mix(c1, c2, smoothstep(0.15, 0.55, cells));
+        col = mix(col, c3, smoothstep(0.55, 0.85, cells));
+        col = mix(col, c4, smoothstep(0.88, 1.05, cells));
+        // Deep limb darkening + rim reddening — cool molecular edge
+        float mu = clamp(dot(n, normalize(vView)), 0.0, 1.0);
+        col *= pow(mu, 0.85) * 1.12 + 0.05;
+        col = mix(vec3(col.r * 0.85, col.g * 0.35, col.b * 0.2), col,
+                  smoothstep(0.0, 0.35, mu));
+        // Semi-regular variable: two incommensurate slow pulsations
+        col *= 1.0 + 0.05 * sin(time * 0.11) + 0.04 * sin(time * 0.031 + 1.7);
+        gl_FragColor = vec4(col, 1.0);
+      }`,
+  });
+  const star = new THREE.Mesh(new THREE.SphereGeometry(starRadius, 64, 64), starMat);
+  star.userData._onUpdate = (dt, mesh) => {
+    mesh.material.uniforms.time.value += dt;
+    mesh.rotation.y += dt * 0.006; // hypergiants rotate over years, not minutes
+  };
   group.add(star);
 
-  // Transparent additive overlay sphere for surface variation
-  const overlayGeo = new THREE.SphereGeometry(starRadius * 1.05, 48, 48);
-  const overlayMat = new THREE.MeshBasicMaterial({
-    color: 0xff6633,
-    transparent: true,
-    opacity: 0.3,
-    blending: THREE.AdditiveBlending,
-    depthWrite: false,
-  });
-  const overlay = new THREE.Mesh(overlayGeo, overlayMat);
-  group.add(overlay);
-
-  // 4 concentric glow shells (BackSide)
-  const glowDefs = [
-    { radiusMul: 1.3, color: 0xff4400, opacity: 0.12 },
-    { radiusMul: 2.0, color: 0xcc3300, opacity: 0.06 },
-    { radiusMul: 3.2, color: 0x881100, opacity: 0.025 },
-    { radiusMul: 5.0, color: 0x440800, opacity: 0.01 },
-  ];
-
-  for (const g of glowDefs) {
-    const geo = new THREE.SphereGeometry(starRadius * g.radiusMul, 32, 32);
+  // Chromosphere + detached molecular shell (BackSide = soft interior glow)
+  for (const sh of [
+    { radiusMul: 1.14, color: 0xff3a08, opacity: 0.16 },
+    { radiusMul: 1.6,  color: 0xa81f04, opacity: 0.05 },
+  ]) {
     const mat = new THREE.MeshBasicMaterial({
-      color: g.color,
-      transparent: true,
-      opacity: g.opacity,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      depthWrite: false,
+      color: sh.color, transparent: true, opacity: sh.opacity,
+      blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
     });
-    group.add(new THREE.Mesh(geo, mat));
+    group.add(new THREE.Mesh(new THREE.SphereGeometry(starRadius * sh.radiusMul, 40, 40), mat));
   }
 
-  // Red point light
-  const light = new THREE.PointLight(0xff3300, 5, scale * 6);
+  // Dusty mass-loss envelope: nested glow sprites, the outermost offset —
+  // hypergiants shed asymmetrically (VY CMa's plumes), never in neat shells
+  const mkGlow = (sizeMul, color, opacity, ox, oy) => {
+    const sp = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlowTex(), color, transparent: true, opacity,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    }));
+    sp.scale.setScalar(starRadius * sizeMul);
+    sp.position.set(ox * starRadius, oy * starRadius, 0);
+    group.add(sp);
+  };
+  mkGlow(3.4, 0xff5512, 0.30, 0, 0);       // inner radiance
+  mkGlow(6.5, 0xc02a06, 0.12, 0, 0);       // warm envelope
+  mkGlow(11.0, 0x701403, 0.06, 0.9, 0.35); // offset dust plume
+  mkGlow(16.0, 0x400b02, 0.03, -0.5, -0.2); // far cold dust
+
+  // Reference stars threading the Scutum field — scale needs witnesses
+  {
+    const count = 520;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * scale * 3.0;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * scale * 3.0;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * scale * 1.2;
+      const warm = Math.random() < 0.55; // Scutum is a rich warm starfield
+      const b = 0.14 + Math.random() * 0.5;
+      colors[i * 3]     = (warm ? 1.0 : 0.75) * b;
+      colors[i * 3 + 1] = (warm ? 0.78 : 0.85) * b;
+      colors[i * 3 + 2] = (warm ? 0.55 : 1.0) * b;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      size: 1.6, map: getPointTexture(), vertexColors: true,
+      sizeAttenuation: false, blending: THREE.AdditiveBlending,
+      transparent: true, opacity: 0.85, depthWrite: false,
+    });
+    group.add(new THREE.Points(geom, mat));
+  }
+
+  // Deep red light on anything nearby
+  const light = new THREE.PointLight(0xff3300, 4, scale * 6);
   group.add(light);
 }
 
