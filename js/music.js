@@ -2,7 +2,6 @@
 
 import { AU } from './constants.js';
 import { getLandmarks } from './deepspace.js';
-import { WARP_MUSIC } from './catalog.js';
 import { on } from './bus.js';
 
 // ── Track catalog ──────────────────────────────────────────────
@@ -55,13 +54,12 @@ let warping = false;
 on('warp:start', () => { warping = true; });
 on('warp:end', () => { warping = false; });
 
-// ── Zone detection with landmark & warp support ──────────────
+// ── Zone detection with landmark support ─────────────────────
+// Travel deliberately does NOT change the music: the playlist is the
+// ship's own, and it plays on through any warp — the synthesized
+// travel voice carries the journey. Forcing a 'warp track' meant two
+// crossfades per trip, so the music was almost always overlapping.
 function detectZone(pos, allBodies) {
-  // Warp travel overrides all zones
-  if (warping) {
-    return { name: 'warp', track: WARP_MUSIC[0] };
-  }
-
   // Check landmark-specific zones first
   const landmarks = getLandmarks();
   for (const lm of landmarks) {
@@ -84,6 +82,8 @@ function detectZone(pos, allBodies) {
 let channelA, channelB;
 let activeChannel = 'A';        // which channel is currently playing
 let currentZone   = null;
+let _pendingZone  = null;  // zone-stability gate
+let _pendingCount = 0;
 let masterVol     = 0.25;
 let musicDuck     = 0;   // 0..1 — the void presses music toward silence
 
@@ -344,15 +344,32 @@ export function updateMusic(camPos, allBodies) {
   // Detect zone
   const zone = detectZone(camPos, allBodies);
 
-  if (zone.name !== currentZone) {
-    currentZone = zone.name;
-    if (usingSynth) {
-      updateSynthZone(currentZone);
-    } else if (zone.track) {
-      crossfadeToTrack(zone.track, zone.name);
+  // Hold the current music through warp (the journey has its own
+  // voice), and require a zone to be stable for two consecutive
+  // checks before switching — boundary flapping was crossfading
+  // every few seconds, stacking overlapped tracks.
+  if (!warping && zone.name !== currentZone) {
+    if (zone.name === _pendingZone) {
+      _pendingCount++;
     } else {
-      crossfadeTo(currentZone);
+      _pendingZone = zone.name;
+      _pendingCount = 1;
     }
+    if (_pendingCount >= 2) {
+      currentZone = zone.name;
+      _pendingZone = null;
+      _pendingCount = 0;
+      if (usingSynth) {
+        updateSynthZone(currentZone);
+      } else if (zone.track) {
+        crossfadeToTrack(zone.track, zone.name);
+      } else {
+        crossfadeTo(currentZone);
+      }
+    }
+  } else {
+    _pendingZone = null;
+    _pendingCount = 0;
   }
 
   // If both channels are silent and we have a zone, start playing
