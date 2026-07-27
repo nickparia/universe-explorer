@@ -157,6 +157,7 @@ export function createSkybox(starmapTexture) {
     transparent: true,
     opacity: 1.0,
   });
+  mat.color.setScalar(1.22); // lift the panorama out of murk
   _skyboxMat = mat;
   const skybox = new THREE.Mesh(geo, mat);
   _skyboxMesh = skybox;
@@ -166,6 +167,7 @@ export function createSkybox(starmapTexture) {
 
 let _skyboxMesh = null;
 let _farStarLayer = null;
+let _farSkyGroup = null;
 
 /**
  * The vibe of crossing space: during warp the entire firmament glides —
@@ -180,9 +182,9 @@ export function updateSkyDrift(dt, k) {
     _skyboxMesh.rotation.y += dt * rate;
     _skyboxMesh.rotation.x += dt * rate * 0.22;
   }
-  if (_farStarLayer) {
-    _farStarLayer.rotation.y += dt * rate;
-    _farStarLayer.rotation.x += dt * rate * 0.22;
+  if (_farSkyGroup) {
+    _farSkyGroup.rotation.y += dt * rate;
+    _farSkyGroup.rotation.x += dt * rate * 0.22;
   }
 }
 
@@ -198,6 +200,152 @@ const STAR_COLORS = [
   [1, 1, 0.58],
   [0.85, 0.90, 1]
 ];
+
+/** Soft-glow sprite texture for sky haze */
+let _hazeTex = null;
+function getHazeTex() {
+  if (_hazeTex) return _hazeTex;
+  const sz = 128;
+  const cv = document.createElement('canvas');
+  cv.width = sz; cv.height = sz;
+  const ctx = cv.getContext('2d');
+  const grd = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+  grd.addColorStop(0, 'rgba(255,255,255,0.7)');
+  grd.addColorStop(0.45, 'rgba(255,255,255,0.22)');
+  grd.addColorStop(1, 'rgba(255,255,255,0)');
+  ctx.fillStyle = grd;
+  ctx.fillRect(0, 0, sz, sz);
+  _hazeTex = new THREE.CanvasTexture(cv);
+  return _hazeTex;
+}
+
+/** Random point on a sphere at radius r */
+function spherePoint(r) {
+  const theta = Math.random() * Math.PI * 2;
+  const phi = Math.acos(2 * Math.random() - 1);
+  return [
+    r * Math.sin(phi) * Math.cos(theta),
+    r * Math.sin(phi) * Math.sin(theta),
+    r * Math.cos(phi),
+  ];
+}
+
+/**
+ * Colored nebulosity regions on the deep sky: six region anchors, each
+ * with its own hue, haze gathered gaussian-tight around them — coherent
+ * colored neighborhoods like the real sky, not uniform confetti.
+ */
+function makeDeepSkyNebulosity() {
+  const REGIONS = [
+    { hue: [0.36, 0.52, 0.85] },  // cold blue
+    { hue: [0.75, 0.45, 0.65] },  // dusty magenta
+    { hue: [0.85, 0.62, 0.38] },  // amber
+    { hue: [0.35, 0.68, 0.62] },  // teal
+    { hue: [0.55, 0.42, 0.8] },   // violet
+    { hue: [0.8, 0.5, 0.45] },    // rose-brown
+  ].map(rg => ({ ...rg, center: spherePoint(650000), spread: 90000 + Math.random() * 140000 }));
+
+  const count = 240;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const rg = REGIONS[i % REGIONS.length];
+    const gx = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    const gy = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    const gz = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    positions[i * 3]     = rg.center[0] + gx * rg.spread;
+    positions[i * 3 + 1] = rg.center[1] + gy * rg.spread;
+    positions[i * 3 + 2] = rg.center[2] + gz * rg.spread;
+    const b = 0.35 + Math.random() * 0.65;
+    colors[i * 3]     = rg.hue[0] * b;
+    colors[i * 3 + 1] = rg.hue[1] * b;
+    colors[i * 3 + 2] = rg.hue[2] * b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 300,
+    map: getHazeTex(),
+    vertexColors: true,
+    sizeAttenuation: false,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.05,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+/** A few hundred vividly colored bright stars — jewels among the salt */
+function makeJewelStars(count) {
+  const JEWELS = [
+    [0.55, 0.65, 1.0],   // blue giant
+    [1.0, 0.82, 0.45],   // gold
+    [1.0, 0.55, 0.35],   // red-orange giant
+    [0.7, 0.95, 0.95],   // teal-white
+    [1.0, 0.7, 0.85],    // rose
+  ];
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  for (let i = 0; i < count; i++) {
+    const [x, y, z] = spherePoint(200000 + Math.random() * 500000);
+    positions[i * 3] = x; positions[i * 3 + 1] = y; positions[i * 3 + 2] = z;
+    const c = JEWELS[Math.floor(Math.random() * JEWELS.length)];
+    const b = 0.7 + Math.random() * 0.3;
+    colors[i * 3] = c[0] * b; colors[i * 3 + 1] = c[1] * b; colors[i * 3 + 2] = c[2] * b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 3.4,
+    map: getPointTexture(),
+    vertexColors: true,
+    sizeAttenuation: false,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.9,
+  });
+  return new THREE.Points(geo, mat);
+}
+
+/** A tight star cluster — a landmark knot in the sky */
+function makeSkyCluster() {
+  const count = 50 + Math.floor(Math.random() * 45);
+  const center = spherePoint(300000 + Math.random() * 350000);
+  const spread = 7000 + Math.random() * 12000;
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const warmCluster = Math.random() < 0.35;
+  for (let i = 0; i < count; i++) {
+    const gx = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    const gy = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    const gz = (Math.random() + Math.random() + Math.random() - 1.5) / 1.5;
+    positions[i * 3]     = center[0] + gx * spread;
+    positions[i * 3 + 1] = center[1] + gy * spread;
+    positions[i * 3 + 2] = center[2] + gz * spread;
+    const b = 0.5 + Math.random() * 0.5;
+    colors[i * 3]     = b * (warmCluster ? 1.0 : 0.8);
+    colors[i * 3 + 1] = b * (warmCluster ? 0.85 : 0.88);
+    colors[i * 3 + 2] = b * (warmCluster ? 0.6 : 1.0);
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 1.6,
+    map: getPointTexture(),
+    vertexColors: true,
+    sizeAttenuation: false,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.85,
+  });
+  return new THREE.Points(geo, mat);
+}
 
 function makeDriftGlows(count, half) {
   const positions = new Float32Array(count * 3);
@@ -532,9 +680,17 @@ export function createStars() {
   // and dim and unhurried. Depth you can feel, not more dots.
   group.add(makeDriftGlows(30, 22000000));
 
-  // Layer 2: distant stars (static backdrop — glides with the skybox)
+  // The deep sky is a place, not a salt-scatter: the far backdrop gets
+  // colored nebulosity regions, vivid jewel stars, and a few tight
+  // clusters — landmarks that make the warp sky-glide legible. All of it
+  // lives in one group so it drifts coherently with the skybox.
+  _farSkyGroup = new THREE.Group();
   _farStarLayer = makeStarLayer(14000, 180000, 800000, 0.8, 0.5);
-  group.add(_farStarLayer);
+  _farSkyGroup.add(_farStarLayer);
+  _farSkyGroup.add(makeDeepSkyNebulosity());
+  _farSkyGroup.add(makeJewelStars(320));
+  for (let c = 0; c < 9; c++) _farSkyGroup.add(makeSkyCluster());
+  group.add(_farSkyGroup);
 
   // Milky Way galaxy — three nested groups:
   //   mwOuter    → positioned at the galactic center (camera-relative)
