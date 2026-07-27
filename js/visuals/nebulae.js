@@ -122,6 +122,7 @@ export function makePhotoLayers(tex, recipes, maxDim = 2200) {
       const t = new THREE.CanvasTexture(cv);
       t.colorSpace = THREE.SRGBColorSpace;
       t.userData._recipeKind = recipe.kind;
+      t.userData._context = !!recipe.context;
       out.push(t);
     }
     return out;
@@ -142,7 +143,8 @@ export function addPhotoLayerStack(group, layers, spec, width, aspect) {
     // The 'full' layer carries the photograph's own background starfield —
     // context that must dissolve at range (see the landmark loop in main).
     mat.userData._contextPhoto =
-      !!(layers[i].userData && layers[i].userData._recipeKind === 'full');
+      !!(layers[i].userData &&
+         (layers[i].userData._recipeKind === 'full' || layers[i].userData._context));
     const sprite = new THREE.Sprite(mat);
     sprite.scale.set(width * sp.scale, width * aspect * sp.scale, 1);
     sprite.position.z = sp.z;
@@ -173,7 +175,7 @@ export function createPillars(group, def, textures) {
     // full frame as deep field. Portrait aspect — the towers TOWER.
     const layers = makePhotoLayers(jwst, [
       { kind: 'full' },
-      { kind: 'cool', lumLo: 120 },
+      { kind: 'cool', lumLo: 120, context: true }, // JWST field: star-dense
       { kind: 'warm' },
     ]);
     if (layers) {
@@ -387,7 +389,7 @@ export function createCarinaNebula(group, def, textures) {
   const layers = textures && textures.landmarkCarina
     ? makePhotoLayers(textures.landmarkCarina, [
         { kind: 'full' },
-        { kind: 'cool', lumLo: 130 },
+        { kind: 'cool', lumLo: 130 , context: true } // JWST cliffs field: star-dense,
         { kind: 'warm' },
       ])
     : null;
@@ -470,7 +472,7 @@ export function createHorsehead(group, def, textures) {
   const layers = textures && textures.landmarkHorsehead
     ? makePhotoLayers(textures.landmarkHorsehead, [
         { kind: 'full' },
-        { kind: 'cool', lumLo: 140 },
+        { kind: 'cool', lumLo: 140 , context: true } // Orion IR field: star-dense,
         { kind: 'warm' },
       ])
     : null;
