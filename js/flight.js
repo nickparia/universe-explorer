@@ -1530,6 +1530,36 @@ function toggleOrbit() {
 
 export function isOrbiting() { return orbitMode; }
 
+/**
+ * If the ship is adrift near a body or landmark, capture a gentle orbit
+ * of it at the current pose — the resting state is never a frozen
+ * frame. Used on resume when the session was saved mid-flight.
+ * @returns {boolean} true if an orbit was captured
+ */
+export function settleIntoNearestOrbit(bodies, maxMult = 26) {
+  if (orbitMode || !bodies) return false;
+  let best = null;
+  let bestGap = Infinity;
+  for (const b of bodies) {
+    if (!b.g || !b.r) continue;
+    const p = b.g.userData._worldPos || b.g.position;
+    const d = camPos.distanceTo(p);
+    if (d < b.r * maxMult && d < bestGap) { bestGap = d; best = b; }
+  }
+  if (!best) return false;
+  const bodyPos = best.g.userData._worldPos || best.g.position;
+  const offset = camPos.clone().sub(bodyPos);
+  orbitBody = best;
+  orbitDistance = Math.max(offset.length(), best.r * 1.6);
+  orbitTheta = Math.atan2(offset.z, offset.x);
+  orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / Math.max(orbitDistance, 1e-6))));
+  orbitMode = true;
+  orbitTransition = false;
+  velocity.set(0, 0, 0);
+  emit('orbit:enter', { name: best.name });
+  return true;
+}
+
 /** Hands-free helm: composed orbit drifting while autopilot holds. */
 export function setAutoCinema(onFlag) {
   _autoCinema = !!onFlag;

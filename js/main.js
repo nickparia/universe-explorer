@@ -14,7 +14,7 @@ import { initTransit, updateTransit } from './transit.js';
 import { initAutopilot, updateAutopilot } from './autopilot.js';
 import { initSession, getResumePose } from './session.js';
 import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
-import { restorePose } from './flight.js';
+import { restorePose, settleIntoNearestOrbit } from './flight.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic, setMusicDuck } from './music.js';
 import { initHud, updateHud } from './hud.js';
@@ -183,6 +183,12 @@ async function boot() {
       ? getBodies().concat(getDeepSpaceObjects()).find(b => b.name === resume.orbit)
       : null;
     restorePose(resume, resume, orbitRef || null);
+    // Saved mid-flight near something? Settle into a gentle orbit of it
+    // — the ship should be breathing from the first frame, never parked
+    // on a frozen view.
+    if (!orbitRef) {
+      settleIntoNearestOrbit(getBodies().concat(getDeepSpaceObjects()));
+    }
   } else {
     startArrival(earthBody, { duration: 8 });
   }
