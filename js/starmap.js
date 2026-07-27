@@ -116,6 +116,152 @@ function descFor(item) {
   return (item.desc || '').toLowerCase();
 }
 
+
+// ── Glyphs — every destination drawn as what it is ───────────────────
+// Each glyph lives in unit space (radius ~1) inside a transform group,
+// so the existing counter-scaling drives it exactly like a circle.
+// Instrument aesthetic: few shapes, muted fills, no decoration.
+
+function gEl(tag, attrs) { return svg(tag, attrs); }
+
+function glyphInto(root, item, opts) {
+  const n = (item.name || '').toUpperCase();
+  const A = (el) => root.appendChild(el);
+  const C = (cx, cy, r, fill, o) => A(gEl('circle', { cx, cy, r, fill, opacity: o ?? 1 }));
+  const E = (cx, cy, rx, ry, rot, stroke, w, o, fill) => A(gEl('ellipse', {
+    cx, cy, rx, ry, fill: fill || 'none', stroke: stroke || 'none',
+    'stroke-width': w || 0, opacity: o ?? 1,
+    transform: rot ? `rotate(${rot} ${cx} ${cy})` : null,
+  }));
+  const P = (d, fill, stroke, w, o) => A(gEl('path', {
+    d, fill: fill || 'none', stroke: stroke || 'none',
+    'stroke-width': w || 0, 'stroke-linecap': 'round', opacity: o ?? 1,
+  }));
+
+  // Moons: a small lit crescent
+  if (opts.minScale) {
+    C(0, 0, 1, '#9aa4b2');
+    C(0.34, -0.18, 0.92, '#2a3140', 0.85);
+    return true;
+  }
+
+  if (n === 'SUN') {
+    for (let i = 0; i < 8; i++) {
+      const a = (i / 8) * Math.PI * 2;
+      P(`M ${Math.cos(a) * 1.25} ${Math.sin(a) * 1.25} L ${Math.cos(a) * 1.75} ${Math.sin(a) * 1.75}`,
+        null, '#ffd98a', 0.22, 0.9);
+    }
+    C(0, 0, 1, '#ffcf6e'); C(0, 0, 0.55, '#fff3d0');
+    return true;
+  }
+  if (n === 'MERCURY') { C(0, 0, 1, '#a9a29a'); C(-0.3, -0.1, 0.22, '#7d766e'); C(0.35, 0.3, 0.16, '#7d766e'); return true; }
+  if (n === 'VENUS') { C(0, 0, 1, '#e8d3a8'); P('M -0.9 -0.25 Q 0 0.15 0.9 -0.2', null, '#cdb488', 0.3, 0.8); return true; }
+  if (n === 'EARTH') {
+    C(0, 0, 1, '#3d6fb8');
+    P('M -0.55 -0.35 Q -0.1 -0.6 0.2 -0.3 Q 0.05 -0.05 -0.35 0 Z', '#4e9a5c', null, 0, 0.95);
+    P('M 0.15 0.3 Q 0.5 0.15 0.65 0.45 Q 0.35 0.6 0.1 0.55 Z', '#4e9a5c', null, 0, 0.9);
+    C(0, -0.82, 0.28, '#e8f2f8', 0.85);
+    return true;
+  }
+  if (n === 'MARS') { C(0, 0, 1, '#c96a45'); P('M -0.5 0.15 Q 0 0.45 0.55 0.2 L 0.4 0.55 Q 0 0.75 -0.35 0.5 Z', '#9d4c30', null, 0, 0.8); C(0, -0.85, 0.22, '#f2e8e0', 0.9); return true; }
+  if (n === 'JUPITER') {
+    C(0, 0, 1, '#d9b98c');
+    P('M -0.92 -0.35 Q 0 -0.5 0.92 -0.35', null, '#b3906a', 0.2, 0.85);
+    P('M -1 0.05 Q 0 -0.1 1 0.05', null, '#c49a6c', 0.26, 0.85);
+    P('M -0.85 0.5 Q 0 0.35 0.85 0.5', null, '#b3906a', 0.2, 0.85);
+    C(0.38, 0.24, 0.16, '#c3603e', 0.95);
+    return true;
+  }
+  if (n === 'SATURN') {
+    E(0, 0, 1.95, 0.6, -18, '#d9c49a', 0.16, 0.9);
+    C(0, 0, 0.92, '#e2c795');
+    E(0, 0, 1.95, 0.6, -18, '#f0e0b8', 0.09, 0.9);
+    return true;
+  }
+  if (n === 'URANUS') { C(0, 0, 1, '#9fd8d4'); E(0, 0, 0.55, 1.75, 12, '#c0e8e4', 0.12, 0.8); return true; }
+  if (n === 'NEPTUNE') { C(0, 0, 1, '#4a6fd4'); P('M -0.85 -0.2 Q 0 0 0.85 -0.2', null, '#7c9be8', 0.22, 0.85); return true; }
+  if (n === 'PLUTO' || n === 'ERIS' || n === 'CERES' || n === 'MAKEMAKE' || n === 'HAUMEA') {
+    C(0, 0, 1, '#cbb8a4'); P('M -0.35 0.15 Q 0 -0.35 0.45 0.1 Q 0.1 0.4 -0.35 0.15 Z', '#e0d4c4', null, 0, 0.9);
+    return true;
+  }
+  if (n === 'BLACK HOLE') {
+    E(0, 0, 1.7, 0.5, -22, '#e8a55a', 0.18, 0.95);
+    C(0, 0, 0.85, '#05070c');
+    A(gEl('circle', { cx: 0, cy: 0, r: 0.95, fill: 'none', stroke: '#ffd9a8', 'stroke-width': 0.14, opacity: 0.95 }));
+    return true;
+  }
+  if (n.includes('SAGITTARIUS')) {
+    A(gEl('circle', { cx: 0, cy: 0, r: 0.75, fill: 'none', stroke: '#f0a545', 'stroke-width': 0.5, opacity: 0.95 }));
+    C(0, 0, 0.45, '#0a0604');
+    return true;
+  }
+  if (n.includes('ANDROMEDA')) {
+    E(0, 0, 1.7, 0.75, -28, '#8fa8dd', 0.1, 0.5);
+    P('M 0 0 Q 0.9 -0.2 1.4 -0.75', null, '#b8c8ee', 0.2, 0.85);
+    P('M 0 0 Q -0.9 0.2 -1.4 0.75', null, '#b8c8ee', 0.2, 0.85);
+    C(0, 0, 0.34, '#f2e8cf');
+    return true;
+  }
+  if (n.includes('SOMBRERO')) {
+    E(0, 0.1, 1.8, 0.42, 0, null, 0, 0.95, '#d9c0a0');
+    P('M -0.85 0 A 0.85 0.62 0 0 1 0.85 0 Z', '#e8d4b0', null, 0, 0.95);
+    P('M -1.8 0.14 L 1.8 0.14', null, '#4a3626', 0.16, 0.9);
+    return true;
+  }
+  if (n.includes('PILLARS')) {
+    P('M -0.75 1 L -0.75 -0.1 Q -0.75 -0.45 -0.5 -0.4 L -0.35 1 Z', '#b98a5a', null, 0, 0.95);
+    P('M -0.1 1 L -0.12 -0.7 Q -0.1 -1.05 0.14 -0.95 L 0.22 1 Z', '#cf9a62', null, 0, 0.95);
+    P('M 0.5 1 L 0.5 -0.2 Q 0.52 -0.5 0.72 -0.42 L 0.85 1 Z', '#b9854f', null, 0, 0.95);
+    return true;
+  }
+  if (n.includes('CRAB')) {
+    const pts = [];
+    for (let i = 0; i < 10; i++) {
+      const a = (i / 10) * Math.PI * 2;
+      const rr = i % 2 ? 1.15 : 0.55;
+      pts.push(`${Math.cos(a) * rr},${Math.sin(a) * rr * 0.85}`);
+    }
+    P('M ' + pts.join(' L ') + ' Z', '#d97a4a', null, 0, 0.85);
+    C(0, 0, 0.2, '#cfe8f2');
+    return true;
+  }
+  if (n.includes('UY SCUTI')) { C(0, 0, 1.25, '#8a1f0a'); C(-0.15, -0.15, 0.85, '#c3401a'); C(-0.3, -0.3, 0.4, '#e86a30'); return true; }
+  if (n.includes('CARINA')) {
+    P('M -1.2 0.75 L -0.7 -0.1 L -0.35 0.2 L 0.1 -0.75 L 0.5 -0.05 L 0.85 -0.35 L 1.2 0.75 Z', '#c98a52', null, 0, 0.95);
+    C(0.45, -0.75, 0.1, '#cfe4f2', 0.9);
+    return true;
+  }
+  if (n.includes('RING NEBULA')) {
+    A(gEl('circle', { cx: 0, cy: 0, r: 0.72, fill: 'none', stroke: '#5fb8a8', 'stroke-width': 0.42, opacity: 0.9 }));
+    A(gEl('circle', { cx: 0, cy: 0, r: 0.9, fill: 'none', stroke: '#c96a3a', 'stroke-width': 0.14, opacity: 0.8 }));
+    C(0, 0, 0.12, '#e8f2ff');
+    return true;
+  }
+  if (n.includes('HORSEHEAD')) {
+    C(0, -0.1, 1.05, '#7a4050', 0.35);
+    P('M -0.45 1 L -0.45 0.1 Q -0.45 -0.35 -0.05 -0.55 L 0.4 -0.9 L 0.55 -0.6 L 0.3 -0.45 Q 0.6 -0.2 0.5 0.2 L 0.42 1 Z', '#241016', null, 0, 0.98);
+    return true;
+  }
+  if (n.includes('ETA')) {
+    E(-0.45, -0.45, 0.62, 0.45, -45, null, 0, 0.9, '#e8c05a');
+    E(0.45, 0.45, 0.62, 0.45, -45, null, 0, 0.9, '#d9a83e');
+    C(0, 0, 0.16, '#fff2cc');
+    return true;
+  }
+  if (n.includes('MAGNETAR')) {
+    P('M -1.05 -0.55 Q 0 -1.35 1.05 -0.55', null, '#8f6bff', 0.14, 0.9);
+    P('M -1.05 0.55 Q 0 1.35 1.05 0.55', null, '#5fc8ff', 0.14, 0.9);
+    C(0, 0, 0.3, '#dfeeff'); C(0, 0, 0.14, '#ffffff');
+    return true;
+  }
+  if (n.includes('VOID')) {
+    A(gEl('circle', { cx: 0, cy: 0, r: 1.05, fill: 'none', stroke: 'rgba(140,170,220,0.55)',
+      'stroke-width': 0.1, 'stroke-dasharray': '0.28 0.22' }));
+    return true;
+  }
+  return false;
+}
+
 function colorFor(item) {
   if (BODY_META[item.name]) return BODY_META[item.name].color;
   if (CRAFT_META[item.name]) return CRAFT_META[item.name].color;
@@ -350,6 +496,9 @@ function applyViewTransform() {
   const geom = 1 / Math.pow(scale, 0.72);
 
   for (const n of nodes) {
+    if (n.coreG) {
+      n.coreG.setAttribute('transform', `translate(${n.x} ${n.y}) scale(${n.baseR * geom})`);
+    }
     if (n.core) {
       if (n.core.tagName === 'circle') n.core.setAttribute('r', n.baseR * geom);
       else {
@@ -557,16 +706,23 @@ function addDot(item, x, y, r, opts = {}) {
   const halo = svg('circle', { cx: x, cy: y, r: r * 2.1, fill: color, opacity: visited ? 0.24 : 0.14 });
   g.appendChild(halo);
 
-  let core;
-  if (opts.diamond) {
+  let core = null;
+  let coreG = null;
+  const glyphRoot = svg('g', {});
+  if (glyphInto(glyphRoot, item, opts)) {
+    coreG = glyphRoot;
+    coreG.setAttribute('transform', `translate(${x} ${y}) scale(${r})`);
+    g.appendChild(coreG);
+  } else if (opts.diamond) {
     core = svg('rect', {
       x: x - r, y: y - r, width: r * 2, height: r * 2,
       fill: color, transform: `rotate(45 ${x} ${y})`,
     });
+    g.appendChild(core);
   } else {
     core = svg('circle', { cx: x, cy: y, r, fill: color });
+    g.appendChild(core);
   }
-  g.appendChild(core);
 
   const baseFont = opts.font || (opts.outer ? 10 : 9.5);
   let labelEl = null;
@@ -607,7 +763,7 @@ function addDot(item, x, y, r, opts = {}) {
 
   svgEl.appendChild(g);
   const node = {
-    el: g, core, halo, hit, label: labelEl,
+    el: g, core, coreG, halo, hit, label: labelEl,
     x, y, baseR: r, baseFont,
     minScale: opts.minScale || 0,
     filtered: false,
