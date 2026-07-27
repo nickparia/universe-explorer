@@ -107,6 +107,7 @@ const _upVec = new THREE.Vector3(0, 1, 0);
 let warpTarget = null;
 let warpT = 0;
 let warpDuration = 0;
+let warpLogK = 6; // ln(journey distance / arrival gap) — decades of scale to traverse
 const warpFromP = new THREE.Vector3();
 const warpFromQ = new THREE.Quaternion();
 const warpTargetP = new THREE.Vector3();
@@ -518,21 +519,25 @@ export function updateFlight(dt, allBodies, dtWall) {
                 speedFeeling = 0.12 * (warpT / HOLD); // faint tremble while charging
                 warpPhase = 'charging';
             } else {
-                const t2 = (warpT - HOLD) / (1 - HOLD);
-                if (t2 < 0.15) {
-                    const p = t2 / 0.15;
-                    eased = 0.15 * (p * p);
+                const t2 = Math.min(1, (warpT - HOLD) / (1 - HOLD));
+                // Powers-of-ten arrival: remaining distance decays
+                // exponentially in eased time, so every SCALE of approach
+                // gets its own seconds — the galaxy grows, the star-band
+                // blooms, the sun ignites, worlds resolve: separate acts,
+                // not one blink. s = t^1.6 spools up softly and gives the
+                // opening sweep a little extra time.
+                const s = Math.pow(t2, 1.6);
+                eased = 1 - Math.exp(-warpLogK * s);
+                if (t2 < 0.3) {
+                    const p = t2 / 0.3;
                     speedFeeling = p * p;
                     warpPhase = 'accelerating';
-                } else if (t2 < 0.85) {
-                    const p = (t2 - 0.15) / 0.70;
-                    eased = 0.15 + 0.70 * p;
+                } else if (t2 < 0.82) {
                     speedFeeling = 1.0;
                     warpPhase = 'cruising';
                 } else {
-                    const p = (t2 - 0.85) / 0.15;
-                    eased = 0.85 + 0.15 * (1 - (1 - p) * (1 - p));
-                    speedFeeling = (1 - p) * (1 - p);
+                    const p = (t2 - 0.82) / 0.18;
+                    speedFeeling = 1 - p * p;
                     warpPhase = 'decelerating';
                 }
             }
@@ -1262,10 +1267,31 @@ export function warpTo(targetName) {
   // the visual's volume. For bodies, stop a few radii out — the arrival
   // glide then dollies in and captures orbit.
   const approachDir = new THREE.Vector3().copy(targetPos).sub(camPos).normalize();
+  // Whole galaxies must be FRAMED, never entered — from inside, their
+  // photo layers wash the screen to white. Stand off far enough that the
+  // full disc fills a majestic (not claustrophobic) share of the view
+  // after the arrival glide dollies in. Other landmarks reward proximity
+  // but were parking slightly inside their layer stacks.
+  const isGalaxy = landmark &&
+    (landmark.visual === 'spiral_galaxy' || landmark.visual === 'sombrero_galaxy');
+  // Ringed planets need room: the rings span 5.2 radii tip-to-tip, so a
+  // 6r standoff crops them out of frame entirely.
+  const isRinged = !landmark && (targetName === 'SATURN' || targetName === 'URANUS');
   const arrivalOffset = landmark
-    ? (isVoid ? targetR * 1.0 : targetR * 0.5)
-    : Math.max(targetR * 6, 80);
+    ? (isVoid ? targetR * 1.0 : isGalaxy ? targetR * 6.0 : targetR * 0.9)
+    : Math.max(targetR * (isRinged ? 11 : 6), 80);
   warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
+  if (!landmark) {
+    // Settle slightly above the ecliptic: rings, poles, and orbital
+    // geometry all read better from a raised vantage than from flat in
+    // the plane — where Saturn's rings vanish into an edge-on line.
+    warpTargetP.addScaledVector(_upVec, arrivalOffset * 0.35);
+  }
+  {
+    const journey = camPos.distanceTo(warpTargetP);
+    const remEnd = Math.max(400, arrivalOffset * 0.02);
+    warpLogK = Math.log(Math.max(3, journey / remEnd));
+  }
 
   // Duration grows logarithmically: every 10x the distance adds ~4s.
   // Pluto ~12s, the Pillars ~20s, the Bootes Void ~25s — journeys feel

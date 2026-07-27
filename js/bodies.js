@@ -178,8 +178,11 @@ function makeSaturnRing(r, tex) {
     uv.setXY(i, u, 0.5);
   }
   const mat = new THREE.MeshStandardMaterial({
-    map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false, opacity: 0.9,
-    roughness: 0.8, metalness: 0
+    map: tex, side: THREE.DoubleSide, transparent: true, depthWrite: false, opacity: 0.92,
+    roughness: 0.8, metalness: 0,
+    // Ring ice scatters sunlight through the plane — without a touch of
+    // emissive the anti-sun face goes black and the rings vanish.
+    emissive: 0xffffff, emissiveMap: tex, emissiveIntensity: 0.5,
   });
   const mesh = new THREE.Mesh(geo, mat);
   mesh.rotation.x = -Math.PI * 0.5;
