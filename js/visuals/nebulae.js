@@ -75,7 +75,12 @@ export function makePhotoLayers(tex, recipes, maxDim = 2200) {
       const cv = document.createElement('canvas');
       cv.width = W; cv.height = H;
       const ctx = cv.getContext('2d');
+      // blurPx: compute this matte from a blurred source — field stars
+      // (a few px wide) dissolve while diffuse nebulosity survives, so
+      // the layer is star-free. Used for distant-identity layers.
+      if (recipe.blurPx) ctx.filter = `blur(${recipe.blurPx}px)`;
       ctx.drawImage(img, 0, 0, W, H);
+      ctx.filter = 'none';
       const data = ctx.getImageData(0, 0, W, H);
       const px = data.data;
       const floor = recipe.floorSub || 0;
@@ -176,14 +181,16 @@ export function createPillars(group, def, textures) {
     const layers = makePhotoLayers(jwst, [
       { kind: 'full' },
       { kind: 'cool', lumLo: 120, context: true }, // JWST field: star-dense
-      { kind: 'warm' },
+      { kind: 'warm', context: true },             // sharp columns — resolve on approach
+      { kind: 'warm', blurPx: 12 },                // star-free far identity
     ]);
     if (layers) {
       const ASPECT = 2000 / 1155; // portrait
       addPhotoLayerStack(group, layers, [
         { z: -s * 0.34, scale: 1.30, opacity: 0.55, order: 2 }, // deep field
         { z: -s * 0.08, scale: 1.02, opacity: 0.9, order: 3 },  // blue glow
-        { z:  s * 0.22, scale: 0.9, opacity: 1.0, order: 4 },   // golden columns
+        { z:  s * 0.22, scale: 0.9, opacity: 0.8, order: 4 },   // golden columns
+        { z:  s * 0.20, scale: 0.9, opacity: 0.5, order: 4 },   // their distant glow
       ], s * 1.05, ASPECT);
     }
   } else if (hubble && hubble.image) {
@@ -390,14 +397,16 @@ export function createCarinaNebula(group, def, textures) {
     ? makePhotoLayers(textures.landmarkCarina, [
         { kind: 'full' },
         { kind: 'cool', lumLo: 130, context: true }, // JWST cliffs: star-dense
-        { kind: 'warm' },
+        { kind: 'warm', context: true },             // sharp cliffs — resolve on approach
+        { kind: 'warm', blurPx: 12 },                // star-free far identity
       ])
     : null;
   if (layers) {
     addPhotoLayerStack(group, layers, [
       { z: -s * 0.32, scale: 1.28, opacity: 0.55, order: 2 },  // deep field
       { z: -s * 0.06, scale: 1.0, opacity: 0.9, order: 3 },    // blue mist
-      { z:  s * 0.2, scale: 0.9, opacity: 1.0, order: 4 },     // the cliffs
+      { z:  s * 0.2, scale: 0.9, opacity: 0.8, order: 4 },     // the cliffs
+      { z:  s * 0.18, scale: 0.9, opacity: 0.5, order: 4 },    // their distant glow
     ], s * 1.9, 8441 / 14575); // wide landscape — a mountain range in space
   }
 
@@ -473,14 +482,16 @@ export function createHorsehead(group, def, textures) {
     ? makePhotoLayers(textures.landmarkHorsehead, [
         { kind: 'full' },
         { kind: 'cool', lumLo: 140, context: true }, // Orion IR field: star-dense
-        { kind: 'warm' },
+        { kind: 'warm', context: true },             // sharp — resolves on approach
+        { kind: 'warm', blurPx: 12 },                // star-free — the distant identity
       ])
     : null;
   if (layers) {
     addPhotoLayerStack(group, layers, [
       { z: -s * 0.3, scale: 1.26, opacity: 0.55, order: 2 },
       { z: -s * 0.05, scale: 1.0, opacity: 0.85, order: 3 },
-      { z:  s * 0.2, scale: 0.92, opacity: 1.0, order: 4 },
+      { z:  s * 0.2, scale: 0.92, opacity: 0.8, order: 4 },
+      { z:  s * 0.18, scale: 0.92, opacity: 0.5, order: 4 },
     ], s * 1.5, 2826 / 2704);
   }
 
