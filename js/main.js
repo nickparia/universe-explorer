@@ -67,6 +67,24 @@ async function boot() {
   createDeepSpace(scene, textures);
   initDust(scene);
 
+  // 6b. Pre-warm the GPU behind the boot veil: compile every shader and
+  // upload every texture NOW — three.js does both lazily on first draw,
+  // which showed up as hitches the first time a destination (three
+  // ~2200px canvas layers each) faded into view mid-journey.
+  {
+    const lms = getLandmarks();
+    const prevVis = lms.map((l) => l.anchor.visible);
+    lms.forEach((l) => { l.anchor.visible = true; });
+    renderer.compile(scene, camera);
+    scene.traverse((o) => {
+      const mats = o.material ? (Array.isArray(o.material) ? o.material : [o.material]) : [];
+      for (const m of mats) {
+        if (m.map) renderer.initTexture(m.map);
+      }
+    });
+    lms.forEach((l, i) => { l.anchor.visible = prevVis[i]; });
+  }
+
   // 7. Initialize flight controls
   initFlight(camera);
 
