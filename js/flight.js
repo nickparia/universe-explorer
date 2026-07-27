@@ -129,6 +129,10 @@ const _arrTo = new THREE.Vector3();
 const _arrFromRel = new THREE.Vector3(); // glide endpoints relative to a moving body
 const _arrToRel = new THREE.Vector3();
 let warpChaseBody = null;                // moving destination to track during warp
+const warpCtrlP = new THREE.Vector3();   // bezier control point — routes CURVE past sights
+let warpCurved = false;                  // straight line when nothing worth passing
+const _bzA = new THREE.Vector3();
+const _bzB = new THREE.Vector3();
 const warpAimP = new THREE.Vector3();    // what the camera LOOKS at — the body itself, never the standoff point
 const warpApproachDir = new THREE.Vector3();
 let warpArrOffset = 0;
@@ -585,8 +589,17 @@ export function updateFlight(dt, allBodies, dtWall) {
                     .addScaledVector(_upVec, warpArrOffset * 0.35);
             }
 
-            // Interpolate position
-            camPos.lerpVectors(warpFromP, warpTargetP, Math.min(eased, 1));
+            // Interpolate position — along the curved route when the
+            // journey has a sight to pass
+            const _e = Math.min(eased, 1);
+            if (warpCurved) {
+                const u = 1 - _e;
+                _bzA.copy(warpFromP).multiplyScalar(u * u);
+                _bzB.copy(warpCtrlP).multiplyScalar(2 * u * _e);
+                camPos.copy(_bzA).add(_bzB).addScaledVector(warpTargetP, _e * _e);
+            } else {
+                camPos.lerpVectors(warpFromP, warpTargetP, _e);
+            }
 
             // Look at the DESTINATION BODY, never the standoff point:
             // planetary standoffs sit above the ecliptic, and aiming at
@@ -1365,6 +1378,51 @@ export function warpTo(targetName) {
     // the plane — where Saturn's rings vanish into an edge-on line.
     warpTargetP.addScaledVector(_upVec, arrivalOffset * 0.35);
   }
+  // ── Route planning: curve past something worth seeing ─────────────
+  // A journey is content. If a landmark or planet sits near the corridor,
+  // bend the route (quadratic bezier) to skim past it — with the gaze
+  // locked on the destination, the sight sweeps across the view like a
+  // nebula passing the window. Straight lines are for couriers.
+  warpCurved = false;
+  {
+    const legLen = camPos.distanceTo(warpTargetP);
+    const _dirLeg = new THREE.Vector3().copy(warpTargetP).sub(camPos).normalize();
+    let best = null, bestScore = 0;
+    const consider = (pos, r, isLm) => {
+      const toC = new THREE.Vector3().copy(pos).sub(camPos);
+      const s = toC.dot(_dirLeg);
+      if (s < legLen * 0.18 || s > legLen * 0.82) return; // mid-route only
+      const closest = new THREE.Vector3().copy(camPos).addScaledVector(_dirLeg, s);
+      const lat = closest.distanceTo(pos);
+      const flybyDist = r * (isLm ? 2.2 : 9);
+      if (lat < flybyDist) return;              // already flying through it
+      if (lat > Math.min(legLen * 0.22, r * 60)) return; // too far off-corridor
+      const score = r / lat;
+      if (score > bestScore) { bestScore = score; best = { pos: pos.clone(), closest, lat, flybyDist }; }
+    };
+    for (const lm of allLandmarks) {
+      if (lm.name === targetName) continue;
+      consider(lm.pos, lm.radius, true);
+    }
+    if (_allBodies) {
+      for (const b of _allBodies) {
+        if (!b.g || !b.r || b.r < 5 || b.name === targetName) continue;
+        consider(b.g.userData._worldPos || b.g.position, b.r, false);
+      }
+    }
+    if (best) {
+      // Pass point: pulled from the sight toward the corridor, at a
+      // respectful flyby distance
+      const pass = new THREE.Vector3().copy(best.closest).sub(best.pos)
+        .normalize().multiplyScalar(best.flybyDist).add(best.pos);
+      // Quadratic bezier through `pass` at t=0.5: B = 2*pass - (P0+P2)/2
+      warpCtrlP.copy(pass).multiplyScalar(2)
+        .addScaledVector(camPos, -0.5)
+        .addScaledVector(warpTargetP, -0.5);
+      warpCurved = true;
+    }
+  }
+
   warpApproachDir.copy(approachDir);
   warpArrOffset = arrivalOffset;
   {

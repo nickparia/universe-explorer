@@ -10,6 +10,7 @@ import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFee
 import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
+import { initTransit, updateTransit } from './transit.js';
 import { initSession, getResumePose } from './session.js';
 import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
 import { restorePose } from './flight.js';
@@ -66,6 +67,7 @@ async function boot() {
   // 6. Build deep space content
   createDeepSpace(scene, textures);
   initDust(scene);
+  initTransit(scene);
 
   // 6b. Pre-warm the GPU behind the boot veil: compile every shader and
   // upload every texture NOW — three.js does both lazily on first draw,
@@ -363,6 +365,9 @@ function animate() {
 
     // Travel voice follows the journey's actual arc
     updateSoundscape(getSpeedFeel());
+
+    // Route furniture — the things that pass the window during warp
+    updateTransit(dt, getCamPos(), getSpeedFeel());
 
     // Nothing pops: every landmark renders from any distance — a glowing
     // patch among the stars that grows by perspective alone (the no-pop
