@@ -230,6 +230,13 @@ function createNebulaClouds(scene) {
 
 // ── Black Hole ────────────────────────────────────────────────────────
 function createBlackHole(scene) {
+  // A STELLAR-MASS black hole — the Cygnus X-1 archetype, counterpoint
+  // to Sgr A*'s supermassive EHT portrait. Black horizon, photon ring,
+  // white-hot thin accretion disc with Doppler beaming (the approaching
+  // side outshines the receding one), and faint relativistic jets.
+  // (The old version was never rescaled — a 40-unit disc tagged
+  // _solarSystemOnly, so it was both microscopic AND always hidden.)
+  const S = 2000; // horizon radius, world units
   blackHoleGroup = new THREE.Group();
   const bhPos = new THREE.Vector3(
     Math.cos(4.0) * 6000 * AU,
@@ -238,87 +245,104 @@ function createBlackHole(scene) {
   );
   blackHoleGroup.position.copy(bhPos);
 
-  // 1. Event horizon — pure black sphere
-  const horizonGeo = new THREE.SphereGeometry(8, 64, 64);
-  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
-  blackHoleGroup.add(horizon);
+  // 1. Event horizon — a hole in the world
+  blackHoleGroup.add(new THREE.Mesh(
+    new THREE.SphereGeometry(S, 64, 64),
+    new THREE.MeshBasicMaterial({ color: 0x000000 })
+  ));
 
-  // 2. Accretion disk particles
-  const diskCount = 8000;
+  // 2. Photon ring — light bent into a thin brilliant halo at ~2.5 r_s
+  {
+    const ringGeo = new THREE.RingGeometry(S * 2.3, S * 2.62, 128);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xfff3e0, side: THREE.DoubleSide, transparent: true,
+      opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    const ring = new THREE.Mesh(ringGeo, ringMat);
+    ring.rotation.x = Math.PI * 0.28;
+    blackHoleGroup.add(ring);
+  }
+
+  // 3. Accretion disc — thin, white-hot inner edge to deep red rim,
+  // Doppler-beamed: brightness leans hard to the approaching side
+  const diskCount = 14000;
   const diskPositions = new Float32Array(diskCount * 3);
   const diskColors = new Float32Array(diskCount * 3);
-
   for (let i = 0; i < diskCount; i++) {
     const angle = Math.random() * Math.PI * 2;
-    const radius = 12 + Math.random() * 28; // 12–40
-    const ySpread = (Math.random() - 0.5) * 4; // +-2
-
+    const radius = S * (2.7 + Math.pow(Math.random(), 1.6) * 3.8); // 2.7-6.5 S, denser inward
+    const ySpread = (Math.random() - 0.5) * S * 0.12;
     diskPositions[i * 3]     = Math.cos(angle) * radius;
     diskPositions[i * 3 + 1] = ySpread;
     diskPositions[i * 3 + 2] = Math.sin(angle) * radius;
-
-    // Color by heat: inner = white/orange, outer = red/dark
-    const t = (radius - 12) / 28; // 0 (inner) to 1 (outer)
-    diskColors[i * 3]     = 1.0;                       // R stays high
-    diskColors[i * 3 + 1] = (1.0 - t) * 0.8 + 0.1;    // G fades out
-    diskColors[i * 3 + 2] = (1.0 - t) * 0.6;           // B fades out
+    const t = (radius / S - 2.7) / 3.8; // 0 inner -> 1 outer
+    // Doppler beaming: one side burns brighter
+    const beam = 0.55 + 0.45 * Math.sin(angle);
+    const heat = (1 - t);
+    diskColors[i * 3]     = (0.75 + heat * 0.25) * (0.5 + beam * 0.7);
+    diskColors[i * 3 + 1] = (0.25 + heat * 0.65) * (0.45 + beam * 0.65);
+    diskColors[i * 3 + 2] = (0.08 + heat * 0.72) * (0.35 + beam * 0.75);
   }
-
   const diskGeom = new THREE.BufferGeometry();
   diskGeom.setAttribute('position', new THREE.BufferAttribute(diskPositions, 3));
   diskGeom.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
-
   const diskMat = new THREE.PointsMaterial({
     vertexColors: true,
-    size: 2,
+    size: S * 0.045,
     map: getPointTexture(),
     sizeAttenuation: true,
     blending: THREE.AdditiveBlending,
     transparent: true,
-    opacity: 0.9,
+    opacity: 0.85,
     depthWrite: false,
   });
-
   accretionParticles = new THREE.Points(diskGeom, diskMat);
+  accretionParticles.rotation.x = Math.PI * 0.28; // match the ring plane
   blackHoleGroup.add(accretionParticles);
 
-  // 3. Disk mesh (ring)
-  const ringGeo = new THREE.RingGeometry(12, 40, 128, 4);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0xff6600,
-    side: THREE.DoubleSide,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.7,
-    depthWrite: false,
-  });
-  accretionDiskMesh = new THREE.Mesh(ringGeo, ringMat);
-  accretionDiskMesh.rotation.x = Math.PI * 0.25; // ~45 degrees
-  blackHoleGroup.add(accretionDiskMesh);
-
-  // 4. Glow shells
-  const glowDefs = [
-    { r: 20, color: 0xff4400, opacity: 0.08 },
-    { r: 35, color: 0xff2200, opacity: 0.03 },
-    { r: 60, color: 0x440000, opacity: 0.015 },
-  ];
-
-  for (const g of glowDefs) {
-    const geo = new THREE.SphereGeometry(g.r, 32, 32);
-    const mat = new THREE.MeshBasicMaterial({
-      color: g.color,
-      transparent: true,
-      opacity: g.opacity,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
-      depthWrite: false,
+  // 4. Inner disc sheet — continuous glow between the particles
+  {
+    const ringGeo = new THREE.RingGeometry(S * 2.7, S * 5.2, 128, 3);
+    const ringMat = new THREE.MeshBasicMaterial({
+      color: 0xff8a30, side: THREE.DoubleSide, transparent: true,
+      opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const mesh = new THREE.Mesh(geo, mat);
-    blackHoleGroup.add(mesh);
+    accretionDiskMesh = new THREE.Mesh(ringGeo, ringMat);
+    accretionDiskMesh.rotation.x = Math.PI * 0.28;
+    blackHoleGroup.add(accretionDiskMesh);
   }
 
-  blackHoleGroup.userData._solarSystemOnly = true;
+  // 5. Relativistic jets — faint, fast, perpendicular to the disc
+  for (const sign of [1, -1]) {
+    const jetGeo = new THREE.CylinderGeometry(S * 0.06, S * 0.5, S * 14, 12, 1, true);
+    const jetMat = new THREE.MeshBasicMaterial({
+      color: 0x86c8ff, transparent: true, opacity: 0.05,
+      blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.DoubleSide,
+    });
+    const jet = new THREE.Mesh(jetGeo, jetMat);
+    jet.position.y = sign * S * 7.5;
+    if (sign < 0) jet.rotation.z = Math.PI;
+    jet.rotation.x = Math.PI * 0.28 - Math.PI / 2 + Math.PI / 2; // align to disc normal
+    const jetHolder = new THREE.Group();
+    jetHolder.rotation.x = Math.PI * 0.28;
+    jetHolder.add(jet);
+    blackHoleGroup.add(jetHolder);
+  }
+
+  // 6. Faint heat shells
+  for (const g of [
+    { r: S * 4.5, color: 0xff4400, opacity: 0.05 },
+    { r: S * 8, color: 0x881800, opacity: 0.02 },
+  ]) {
+    blackHoleGroup.add(new THREE.Mesh(
+      new THREE.SphereGeometry(g.r, 32, 32),
+      new THREE.MeshBasicMaterial({
+        color: g.color, transparent: true, opacity: g.opacity,
+        blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
+      })
+    ));
+  }
+
   scene.add(blackHoleGroup);
   setWorldPos(blackHoleGroup, blackHoleGroup.position);
 }
@@ -384,7 +408,7 @@ export function getDeepSpaceObjects() {
       name: 'BLACK HOLE',
       desc: 'Supermassive singularity warping spacetime. Accretion disk superheated to millions of degrees.',
       g: blackHoleGroup,
-      r: 8,
+      r: 2000,
       isBlackHole: true,
     });
   }
