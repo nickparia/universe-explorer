@@ -208,5 +208,8 @@ export function updateDust(dt, camPos, velocity, feel) {
   const targetL = base * streakBlend * 0.48;
   matP.opacity += (targetP - matP.opacity) * (1 - Math.exp(-dt / 0.3));
   matL.opacity += (targetL - matL.opacity) * (1 - Math.exp(-dt / 0.3));
-  matP.size = shellR * 0.006;
+  // Size follows the shell but CAPS: at intergalactic shells (60M units)
+  // uncapped motes become 360k-unit blobs that fuse into a navy fog —
+  // the void's sky was this fog. Capped, they stay streaming points.
+  matP.size = Math.min(shellR * 0.006, 24000);
 }
