@@ -64,42 +64,71 @@ function buildBed() {
   lfo.start();
 }
 
-// ── Event tones ───────────────────────────────────────────────────────
+// ── The travel voice ─────────────────────────────────────────────────
+// One persistent, silent-by-default voice that PERFORMS the journey:
+// driven per-frame from the flight model's speed feel (same law as the
+// dust field and FOV), so an 8s hop and a 40s intergalactic run both
+// sound right. Two colors from one noise source: a deep lowpass rumble
+// (the drive working) and a dark bandpass wind (motion) that never
+// rises into hiss territory — capped far below sibilance.
+let travel = null;
 
-function warpSwell(durationUp = 2.5) {
-  const t = ctx.currentTime;
+function buildTravelVoice() {
   const noise = ctx.createBufferSource();
-  noise.buffer = makeNoiseBuffer(2);
+  noise.buffer = makeNoiseBuffer(3);
   noise.loop = true;
+
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 90;
+  lp.Q.value = 0.6;
+  const lpG = ctx.createGain();
+  lpG.gain.value = 0;
 
   const bp = ctx.createBiquadFilter();
   bp.type = 'bandpass';
-  bp.Q.value = 1.2;
-  bp.frequency.setValueAtTime(300, t);
-  bp.frequency.exponentialRampToValueAtTime(1400, t + durationUp);
+  bp.frequency.value = 140;
+  bp.Q.value = 0.55; // wide — wind, not whistle
+  const bpG = ctx.createGain();
+  bpG.gain.value = 0;
 
-  const g = ctx.createGain();
-  g.gain.setValueAtTime(0.0001, t);
-  g.gain.exponentialRampToValueAtTime(0.05, t + durationUp);
-  g.gain.exponentialRampToValueAtTime(0.02, t + durationUp + 2);
+  // A slow wobble on the wind's center so long cruises stay alive
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 0.11;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = 55;
+  lfo.connect(lfoG).connect(bp.frequency);
 
-  noise.connect(bp).connect(g).connect(master);
+  noise.connect(lp).connect(lpG).connect(master);
+  noise.connect(bp).connect(bpG).connect(master);
   noise.start();
-  return { noise, g, bp };
+  lfo.start();
+  travel = { lp, lpG, bp, bpG };
 }
 
-let activeWarp = null;
+/**
+ * Call once per frame with the flight feel {warp, ratio, free}.
+ * The voice follows the journey's actual arc — spool, sweep, settle.
+ */
+export function updateSoundscape(feel) {
+  if (!started || !travel) return;
+  const t = ctx.currentTime;
+  const w = feel.warp || 0;
+  // Free-flight wind is a whisper that only appears when pushing hard
+  const fr = feel.free ? Math.pow(Math.max(0, feel.ratio || 0), 3) * 0.5 : 0;
+  const drive = Math.max(w, fr);
+
+  // Rumble: the drive under load — strongest while accelerating
+  travel.lpG.gain.setTargetAtTime(0.030 * drive, t, 0.3);
+  travel.lp.frequency.setTargetAtTime(70 + 90 * drive, t, 0.4);
+  // Wind: dark, swelling with speed, sliding home as we settle
+  travel.bpG.gain.setTargetAtTime(0.040 * drive * drive, t, 0.35);
+  travel.bp.frequency.setTargetAtTime(130 + 420 * drive, t, 0.5);
+}
 
 function warpEnd() {
-  if (activeWarp) {
-    const t = ctx.currentTime;
-    const { noise, g, bp } = activeWarp;
-    bp.frequency.exponentialRampToValueAtTime(200, t + 1.2);
-    g.gain.exponentialRampToValueAtTime(0.0001, t + 1.2);
-    noise.stop(t + 1.4);
-    activeWarp = null;
-  }
-  // Soft low thump — the drive letting go
+  // Soft low thump — the drive letting go (the voice itself eases out
+  // on its own as speedFeeling dies through the settle)
   const t = ctx.currentTime;
   const o = ctx.createOscillator();
   o.type = 'sine';
@@ -134,7 +163,6 @@ function arrivalTone() {
 // ── Public API ────────────────────────────────────────────────────────
 
 export function initSoundscape() {
-  on('warp:start', () => { if (started) activeWarp = warpSwell(); });
   on('warp:end', () => { if (started) warpEnd(); });
   on('orbit:enter', () => { if (started) arrivalTone(); });
 }
@@ -148,6 +176,7 @@ export function startSoundscape() {
   master.gain.value = 1;
   master.connect(ctx.destination);
   buildBed();
+  buildTravelVoice();
   // The hull fades in over several seconds — presence, not an entrance
   bedGain.gain.setValueAtTime(0.0001, ctx.currentTime);
   bedGain.gain.exponentialRampToValueAtTime(0.05, ctx.currentTime + 6);

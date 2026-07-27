@@ -11,7 +11,7 @@ import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
 import { initDust, updateDust } from './dust.js';
 import { initSession, getResumePose } from './session.js';
-import { initSoundscape, startSoundscape } from './soundscape.js';
+import { initSoundscape, startSoundscape, updateSoundscape } from './soundscape.js';
 import { restorePose } from './flight.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
 import { initMusic, updateMusic } from './music.js';
@@ -354,6 +354,9 @@ function animate() {
       }
     }
     updateStarFieldOpacity(dt);
+
+    // Travel voice follows the journey's actual arc
+    updateSoundscape(getSpeedFeel());
 
     // Nothing pops: every landmark renders from any distance — a glowing
     // patch among the stars that grows by perspective alone (the no-pop
