@@ -273,7 +273,9 @@ function updateLabelContent(body) {
   const niceName = parts.map(p => p.charAt(0) + p.slice(1).toLowerCase()).join(' ');
 
   // Pure floating text — no background, just soft shadows for legibility.
-  const shadow = '0 0 10px rgba(0,0,0,0.95), 0 2px 6px rgba(0,0,0,0.95)';
+  // Tight stacked halo reads as a stroke — soft gaussian glow alone
+  // washes out against bright nebula cores.
+  const shadow = '0 0 2px rgba(0,0,0,0.85),0 0 2px rgba(0,0,0,0.85),0 1px 3px rgba(0,0,0,0.95),0 0 14px rgba(0,0,0,0.6)';
   labelEl.innerHTML =
     '<div style="font-size:13px;letter-spacing:5px;font-weight:300;' +
     'color:rgba(255,255,255,0.95);text-shadow:' + shadow + '">' +

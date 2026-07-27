@@ -28,7 +28,7 @@ export function initFieldNotes() {
     'max-width:560px;width:80vw;text-align:center;pointer-events:none;' +
     "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;" +
     'font-size:12px;letter-spacing:2.5px;line-height:2.1;' +
-    'color:rgba(205,225,255,0.6);text-shadow:0 1px 6px rgba(0,0,0,0.95);' +
+    'color:rgba(205,225,255,0.6);text-shadow:0 0 2px rgba(0,0,0,0.85),0 0 2px rgba(0,0,0,0.85),0 1px 3px rgba(0,0,0,0.95),0 0 14px rgba(0,0,0,0.6);' +
     `opacity:0;transition:opacity ${FADE}ms ease;`;
   document.body.appendChild(el);
 
