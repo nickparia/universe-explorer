@@ -1,7 +1,7 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
-import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity, updateStarParallax } from './engine.js';
+import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity, updateStarParallax, updateSkyDrift, setWarpStarMode } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
 import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
@@ -260,6 +260,14 @@ async function boot() {
 
     // True stellar parallax — the near sky sweeps at warp, crawls at cruise
     updateStarParallax(getCamPos());
+
+    // The background travels too: whole-sky glide + near-shimmer fade,
+    // both scaled by warp intensity. Calm, coherent, unhurried.
+    {
+      const warpK = getSpeedFeel().warp || 0;
+      updateSkyDrift(dt, warpK);
+      setWarpStarMode(warpK);
+    }
 
     // Update altitude tracking
     updateAltitude(getCamPos(), allBodies);

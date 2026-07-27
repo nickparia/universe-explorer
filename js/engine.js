@@ -159,8 +159,31 @@ export function createSkybox(starmapTexture) {
   });
   _skyboxMat = mat;
   const skybox = new THREE.Mesh(geo, mat);
+  _skyboxMesh = skybox;
   scene.add(skybox);
   return skybox;
+}
+
+let _skyboxMesh = null;
+let _farStarLayer = null;
+
+/**
+ * The vibe of crossing space: during warp the entire firmament glides —
+ * one slow, coherent rotation of the background sky (skybox + distant
+ * star layer together). k is 0..1 warp intensity; at full cruise the sky
+ * turns ~1.1 deg/s. Zero when not warping — the heavens hold still.
+ */
+export function updateSkyDrift(dt, k) {
+  if (!k || k <= 0) return;
+  const rate = 0.019 * k;
+  if (_skyboxMesh) {
+    _skyboxMesh.rotation.y += dt * rate;
+    _skyboxMesh.rotation.x += dt * rate * 0.22;
+  }
+  if (_farStarLayer) {
+    _farStarLayer.rotation.y += dt * rate;
+    _farStarLayer.rotation.x += dt * rate * 0.22;
+  }
 }
 
 // ═══════════════════════════════════════════════════════════════
@@ -176,7 +199,40 @@ const STAR_COLORS = [
   [0.85, 0.90, 1]
 ];
 
-function makeLocalStarVolume(count, half, size, opacity) {
+function makeDriftGlows(count, half) {
+  const positions = new Float32Array(count * 3);
+  const colors = new Float32Array(count * 3);
+  const palettes = [
+    [0.45, 0.55, 0.9], [0.85, 0.6, 0.4], [0.6, 0.45, 0.85],
+    [0.4, 0.7, 0.75], [0.9, 0.75, 0.55],
+  ];
+  for (let i = 0; i < count; i++) {
+    positions[i * 3]     = (Math.random() * 2 - 1) * half;
+    positions[i * 3 + 1] = (Math.random() * 2 - 1) * half;
+    positions[i * 3 + 2] = (Math.random() * 2 - 1) * half;
+    const c = palettes[Math.floor(Math.random() * palettes.length)];
+    const b = 0.5 + Math.random() * 0.5;
+    colors[i * 3] = c[0] * b; colors[i * 3 + 1] = c[1] * b; colors[i * 3 + 2] = c[2] * b;
+  }
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+  geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  const mat = new THREE.PointsMaterial({
+    size: 900000,               // world units — soft giants, shrink with distance
+    map: getPointTexture(),
+    vertexColors: true,
+    sizeAttenuation: true,
+    blending: THREE.AdditiveBlending,
+    depthWrite: false,
+    transparent: true,
+    opacity: 0.12,
+  });
+  const pts = new THREE.Points(geo, mat);
+  _localStarBuckets.push({ positions, geo, half, count });
+  return pts;
+}
+
+function makeLocalStarVolume(count, half, size, opacity, isNear = false) {
   const positions = new Float32Array(count * 3);
   const colors = new Float32Array(count * 3);
   for (let i = 0; i < count; i++) {
@@ -203,8 +259,15 @@ function makeLocalStarVolume(count, half, size, opacity) {
     opacity,
   });
   const pts = new THREE.Points(geo, mat);
-  _localStarBuckets.push({ positions, geo, half, count });
+  _localStarBuckets.push({ positions, geo, half, count, isNear, material: mat });
   return pts;
+}
+
+let _warpK = 0;
+/** 0..1 — during warp the small near volumes fade out (pure shimmer at
+ *  those speeds) while the big shells and drift glows carry the motion. */
+export function setWarpStarMode(k) {
+  _warpK = Math.max(0, Math.min(1, k));
 }
 
 /**
@@ -457,16 +520,21 @@ export function createStars() {
   // is imperceptible — physically honest — but at warp the near field
   // sweeps past while distant layers crawl. Layer 2 stays camera-locked:
   // the truly distant sky.
-  group.add(makeLocalStarVolume(9000, 170000, 1.5, 0.95));
-  group.add(makeLocalStarVolume(2400, 120000, 3.2, 0.85));
-  // Warp-scale parallax shells: stars at millions of units, so at cruise
-  // (~2M u/s) the near shell whooshes and the far shell sweeps stately.
-  // Below warp speeds they are, correctly, motionless sky.
+  group.add(makeLocalStarVolume(9000, 170000, 1.5, 0.95, true));
+  group.add(makeLocalStarVolume(2400, 120000, 3.2, 0.85, true));
+  // Warp-scale parallax shells: stars at millions of units — a gentle
+  // sweep at cruise, motionless sky below warp speeds.
   group.add(makeLocalStarVolume(3000, 3500000, 1.8, 0.8));
   group.add(makeLocalStarVolume(1400, 10000000, 2.6, 0.75));
 
-  // Layer 2: distant stars (static backdrop)
-  group.add(makeStarLayer(14000, 180000, 800000, 0.8, 0.5));
+  // Passers-by: rare, LARGE, soft glows (distant nebulae) with true size
+  // attenuation — during a cruise one drifts past every few seconds, big
+  // and dim and unhurried. Depth you can feel, not more dots.
+  group.add(makeDriftGlows(30, 22000000));
+
+  // Layer 2: distant stars (static backdrop — glides with the skybox)
+  _farStarLayer = makeStarLayer(14000, 180000, 800000, 0.8, 0.5);
+  group.add(_farStarLayer);
 
   // Milky Way galaxy — three nested groups:
   //   mwOuter    → positioned at the galactic center (camera-relative)
@@ -599,6 +667,12 @@ export function updateStarFieldOpacity(dt) {
   // Apply to all star layer materials
   for (const entry of _starBaseOpacities) {
     entry.material.opacity = entry.baseOpacity * _starCurrentOpacity;
+  }
+  // Near volumes are shimmer-noise at warp speed — fade them with warp
+  for (const b of _localStarBuckets) {
+    if (b.isNear && b.material) {
+      b.material.opacity *= (1 - 0.9 * _warpK);
+    }
   }
   // The skybox is controlled separately via setSkyboxOpacity so the intro
   // can fade it without affecting the star particle layers.
