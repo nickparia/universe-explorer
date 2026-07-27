@@ -425,14 +425,30 @@ async function boot() {
     // render so the cursor always matches what you see.
     updateHoverSelect();
 
-    // Hide solar-system-only particles (asteroid/Kuiper belts) when far from origin
-    const distFromOrigin = getCamPos().length();
-    const solarSystemThreshold = 200 * AU;
-    scene.traverse((child) => {
-      if (child.userData._solarSystemOnly) {
-        child.visible = distFromOrigin < solarSystemThreshold;
-      }
-    });
+    // Solar-system-only particles (asteroid/Kuiper belts) fade with
+    // distance from home — no lightswitch on the way out or back in
+    {
+      const distFromOrigin = getCamPos().length();
+      const fadeStart = 150 * AU;
+      const fadeEnd = 280 * AU;
+      const f = distFromOrigin <= fadeStart ? 1 : distFromOrigin >= fadeEnd ? 0 :
+        1 - (distFromOrigin - fadeStart) / (fadeEnd - fadeStart);
+      scene.traverse((child) => {
+        if (child.userData._solarSystemOnly) {
+          if (f <= 0) {
+            child.visible = false;
+          } else {
+            child.visible = true;
+            if (child.material) {
+              if (child.material.userData._baseOpacity === undefined) {
+                child.material.userData._baseOpacity = child.material.opacity;
+              }
+              child.material.opacity = child.material.userData._baseOpacity * f;
+            }
+          }
+        }
+      });
+    }
 
     composer.render();
   }

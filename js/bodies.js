@@ -26,6 +26,7 @@ function makeFlareTex(size, innerColor, outerColor) {
 
 // ── Module state ──
 let sunGroup, sunMesh;
+let _homeBeacon = null, _homeHalo = null;
 let planets = [];   // { name, desc, g (Group), r, mesh, orb, spd, angle, moonOrbit, clouds }
 let bodies  = [];   // returned by getBodies()
 let comets  = [];   // { g, mesh, trail, trailPositions, a, b, cx, angle, spd }
@@ -254,6 +255,29 @@ export function createSolarSystem(scene, textures) {
         new THREE.MeshBasicMaterial({ color: c, transparent: true, opacity: a, blending: THREE.AdditiveBlending, depthWrite: false, side: THREE.BackSide })
       ));
     });
+  // ── The homecoming beacon ──────────────────────────────────────────
+  // From interstellar distances the Sun must read as a bright warm star
+  // that grows through the whole return journey — home looming — and
+  // hands off seamlessly to the real sun disc on arrival. Constant
+  // angular size via distance-proportional scale, faded out up close.
+  {
+    const beaconMat = new THREE.SpriteMaterial({
+      map: getPointTexture(), color: 0xfff2d0,
+      transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _homeBeacon = new THREE.Sprite(beaconMat);
+    sunGroup.add(_homeBeacon);
+
+    const haloMat = new THREE.SpriteMaterial({
+      map: getPointTexture(), color: 0xffdf9e,
+      transparent: true, opacity: 0,
+      blending: THREE.AdditiveBlending, depthWrite: false,
+    });
+    _homeHalo = new THREE.Sprite(haloMat);
+    sunGroup.add(_homeHalo);
+  }
+
   scene.add(sunGroup);
   setWorldPos(sunGroup, sunGroup.position);
 
@@ -1093,6 +1117,18 @@ function buildKuiperBelt(scene) {
 // ═══════════════════════════════════════════════════════════════
 
 export function updateBodies(dt, camWorldPos) {
+  // Homecoming beacon: constant angular size at range, dissolving as the
+  // real sun takes over inside ~15 AU
+  if (_homeBeacon && camWorldPos) {
+    const dist = camWorldPos.length();
+    const scale = Math.min(500000, Math.max(1500, dist * 0.012));
+    _homeBeacon.scale.set(scale, scale, 1);
+    _homeHalo.scale.set(scale * 4.2, scale * 4.2, 1);
+    const t = Math.max(0, Math.min(1, (dist - 40000) / 60000));
+    const f = t * t * (3 - 2 * t);
+    _homeBeacon.material.opacity = 0.9 * f;
+    _homeHalo.material.opacity = 0.13 * f;
+  }
   elapsed += dt;
 
   // ── Sun animation ──
