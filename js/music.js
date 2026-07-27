@@ -93,9 +93,13 @@ function effVol() {
 
 /** External duck (Bootes Void): 1 = near-silence. Applied live. */
 export function setMusicDuck(d) {
-  musicDuck = Math.max(0, Math.min(1, d));
+  d = Math.max(0, Math.min(1, d));
+  if (Math.abs(d - musicDuck) < 0.003) return; // per-frame caller: only act on change
+  musicDuck = d;
   const active = typeof getActiveEl === 'function' ? getActiveEl() : null;
-  if (active && !active.paused) active.volume = effVol();
+  // Don't stomp an in-progress fade ramp — the fade will land on the
+  // right level itself; the duck only steers a steadily-playing track.
+  if (active && !active.paused && !active._fadeInterval) active.volume = effVol();
   if (usingSynth && masterGain) masterGain.gain.value = effVol();
 }
 let musicStarted  = false;
@@ -122,27 +126,41 @@ function clearFades() {
   fadeIntervals = [];
 }
 
+// Each element owns AT MOST one fade. Without this, boundary flapping
+// (zone A <-> B) stacked competing intervals on the same element — the
+// fade-out never won, and two tracks played forever.
+function cancelFade(el) {
+  if (el && el._fadeInterval) {
+    clearInterval(el._fadeInterval);
+    el._fadeInterval = null;
+  }
+}
+
 function fadeIn(el, targetVol, duration = 4000) {
+  cancelFade(el);
   const steps = 40, stepTime = duration / steps, volStep = targetVol / steps;
   let current = 0;
   el.volume = 0;
   const interval = setInterval(() => {
     current += volStep;
-    if (current >= targetVol) { el.volume = targetVol; clearInterval(interval); }
+    if (current >= targetVol) { el.volume = targetVol; cancelFade(el); }
     else el.volume = current;
   }, stepTime);
+  el._fadeInterval = interval;
   fadeIntervals.push(interval);
 }
 
 function fadeOut(el, duration = 4000) {
   if (!el || el.paused) return;
+  cancelFade(el);
   const startVol = el.volume, steps = 40, stepTime = duration / steps, volStep = startVol / steps;
   let current = startVol;
   const interval = setInterval(() => {
     current -= volStep;
-    if (current <= 0) { el.volume = 0; el.pause(); clearInterval(interval); }
+    if (current <= 0) { el.volume = 0; el.pause(); cancelFade(el); }
     else el.volume = current;
   }, stepTime);
+  el._fadeInterval = interval;
   fadeIntervals.push(interval);
 }
 
@@ -163,6 +181,10 @@ function crossfadeTo(zone) {
 
   const track = getNextTrack(zone);
   if (!track) return;
+  // Zones share tracks now — never crossfade a piece into itself
+  // out of phase. If it's already playing, just carry on.
+  const playing = getActiveEl();
+  if (playing && !playing.paused && playing.src && playing.src.includes(track)) return;
   _currentTrackPath = null;
 
   // Fade out current
@@ -197,6 +219,11 @@ function crossfadeTo(zone) {
 
 function crossfadeToTrack(trackPath, zoneName) {
   if (audioFailed || usingSynth) return;
+  const playing = getActiveEl();
+  if (playing && !playing.paused && playing.src && playing.src.includes(trackPath)) {
+    _currentTrackPath = trackPath;
+    return;
+  }
   _currentTrackPath = trackPath;
   fadeOut(getActiveEl());
   activeChannel = activeChannel === 'A' ? 'B' : 'A';
