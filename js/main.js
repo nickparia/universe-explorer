@@ -354,38 +354,24 @@ function animate() {
     }
     updateStarFieldOpacity(dt);
 
-    // Fade distant landmarks in/out smoothly — a hard visibility toggle
-    // reads as the whole nebula popping into existence mid-departure.
+    // Nothing pops: every landmark renders from any distance — a glowing
+    // patch among the stars that grows by perspective alone across the
+    // whole journey, the same law as the galaxies and the sun beacon.
+    // (These are the brightest objects in the sky; you WOULD see the
+    // Crab from across the galaxy.) The old 7-16r proximity fade made
+    // destinations materialize mid-approach — a fourth-wall break.
     {
-      const camP = getCamPos();
       const allLandmarks = getLandmarks();
       for (const lm of allLandmarks) {
-        const d = camP.distanceTo(lm.pos);
-        // A five-light-year object does not vanish like a lightswitch:
-        // it stays a glowing presence far into departure (and emerges
-        // gradually during warp approach).
-        const fadeStart = lm.radius * 7.0;
-        const fadeEnd = lm.radius * 16.0;
-        // Whole galaxies (and the void) never distance-fade: they are the
-        // destination looming across intergalactic space for the entire
-        // journey — perspective alone shrinks them. Sgr A* stays local:
-        // it lives inside the Milky Way's core, hidden until approach.
-        const alwaysVisible = lm.tier === 'intergalactic' && lm.visual !== 'supermassive_bh';
-        const f = alwaysVisible ? 1 : d <= fadeStart ? 1 : d >= fadeEnd ? 0 :
-          1 - (d - fadeStart) / (fadeEnd - fadeStart);
-        if (f <= 0) {
-          lm.anchor.visible = false;
-          continue;
-        }
         lm.anchor.visible = true;
-        if (Math.abs((lm._fade ?? -1) - f) > 0.02) {
-          lm._fade = f;
+        if (lm._fade !== 1) {
+          lm._fade = 1;
           lm.anchor.traverse((o) => {
             if (o.material) {
               if (o.material.userData._baseOpacity === undefined) {
                 o.material.userData._baseOpacity = o.material.opacity;
               }
-              o.material.opacity = o.material.userData._baseOpacity * f;
+              o.material.opacity = o.material.userData._baseOpacity;
             }
           });
         }

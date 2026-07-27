@@ -124,6 +124,11 @@ let _warpStartedAt = 0;
 let arrival = null;
 const _arrFrom = new THREE.Vector3();
 const _arrTo = new THREE.Vector3();
+const _arrFromRel = new THREE.Vector3(); // glide endpoints relative to a moving body
+const _arrToRel = new THREE.Vector3();
+let warpChaseBody = null;                // moving destination to track during warp
+const warpApproachDir = new THREE.Vector3();
+let warpArrOffset = 0;
 
 // Cinematic intro state — optional "begin from the stars" journey, skippable
 let introActive = false;
@@ -441,8 +446,12 @@ export function updateFlight(dt, allBodies, dtWall) {
         arrival.t += dtTravel / arrival.dur;
         const t = Math.min(arrival.t, 1);
         const ease = 1 - Math.pow(1 - t, 3); // ease-out: cross fast, settle soft
-        camPos.lerpVectors(_arrFrom, _arrTo, ease);
         const arrBodyPos = arrival.body.g.userData._worldPos || arrival.body.g.position;
+        if (arrival.rel) {
+            _arrFrom.copy(arrBodyPos).add(_arrFromRel);
+            _arrTo.copy(arrBodyPos).add(_arrToRel);
+        }
+        camPos.lerpVectors(_arrFrom, _arrTo, ease);
         if (arrival.lookAtBody) {
           // Warp arrival: gaze stays on the destination the whole glide
           _dir.copy(arrBodyPos);
@@ -544,6 +553,16 @@ export function updateFlight(dt, allBodies, dtWall) {
             _feel.warp = speedFeeling;
             _feel.govDist = 150000; // dust shell at interstellar scale
 
+            // Planets keep orbiting during a multi-second warp — chase the
+            // live position, or the ship decelerates toward where the body
+            // WAS at launch and visibly jumps to where it IS on handoff.
+            if (warpChaseBody && warpChaseBody.g) {
+                const bp = warpChaseBody.g.userData._worldPos || warpChaseBody.g.position;
+                warpTargetP.copy(bp)
+                    .addScaledVector(warpApproachDir, -warpArrOffset)
+                    .addScaledVector(_upVec, warpArrOffset * 0.35);
+            }
+
             // Interpolate position
             camPos.lerpVectors(warpFromP, warpTargetP, Math.min(eased, 1));
 
@@ -594,7 +613,12 @@ export function updateFlight(dt, allBodies, dtWall) {
                     _dir.copy(camPos).sub(lmPos).multiplyScalar(0.65);
                     _dir.applyAxisAngle(_upVec, 0.16);
                     _arrTo.copy(lmPos).add(_dir);
-                    arrival = { t: 0, dur: 5, body: dsBody, lookAtBody: true };
+                    // Endpoints stored body-relative: the destination keeps
+                    // moving through the 5s settle, and the glide must move
+                    // with it (rel flag; landmarks pass fixed points).
+                    _arrFromRel.copy(_arrFrom).sub(lmPos);
+                    _arrToRel.copy(_arrTo).sub(lmPos);
+                    arrival = { t: 0, dur: 5, body: dsBody, lookAtBody: true, rel: true };
                 }
                 warpTarget = null;
                 warpPhase = 'none';
@@ -1237,6 +1261,7 @@ export function warpTo(targetName) {
   // Resolve the destination: a landmark, or any body (planet, craft,
   // black hole) — warp is the long-haul carrier for everything.
   let targetPos, targetR, isVoid = false;
+  warpChaseBody = null;
   if (landmark) {
     targetPos = landmark.pos;
     targetR = landmark.radius;
@@ -1244,6 +1269,7 @@ export function warpTo(targetName) {
   } else {
     const body = _allBodies && _allBodies.find(b => b.name === targetName && b.g && b.r);
     if (!body) return;
+    warpChaseBody = body;
     targetPos = body.g.userData._worldPos || body.g.position;
     targetR = body.r;
     if (camPos.distanceTo(targetPos) <= 40000) {
@@ -1287,6 +1313,8 @@ export function warpTo(targetName) {
     // the plane — where Saturn's rings vanish into an edge-on line.
     warpTargetP.addScaledVector(_upVec, arrivalOffset * 0.35);
   }
+  warpApproachDir.copy(approachDir);
+  warpArrOffset = arrivalOffset;
   {
     const journey = camPos.distanceTo(warpTargetP);
     const remEnd = Math.max(400, arrivalOffset * 0.02);
