@@ -1579,10 +1579,10 @@ export function settleIntoNearestOrbit(bodies, maxMult = 26) {
   orbitMode = true;
   orbitTransition = false;
   velocity.set(0, 0, 0);
-  // Captured far out (a session saved mid-flight can be 20+ radii away):
-  // glide gently in until the object actually frames the view.
+  // Boot-time settle happens before the first paint — snap straight to
+  // the framing distance; there is no camera journey to preserve.
   const nice = niceOrbitDist(best);
-  _orbitSettleTarget = orbitDistance > nice * 1.4 ? nice : 0;
+  if (nice > 0 && orbitDistance > nice * 1.25) orbitDistance = nice;
   emit('orbit:enter', { name: best.name });
   return true;
 }
@@ -1623,12 +1623,12 @@ export function restorePose(pos, quat, orbitBodyRef) {
     orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / orbitDistance)));
     orbitMode = true;
     orbitTransition = false;
-    // Planets reset to boot positions each session while the saved pose
-    // is absolute — the body may now be tens of thousands of units from
-    // where you left it, leaving you 'in orbit' around a dot. Glide in
-    // to the framing distance whenever the restored orbit is too wide.
+    // Bodies move between sessions while the saved pose is absolute —
+    // the restored orbit can be arbitrarily wide. This runs at boot,
+    // BEFORE the first frame paints, so snapping to the framing
+    // distance is invisible: you wake up in front of the thing itself.
     const nice = niceOrbitDist(orbitBodyRef);
-    _orbitSettleTarget = (nice > 0 && orbitDistance > nice * 1.4) ? nice : 0;
+    if (nice > 0 && orbitDistance > nice * 1.25) orbitDistance = nice;
   }
 }
 
