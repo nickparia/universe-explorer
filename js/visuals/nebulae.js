@@ -18,6 +18,8 @@ function smoothstep(edge0, edge1, x) {
   return t * t * (3 - 2 * t);
 }
 
+function getSoftTex() { return getNebulaParticleTex(); }
+
 /** Cached 64px radial glow particle texture */
 let _nebulaParticleTex = null;
 function getNebulaParticleTex() {
@@ -371,166 +373,136 @@ export function createCrabNebula(group, def, textures) {
 // ═══════════════════════════════════════════════════════════════════════
 // 3. Carina Nebula
 // ═══════════════════════════════════════════════════════════════════════
-export function createCarinaNebula(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
+export function createCarinaNebula(group, def, textures) {
+  // JWST's Cosmic Cliffs (NIRCam, 2022 — credit NASA/ESA/CSA/STScI): the
+  // amber mountain range of NGC 3324 under a blue mist sky, in 2.5D.
+  const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
-  // "Cosmic cliffs" — wide in X, tall in Y, thin in Z
-  const count = 10000;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    const x = (Math.random() - 0.5) * scale * 0.8;     // wide in X
-    const y = Math.random() * scale * 0.5;              // tall in Y
-    const z = gaussRandom() * scale * 0.03;             // thin in Z (gaussian)
-
-    positions[i * 3]     = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-
-    // Color: deep blue at base transitioning to gold at irradiated top
-    const heightFrac = y / (scale * 0.5);
-    const t = smoothstep(0.0, 1.0, heightFrac);
-
-    const brightness = 0.4 + Math.random() * 0.3;
-    colors[i * 3]     = (0.1 + t * 0.9) * brightness;   // R: low at base, high at top
-    colors[i * 3 + 1] = (0.2 + t * 0.6) * brightness;   // G: moderate
-    colors[i * 3 + 2] = (0.8 - t * 0.5) * brightness;   // B: high at base, lower at top
+  const layers = textures && textures.landmarkCarina
+    ? makePhotoLayers(textures.landmarkCarina, [
+        { kind: 'full' },
+        { kind: 'cool', lumLo: 130 },
+        { kind: 'warm' },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.32, scale: 1.28, opacity: 0.55, order: 2 },  // deep field
+      { z: -s * 0.06, scale: 1.0, opacity: 0.9, order: 3 },    // blue mist
+      { z:  s * 0.2, scale: 0.9, opacity: 1.0, order: 4 },     // the cliffs
+    ], s * 1.9, 8441 / 14575); // wide landscape — a mountain range in space
   }
 
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
-  const mat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.012,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.15,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(geom, mat));
-
-  // Bright star sprites along the cliff edge (top)
-  for (let s = 0; s < 15; s++) {
-    const starMat = new THREE.SpriteMaterial({
-      map: tex,
-      color: 0xffffff,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.85,
+  // Environment wisps: the greater Carina complex
+  {
+    const count = 150;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = s * (1.0 + Math.random() * 1.9);
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3]     = Math.cos(a) * r;
+      positions[i * 3 + 1] = gaussRandom() * s * 0.8;
+      positions[i * 3 + 2] = Math.sin(a) * r * 0.6 - s * 0.25;
+      const warm = Math.random() < 0.55;
+      const b = 0.045 + Math.random() * 0.065;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.45);
+      colors[i * 3 + 1] = b * (warm ? 0.65 : 0.6);
+      colors[i * 3 + 2] = b * (warm ? 0.38 : 1.0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size: s * 0.8, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.14,
       depthWrite: false,
     });
-    const star = new THREE.Sprite(starMat);
-    const sx = (Math.random() - 0.5) * scale * 0.7;
-    const sy = scale * 0.5 * (0.85 + Math.random() * 0.15); // near the top
-    const sz = gaussRandom() * scale * 0.02;
-    star.position.set(sx, sy, sz);
-    star.scale.set(scale * 0.025, scale * 0.025, 1);
-    group.add(star);
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 1;
+    group.add(pts);
+  }
+
+  // Star corridor — Carina is one of the richest star fields in the sky
+  {
+    const count = 1300;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const corridor = Math.random() < 0.4;
+      const z = corridor ? s * (0.3 + Math.random() * 2.0) : gaussRandom() * s * 0.65;
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.6;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.0;
+      positions[i * 3 + 2] = z;
+      const warm = Math.random() < 0.6;
+      const b = 0.15 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.75);
+      colors[i * 3 + 1] = b * (warm ? 0.82 : 0.85);
+      colors[i * 3 + 2] = b * (warm ? 0.55 : 1.0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size: s * 0.01, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.85,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 5;
+    group.add(pts);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// 4. Horsehead Nebula
-// ═══════════════════════════════════════════════════════════════════════
-export function createHorsehead(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
+export function createHorsehead(group, def, textures) {
+  // Hubble's infrared Horsehead (2013 — credit NASA/ESA/Hubble Heritage):
+  // the dark tower rendered luminous rose against a deep blue sky, riding
+  // a sea of mist. Layers: sky behind, mist middle, the head in front.
+  const s = def.size * (def._scaleUnit || 500);
   const tex = getNebulaParticleTex();
 
-  // Background: red hydrogen emission glow (flat backdrop)
-  const bgCount = 6000;
-  const bgPositions = new Float32Array(bgCount * 3);
-  const bgColors = new Float32Array(bgCount * 3);
-
-  for (let i = 0; i < bgCount; i++) {
-    const x = (Math.random() - 0.5) * scale * 0.7;
-    const y = (Math.random() - 0.3) * scale * 0.6;
-    const z = -scale * 0.05 + gaussRandom() * scale * 0.02; // flat behind
-
-    bgPositions[i * 3]     = x;
-    bgPositions[i * 3 + 1] = y;
-    bgPositions[i * 3 + 2] = z;
-
-    // Red hydrogen emission
-    const brightness = 0.5 + Math.random() * 0.5;
-    bgColors[i * 3]     = 0.9 * brightness;
-    bgColors[i * 3 + 1] = 0.15 * brightness;
-    bgColors[i * 3 + 2] = 0.1 * brightness;
+  const layers = textures && textures.landmarkHorsehead
+    ? makePhotoLayers(textures.landmarkHorsehead, [
+        { kind: 'full' },
+        { kind: 'cool', lumLo: 140 },
+        { kind: 'warm' },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.3, scale: 1.26, opacity: 0.55, order: 2 },
+      { z: -s * 0.05, scale: 1.0, opacity: 0.85, order: 3 },
+      { z:  s * 0.2, scale: 0.92, opacity: 1.0, order: 4 },
+    ], s * 1.5, 2826 / 2704);
   }
 
-  const bgGeom = new THREE.BufferGeometry();
-  bgGeom.setAttribute('position', new THREE.BufferAttribute(bgPositions, 3));
-  bgGeom.setAttribute('color', new THREE.BufferAttribute(bgColors, 3));
-
-  const bgMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.015,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.15,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(bgGeom, bgMat));
-
-  // Foreground: dark horsehead silhouette
-  const fgCount = 3000;
-  const fgPositions = new Float32Array(fgCount * 3);
-  const fgColors = new Float32Array(fgCount * 3);
-
-  for (let i = 0; i < fgCount; i++) {
-    // Column/neck shape (narrow) with wider head protrusion at top
-    const t = Math.random(); // 0 = bottom, 1 = top
-    const y = (t - 0.3) * scale * 0.5;
-
-    // Neck is narrow, head region (t > 0.7) is wider and shifted
-    let xWidth, xOffset;
-    if (t > 0.7) {
-      // Head region — wider, shifted to the right
-      const headT = (t - 0.7) / 0.3; // 0 to 1 within head
-      xWidth = scale * 0.08 * (1 + headT * 0.8);
-      xOffset = scale * 0.04 * headT;
-    } else {
-      // Neck/column — narrow
-      xWidth = scale * 0.04;
-      xOffset = 0;
+  // Reference-star volume threading the scene in true depth
+  {
+    const count = 700;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.4;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.4;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * s * 0.9;
+      const warm = Math.random() < 0.5;
+      const b = 0.15 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.78);
+      colors[i * 3 + 1] = b * (warm ? 0.8 : 0.86);
+      colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
     }
-
-    const x = xOffset + gaussRandom() * xWidth;
-    const z = scale * 0.01 + gaussRandom() * scale * 0.015; // slightly in front of background
-
-    fgPositions[i * 3]     = x;
-    fgPositions[i * 3 + 1] = y;
-    fgPositions[i * 3 + 2] = z;
-
-    // Very dark brown/black colors
-    fgColors[i * 3]     = 0.03;
-    fgColors[i * 3 + 1] = 0.02;
-    fgColors[i * 3 + 2] = 0.01;
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: getSoftTex(), size: s * 0.011, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 5;
+    group.add(pts);
   }
-
-  const fgGeom = new THREE.BufferGeometry();
-  fgGeom.setAttribute('position', new THREE.BufferAttribute(fgPositions, 3));
-  fgGeom.setAttribute('color', new THREE.BufferAttribute(fgColors, 3));
-
-  const fgMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.018,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.NormalBlending, // NOT additive — dark particles occlude the red background
-    transparent: true,
-    opacity: 0.85,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(fgGeom, fgMat));
 }
+

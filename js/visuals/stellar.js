@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makePhotoLayers, addPhotoLayerStack } from './nebulae.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Shared helpers
@@ -85,168 +86,132 @@ export function createHypergiant(group, def) {
 // ═══════════════════════════════════════════════════════════════════════
 // 2. Ring Nebula — Planetary nebula with dying white dwarf
 // ═══════════════════════════════════════════════════════════════════════
-export function createRingNebula(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
-  const tex = getGlowTex();
+export function createRingNebula(group, def, textures) {
+  // Hubble's M57 (credit NASA/ESA/Hubble Heritage): the smoke-ring of a
+  // dead sun — amber shell in front, blue-green heart behind, and the
+  // scorching white dwarf as a hard spark at the center.
+  const s = def.size * (def._scaleUnit || 500);
 
-  const ringRadius = scale * 0.3;
-  const tubeRadius = ringRadius * 0.2;
-
-  // Torus of 8000 particles
-  const count = 8000;
-  const positions = new Float32Array(count * 3);
-  const colors = new Float32Array(count * 3);
-
-  for (let i = 0; i < count; i++) {
-    // Torus parametric
-    const theta = Math.random() * Math.PI * 2; // around the ring
-    const phi = Math.random() * Math.PI * 2;   // around the tube
-
-    // Add some gaussian noise to tube radius for organic feel
-    const r = tubeRadius * (1 + gaussRandom() * 0.15);
-
-    const x = (ringRadius + r * Math.cos(phi)) * Math.cos(theta);
-    const y = r * Math.sin(phi) * 0.6; // flattened y
-    const z = (ringRadius + r * Math.cos(phi)) * Math.sin(theta);
-
-    positions[i * 3]     = x;
-    positions[i * 3 + 1] = y;
-    positions[i * 3 + 2] = z;
-
-    // Color gradient: blue-green inner edge to red-orange outer
-    // Inner edge = small phi offset from center, outer = large phi offset
-    const distFromCenter = Math.sqrt(x * x + z * z);
-    const t = (distFromCenter - (ringRadius - tubeRadius)) / (2 * tubeRadius);
-    const clamped = Math.max(0, Math.min(1, t));
-
-    const brightness = 0.5 + Math.random() * 0.5;
-    colors[i * 3]     = (0.1 + clamped * 0.9) * brightness;   // R: low inner, high outer
-    colors[i * 3 + 1] = (0.8 - clamped * 0.5) * brightness;   // G: high inner, moderate outer
-    colors[i * 3 + 2] = (0.9 - clamped * 0.7) * brightness;   // B: high inner, low outer
+  const layers = textures && textures.landmarkRing
+    ? makePhotoLayers(textures.landmarkRing, [
+        { kind: 'full' },
+        { kind: 'cool', lumLo: 150 },
+        { kind: 'warm' },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.26, scale: 1.2, opacity: 0.5, order: 2 },
+      { z: -s * 0.06, scale: 1.0, opacity: 0.9, order: 3 },
+      { z:  s * 0.16, scale: 0.98, opacity: 1.0, order: 4 },
+    ], s * 1.25, 1.0);
   }
 
-  const geom = new THREE.BufferGeometry();
-  geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
-  geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+  // The white dwarf — smaller than Earth, hotter than almost anything
+  {
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlowTex(), color: 0xe8f2ff, blending: THREE.AdditiveBlending,
+      transparent: true, opacity: 0.95, depthWrite: false,
+    }));
+    core.scale.set(s * 0.016, s * 0.016, 1);
+    core.position.z = s * 0.05;
+    core.renderOrder = 5;
+    group.add(core);
+  }
 
-  const mat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.012,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.18,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(geom, mat));
-
-  // Dying white dwarf at center: small sphere + bright glow sprite
-  const dwarfGeo = new THREE.SphereGeometry(scale * 0.02, 16, 16);
-  const dwarfMat = new THREE.MeshBasicMaterial({ color: 0xeeeeff });
-  group.add(new THREE.Mesh(dwarfGeo, dwarfMat));
-
-  const spriteMat = new THREE.SpriteMaterial({
-    map: tex,
-    color: 0xccddff,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.9,
-    depthWrite: false,
-  });
-  const sprite = new THREE.Sprite(spriteMat);
-  sprite.scale.set(scale * 0.06, scale * 0.06, 1);
-  group.add(sprite);
-}
-
-// ═══════════════════════════════════════════════════════════════════════
-// 3. Eta Carinae — Bipolar homunculus nebula
-// ═══════════════════════════════════════════════════════════════════════
-export function createEtaCarinae(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
-  const tex = getGlowTex();
-
-  // Two bipolar lobes (5000 particles each, one +Y, one -Y)
-  for (const dir of [1, -1]) {
-    const lobeCount = 5000;
-    const positions = new Float32Array(lobeCount * 3);
-    const colors = new Float32Array(lobeCount * 3);
-
-    for (let i = 0; i < lobeCount; i++) {
-      // Paraboloid shape: x,z expand outward as y increases
-      const t = Math.random(); // 0 = center, 1 = far end of lobe
-      const yDist = t * scale * 0.4;
-
-      // Paraboloid radius expands with sqrt(t)
-      const maxRadius = scale * 0.2 * Math.sqrt(t);
-      const angle = Math.random() * Math.PI * 2;
-      const r = maxRadius * Math.pow(Math.random(), 0.5);
-
-      const x = Math.cos(angle) * r;
-      const z = Math.sin(angle) * r;
-      const y = dir * yDist;
-
-      positions[i * 3]     = x;
-      positions[i * 3 + 1] = y;
-      positions[i * 3 + 2] = z;
-
-      // Color: bright yellow-white near star fading to orange at tips
-      const brightness = 0.5 + Math.random() * 0.5;
-      colors[i * 3]     = (1.0 - t * 0.2) * brightness;        // R stays high
-      colors[i * 3 + 1] = (0.9 - t * 0.5) * brightness;        // G fades
-      colors[i * 3 + 2] = (0.6 - t * 0.5) * brightness;        // B fades more
+  // Field stars in true depth
+  {
+    const tex2 = getGlowTex();
+    const count = 420;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.4;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.4;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * s * 0.9;
+      const warm = Math.random() < 0.45;
+      const b = 0.15 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.78);
+      colors[i * 3 + 1] = b * (warm ? 0.8 : 0.86);
+      colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
     }
-
     const geom = new THREE.BufferGeometry();
     geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
     geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
-
     const mat = new THREE.PointsMaterial({
-      vertexColors: true,
-      size: scale * 0.012,
-      map: tex,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.15,
+      vertexColors: true, map: tex2, size: s * 0.011, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8,
       depthWrite: false,
     });
-
-    group.add(new THREE.Points(geom, mat));
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 6;
+    group.add(pts);
   }
-
-  // Bright central star sprite
-  const starMat = new THREE.SpriteMaterial({
-    map: tex,
-    color: 0xffffcc,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.95,
-    depthWrite: false,
-  });
-  const star = new THREE.Sprite(starMat);
-  star.scale.set(scale * 0.05, scale * 0.05, 1);
-  group.add(star);
-
-  // Thin equatorial disk
-  const diskGeo = new THREE.RingGeometry(scale * 0.02, scale * 0.25, 64, 1);
-  const diskMat = new THREE.MeshBasicMaterial({
-    color: 0xff8844,
-    transparent: true,
-    opacity: 0.08,
-    blending: THREE.AdditiveBlending,
-    side: THREE.DoubleSide,
-    depthWrite: false,
-  });
-  const disk = new THREE.Mesh(diskGeo, diskMat);
-  disk.rotation.x = Math.PI / 2; // rotate to horizontal (XZ plane)
-  group.add(disk);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// 4. Magnetar — Neutron star with extreme magnetic field
-// ═══════════════════════════════════════════════════════════════════════
+export function createEtaCarinae(group, def, textures) {
+  // Hubble's Homunculus in ultraviolet (2019 — credit NASA/ESA/STScI):
+  // two blast-lobes of a star tearing itself apart, magenta shrapnel
+  // skirt behind, the blinding binary at the waist.
+  const s = def.size * (def._scaleUnit || 500);
+
+  const layers = textures && textures.landmarkEtaCar
+    ? makePhotoLayers(textures.landmarkEtaCar, [
+        { kind: 'full' },
+        { kind: 'cool', lumLo: 150 },
+        { kind: 'bright', lumLo: 135 },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.28, scale: 1.24, opacity: 0.55, order: 2 },
+      { z: -s * 0.05, scale: 1.0, opacity: 0.85, order: 3 },
+      { z:  s * 0.16, scale: 0.94, opacity: 1.0, order: 4 },
+    ], s * 1.35, 1805 / 1779);
+  }
+
+  // The doomed binary — a hard spark at the waist of the lobes
+  {
+    const core = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: getGlowTex(), color: 0xfff2e0, blending: THREE.AdditiveBlending,
+      transparent: true, opacity: 0.9, depthWrite: false,
+    }));
+    core.scale.set(s * 0.022, s * 0.022, 1);
+    core.position.z = s * 0.1;
+    core.renderOrder = 5;
+    group.add(core);
+  }
+
+  // Field stars in true depth
+  {
+    const tex2 = getGlowTex();
+    const count = 600;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.5;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.5;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * s * 0.9;
+      const warm = Math.random() < 0.6;
+      const b = 0.15 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.78);
+      colors[i * 3 + 1] = b * (warm ? 0.8 : 0.86);
+      colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex2, size: s * 0.011, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 6;
+    group.add(pts);
+  }
+}
+
 export function createMagnetar(group, def) {
   const scale = def.size * (def._scaleUnit || 500);
   const tex = getGlowTex();

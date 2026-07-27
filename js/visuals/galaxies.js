@@ -35,127 +35,95 @@ function getGlowTex() {
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Sagittarius A* — Supermassive Black Hole
 // ═══════════════════════════════════════════════════════════════════════
-export function createSupermassiveBH(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
-  const tex = getGlowTex();
-  const bhRadius = scale * 0.05;
+export function createSupermassiveBH(group, def, textures) {
+  // The Event Horizon Telescope's actual photograph of Sagittarius A*
+  // (2022 — credit EHT Collaboration): humanity's real image of our own
+  // black hole, floating amid the densest star swarm in the galaxy.
+  const s = def.size * (def._scaleUnit || 500);
 
-  // 1. Event horizon — pure black sphere
-  const horizonGeo = new THREE.SphereGeometry(bhRadius, 64, 64);
-  const horizonMat = new THREE.MeshBasicMaterial({ color: 0x000000 });
-  const horizon = new THREE.Mesh(horizonGeo, horizonMat);
-  group.add(horizon);
-
-  // 2. Accretion disk — 12000 particles in ring around BH
-  const diskCount = 12000;
-  const diskPositions = new Float32Array(diskCount * 3);
-  const diskColors = new Float32Array(diskCount * 3);
-
-  const innerR = bhRadius * 2;
-  const outerR = bhRadius * 10;
-
-  for (let i = 0; i < diskCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = innerR + Math.random() * (outerR - innerR);
-    const ySpread = (Math.random() - 0.5) * bhRadius * 0.3;
-
-    diskPositions[i * 3]     = Math.cos(angle) * radius;
-    diskPositions[i * 3 + 1] = ySpread;
-    diskPositions[i * 3 + 2] = Math.sin(angle) * radius;
-
-    // Color by heat: inner = white-hot, outer = red
-    const t = (radius - innerR) / (outerR - innerR); // 0 (inner) to 1 (outer)
-    diskColors[i * 3]     = 1.0;
-    diskColors[i * 3 + 1] = (1.0 - t) * 0.9 + 0.1;
-    diskColors[i * 3 + 2] = (1.0 - t) * 0.7;
+  const layers = textures && textures.landmarkSgra
+    ? makePhotoLayers(textures.landmarkSgra, [
+        { kind: 'full' },
+        { kind: 'bright', lumLo: 60 },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.05, scale: 1.0, opacity: 0.9, order: 3 },
+      { z:  s * 0.06, scale: 0.99, opacity: 0.85, order: 4 }, // ring glow lifts forward
+    ], s * 0.85, 1.0);
   }
 
-  const diskGeom = new THREE.BufferGeometry();
-  diskGeom.setAttribute('position', new THREE.BufferAttribute(diskPositions, 3));
-  diskGeom.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
-
-  const diskMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.008,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.7,
-    depthWrite: false,
-  });
-
-  const accretion = new THREE.Points(diskGeom, diskMat);
-  accretion.userData._isAccretion = true;
-  group.add(accretion);
-
-  // 3. Two relativistic jets along Y axis (2000 particles each)
-  for (const dir of [1, -1]) {
-    const jetCount = 2000;
-    const jetPositions = new Float32Array(jetCount * 3);
-    const jetColors = new Float32Array(jetCount * 3);
-
-    for (let i = 0; i < jetCount; i++) {
-      const t = Math.random(); // 0 = base, 1 = tip
-      const dist = t * scale * 0.5;
-      const coneRadius = t * bhRadius * 2; // expanding cone
-
-      const angle = Math.random() * Math.PI * 2;
-      const rx = Math.cos(angle) * coneRadius * Math.random();
-      const rz = Math.sin(angle) * coneRadius * Math.random();
-
-      jetPositions[i * 3]     = rx;
-      jetPositions[i * 3 + 1] = dir * dist;
-      jetPositions[i * 3 + 2] = rz;
-
-      // Blue tint
-      const brightness = 0.5 + Math.random() * 0.5;
-      jetColors[i * 3]     = 0.3 * brightness;
-      jetColors[i * 3 + 1] = 0.5 * brightness;
-      jetColors[i * 3 + 2] = 1.0 * brightness;
+  // The galactic-center swarm: thousands of stars crowding the hole,
+  // denser toward the center — nowhere else in the galaxy looks like this
+  {
+    const tex2 = getGlowTex();
+    const count = 2600;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      // Power-law clustering toward the center, hollow at the photo core
+      const r = s * (0.55 + Math.pow(Math.random(), 1.7) * 2.2);
+      const theta = Math.random() * Math.PI * 2;
+      const phi = Math.acos(2 * Math.random() - 1);
+      positions[i * 3]     = r * Math.sin(phi) * Math.cos(theta);
+      positions[i * 3 + 1] = r * Math.sin(phi) * Math.sin(theta) * 0.6;
+      positions[i * 3 + 2] = r * Math.cos(phi);
+      const warm = Math.random() < 0.8; // old red-gold population
+      const b = 0.18 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.8);
+      colors[i * 3 + 1] = b * (warm ? 0.75 : 0.85);
+      colors[i * 3 + 2] = b * (warm ? 0.45 : 1.0);
     }
-
-    const jetGeom = new THREE.BufferGeometry();
-    jetGeom.setAttribute('position', new THREE.BufferAttribute(jetPositions, 3));
-    jetGeom.setAttribute('color', new THREE.BufferAttribute(jetColors, 3));
-
-    const jetMat = new THREE.PointsMaterial({
-      vertexColors: true,
-      size: scale * 0.006,
-      map: tex,
-      sizeAttenuation: true,
-      blending: THREE.AdditiveBlending,
-      transparent: true,
-      opacity: 0.25,
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex2, size: s * 0.012, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.85,
       depthWrite: false,
     });
-
-    group.add(new THREE.Points(jetGeom, jetMat));
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 5;
+    group.add(pts);
   }
 
-  // 4. Glow shells (BackSide spheres)
-  const glowDefs = [
-    { r: bhRadius * 4, color: 0xff4400, opacity: 0.08 },
-    { r: bhRadius * 8, color: 0xff2200, opacity: 0.04 },
-  ];
-
-  for (const g of glowDefs) {
-    const geo = new THREE.SphereGeometry(g.r, 32, 32);
-    const mat = new THREE.MeshBasicMaterial({
-      color: g.color,
-      transparent: true,
-      opacity: g.opacity,
-      blending: THREE.AdditiveBlending,
-      side: THREE.BackSide,
+  // Faint amber haze — the glow of the crowded core
+  {
+    const tex2 = getGlowTex();
+    const count = 90;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = s * (0.8 + Math.random() * 1.6);
+      const a = Math.random() * Math.PI * 2;
+      positions[i * 3]     = Math.cos(a) * r;
+      positions[i * 3 + 1] = gaussRandom2() * s * 0.4;
+      positions[i * 3 + 2] = Math.sin(a) * r * 0.7;
+      const b = 0.05 + Math.random() * 0.06;
+      colors[i * 3] = b; colors[i * 3 + 1] = b * 0.7; colors[i * 3 + 2] = b * 0.42;
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex2, size: s * 0.7, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.13,
       depthWrite: false,
     });
-    group.add(new THREE.Mesh(geo, mat));
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 1;
+    group.add(pts);
   }
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// 2. Andromeda — Spiral Galaxy
-// ═══════════════════════════════════════════════════════════════════════
+function gaussRandom2() {
+  let u = 0, v = 0;
+  while (u === 0) u = Math.random();
+  while (v === 0) v = Math.random();
+  return Math.sqrt(-2.0 * Math.log(u)) * Math.cos(2.0 * Math.PI * v);
+}
+
 export function createSpiralGalaxy(group, def, textures) {
   // Andromeda from the real NASA mosaic (GALEX UV survey), in 2.5D.
   // floorSub removes the mosaic's circular tile seams — near-black sky
@@ -311,128 +279,58 @@ function createSpiralGalaxyProcedural(group, def) {
 // ═══════════════════════════════════════════════════════════════════════
 // 3. Sombrero Galaxy
 // ═══════════════════════════════════════════════════════════════════════
-export function createSombreroGalaxy(group, def) {
-  const scale = def.size * (def._scaleUnit || 500);
-  const tex = getGlowTex();
+export function createSombreroGalaxy(group, def, textures) {
+  // Hubble's M104 (credit NASA/Hubble Heritage): the wide-brimmed galaxy.
+  // The luminous halo and disk glow behind; the iconic dust-lane brim is
+  // extracted by local contrast and floats IN FRONT with normal blending,
+  // genuinely occluding the glow — the hat has a brim in 3D.
+  const s = def.size * (def._scaleUnit || 500);
 
-  // 1. Bright elliptical bulge — 15000 particles
-  const bulgeCount = 15000;
-  const bulgePositions = new Float32Array(bulgeCount * 3);
-  const bulgeColors = new Float32Array(bulgeCount * 3);
-
-  for (let i = 0; i < bulgeCount; i++) {
-    // Gaussian distribution for bulge shape
-    const r = Math.abs(gaussRandom()) * scale * 0.12;
-    const theta = Math.random() * Math.PI * 2;
-    const phi = Math.acos(2 * Math.random() - 1);
-
-    // Elongated in X (1.5x), compressed in Y (0.5x)
-    const x = r * Math.sin(phi) * Math.cos(theta) * 1.5;
-    const y = r * Math.sin(phi) * Math.sin(theta) * 0.5;
-    const z = r * Math.cos(phi);
-
-    bulgePositions[i * 3]     = x;
-    bulgePositions[i * 3 + 1] = y;
-    bulgePositions[i * 3 + 2] = z;
-
-    // Warm yellow-white
-    const brightness = 0.6 + Math.random() * 0.4;
-    bulgeColors[i * 3]     = 1.0 * brightness;
-    bulgeColors[i * 3 + 1] = 0.9 * brightness;
-    bulgeColors[i * 3 + 2] = 0.7 * brightness;
+  const layers = textures && textures.landmarkSombrero
+    ? makePhotoLayers(textures.landmarkSombrero, [
+        { kind: 'full' },
+        { kind: 'bright', lumLo: 95 },
+        { kind: 'dark' },
+      ])
+    : null;
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -s * 0.26, scale: 1.24, opacity: 0.55, order: 2 },
+      { z: -s * 0.04, scale: 1.0, opacity: 0.9, order: 3 },              // halo glow
+      { z:  s * 0.12, scale: 0.97, opacity: 0.95, order: 4, normal: true }, // dust brim
+    ], s * 1.7, 6429 / 11472);
   }
 
-  const bulgeGeom = new THREE.BufferGeometry();
-  bulgeGeom.setAttribute('position', new THREE.BufferAttribute(bulgePositions, 3));
-  bulgeGeom.setAttribute('color', new THREE.BufferAttribute(bulgeColors, 3));
-
-  const bulgeMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.005,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.25,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(bulgeGeom, bulgeMat));
-
-  // 2. Edge-on disk — 20000 particles in thin ring
-  const diskCount = 20000;
-  const diskPositions = new Float32Array(diskCount * 3);
-  const diskColors = new Float32Array(diskCount * 3);
-
-  for (let i = 0; i < diskCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = scale * 0.1 + Math.random() * scale * 0.25;
-    const ySpread = gaussRandom() * scale * 0.005; // very thin
-
-    diskPositions[i * 3]     = Math.cos(angle) * radius;
-    diskPositions[i * 3 + 1] = ySpread;
-    diskPositions[i * 3 + 2] = Math.sin(angle) * radius;
-
-    // Muted colors
-    const brightness = 0.3 + Math.random() * 0.3;
-    diskColors[i * 3]     = 0.8 * brightness;
-    diskColors[i * 3 + 1] = 0.7 * brightness;
-    diskColors[i * 3 + 2] = 0.5 * brightness;
+  // Field stars in true depth
+  {
+    const tex2 = getGlowTex();
+    const count = 500;
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      positions[i * 3]     = (Math.random() - 0.5) * s * 2.6;
+      positions[i * 3 + 1] = (Math.random() - 0.5) * s * 2.6;
+      positions[i * 3 + 2] = (Math.random() * 2 - 1) * s * 0.9;
+      const warm = Math.random() < 0.4;
+      const b = 0.15 + Math.random() * 0.5;
+      colors[i * 3]     = b * (warm ? 1.0 : 0.78);
+      colors[i * 3 + 1] = b * (warm ? 0.8 : 0.86);
+      colors[i * 3 + 2] = b * (warm ? 0.5 : 1.0);
+    }
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex2, size: s * 0.011, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity: 0.8,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = 6;
+    group.add(pts);
   }
-
-  const diskGeom = new THREE.BufferGeometry();
-  diskGeom.setAttribute('position', new THREE.BufferAttribute(diskPositions, 3));
-  diskGeom.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
-
-  const diskMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    size: scale * 0.004,
-    map: tex,
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.15,
-    depthWrite: false,
-  });
-
-  group.add(new THREE.Points(diskGeom, diskMat));
-
-  // 3. Dark dust lane — RingGeometry
-  const dustInnerR = scale * 0.12;
-  const dustOuterR = scale * 0.3;
-  const ringGeo = new THREE.RingGeometry(dustInnerR, dustOuterR, 128, 4);
-  const ringMat = new THREE.MeshBasicMaterial({
-    color: 0x110800,
-    side: THREE.DoubleSide,
-    blending: THREE.NormalBlending,
-    transparent: true,
-    opacity: 0.4,
-    depthWrite: false,
-  });
-  const dustLane = new THREE.Mesh(ringGeo, ringMat);
-  // Rotate horizontal (align with disk plane)
-  dustLane.rotation.x = Math.PI * 0.5;
-  group.add(dustLane);
 }
 
-// ═══════════════════════════════════════════════════════════════════════
-// 4. Bootes Void
-// ───────────────────────────────────────────────────────────────────────
-// The real Bootes Void is a 330 Mly-wide underdense region. The sense we
-// want the player to feel is: "I'm inside a bubble of emptiness with a
-// distant wall of galaxies surrounding me." Previously this rendered as
-// one thin shell of grey points + a handful of near-invisible sprites.
-// The redesign:
-//   • Three nested shells at different radii → the boundary reads as a
-//     thick wall with depth when the player turns their head.
-//   • Shell galaxies are actual colored sprites (warm core, cool arm
-//     tinting, varied scale) rather than uniform points, so they look
-//     like galaxies and not a particle cloud.
-//   • A very sparse set of faint galaxies drifts inside the void —
-//     enough to give parallax reference without filling the space.
-//   • A large dim inner glow sphere subtly darkens the interior,
-//     reinforcing the "emptiness" mood without going fully black.
-// ═══════════════════════════════════════════════════════════════════════
 export function createBootesVoid(group, def) {
   const scale = def.size * (def._scaleUnit || 500);
   const tex = getGlowTex();

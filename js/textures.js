@@ -152,6 +152,12 @@ const TEXTURE_PATHS = {
   landmarkOrion:     ['textures/landmark_orion.jpg'],
   landmarkPillars:   ['textures/landmark_pillars.jpg'],
   landmarkPillarsJwst: ['textures/landmark_pillars_jwst.jpg'],
+  landmarkCarina:    ['textures/landmark_carina.jpg'],
+  landmarkRing:      ['textures/landmark_ring.jpg'],
+  landmarkHorsehead: ['textures/landmark_horsehead.jpg'],
+  landmarkEtaCar:    ['textures/landmark_etacar.jpg'],
+  landmarkSombrero:  ['textures/landmark_sombrero.jpg'],
+  landmarkSgra:      ['textures/landmark_sgra.jpg'],
   landmarkCrab:      ['textures/landmark_crab.jpg'],
   landmarkAndromeda: ['textures/landmark_andromeda.jpg'],
 };
