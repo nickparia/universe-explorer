@@ -314,8 +314,11 @@ async function boot() {
       const allLandmarks = getLandmarks();
       for (const lm of allLandmarks) {
         const d = camP.distanceTo(lm.pos);
-        const fadeStart = lm.radius * 4.0;
-        const fadeEnd = lm.radius * 7.0;
+        // A five-light-year object does not vanish like a lightswitch:
+        // it stays a glowing presence far into departure (and emerges
+        // gradually during warp approach).
+        const fadeStart = lm.radius * 7.0;
+        const fadeEnd = lm.radius * 16.0;
         const f = d <= fadeStart ? 1 : d >= fadeEnd ? 0 :
           1 - (d - fadeStart) / (fadeEnd - fadeStart);
         if (f <= 0) {

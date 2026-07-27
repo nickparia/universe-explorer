@@ -1,4 +1,5 @@
 import * as THREE from 'three';
+import { makePhotoLayers, addPhotoLayerStack } from './nebulae.js';
 
 // ═══════════════════════════════════════════════════════════════════════
 // Shared helpers
@@ -155,7 +156,77 @@ export function createSupermassiveBH(group, def) {
 // ═══════════════════════════════════════════════════════════════════════
 // 2. Andromeda — Spiral Galaxy
 // ═══════════════════════════════════════════════════════════════════════
-export function createSpiralGalaxy(group, def) {
+export function createSpiralGalaxy(group, def, textures) {
+  // Andromeda from the real NASA mosaic (GALEX UV survey), in 2.5D.
+  // floorSub removes the mosaic's circular tile seams — near-black sky
+  // level steps vanish once the floor is subtracted and the layers blend
+  // additively. Bulge floats ahead of the ring plane for parallax.
+  const sP = def.size * (def._scaleUnit || 500);
+  const layers = textures && textures.landmarkAndromeda
+    ? makePhotoLayers(textures.landmarkAndromeda, [
+        { kind: 'full', floorSub: 30 },
+        { kind: 'cool', floorSub: 30, lumLo: 150 },
+        { kind: 'bright', floorSub: 30, lumLo: 105 },
+      ])
+    : null;
+
+  if (layers) {
+    addPhotoLayerStack(group, layers, [
+      { z: -sP * 0.30, scale: 1.28, opacity: 0.55, order: 2 }, // whole field
+      { z: -sP * 0.04, scale: 1.0, opacity: 0.95, order: 3 },  // blue star-forming rings
+      { z:  sP * 0.14, scale: 0.94, opacity: 0.9, order: 4 },  // golden bulge + bright knots
+    ], sP * 1.7, 1.0);
+
+    // Vast faint halo — a galaxy doesn't end where its photo does
+    {
+      const tex2 = (() => {
+        const sz = 64;
+        const cv = document.createElement('canvas');
+        cv.width = sz; cv.height = sz;
+        const ctx = cv.getContext('2d');
+        const grd = ctx.createRadialGradient(sz/2, sz/2, 0, sz/2, sz/2, sz/2);
+        grd.addColorStop(0, 'rgba(255,255,255,1)');
+        grd.addColorStop(0.5, 'rgba(255,255,255,0.25)');
+        grd.addColorStop(1, 'rgba(255,255,255,0)');
+        ctx.fillStyle = grd;
+        ctx.fillRect(0, 0, sz, sz);
+        return new THREE.CanvasTexture(cv);
+      })();
+      const count = 110;
+      const positions = new Float32Array(count * 3);
+      const colors = new Float32Array(count * 3);
+      for (let i = 0; i < count; i++) {
+        // Elongated along the disk's diagonal (photo axis ~45deg)
+        const along = gaussRandom() * sP * 1.3;
+        const across = gaussRandom() * sP * 0.5;
+        positions[i * 3]     = (along - across) * 0.707;
+        positions[i * 3 + 1] = (along + across) * 0.707 * 0.55;
+        positions[i * 3 + 2] = gaussRandom() * sP * 0.25 - sP * 0.1;
+        const b = 0.035 + Math.random() * 0.05;
+        colors[i * 3]     = b * 0.95;
+        colors[i * 3 + 1] = b * 0.9;
+        colors[i * 3 + 2] = b * 1.0;
+      }
+      const geom = new THREE.BufferGeometry();
+      geom.setAttribute('position', new THREE.BufferAttribute(positions, 3));
+      geom.setAttribute('color', new THREE.BufferAttribute(colors, 3));
+      const mat = new THREE.PointsMaterial({
+        vertexColors: true, map: tex2, size: sP * 0.6, sizeAttenuation: true,
+        blending: THREE.AdditiveBlending, transparent: true, opacity: 0.14,
+        depthWrite: false,
+      });
+      const pts = new THREE.Points(geom, mat);
+      pts.renderOrder = 1;
+      group.add(pts);
+    }
+    return;
+  }
+
+  // ── Procedural fallback (no photo available) ──
+  createSpiralGalaxyProcedural(group, def);
+}
+
+function createSpiralGalaxyProcedural(group, def) {
   const scale = def.size * (def._scaleUnit || 500);
   const tex = getGlowTex();
 

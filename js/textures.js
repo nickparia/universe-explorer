@@ -151,6 +151,7 @@ const TEXTURE_PATHS = {
   triton:    [],
   landmarkOrion:     ['textures/landmark_orion.jpg'],
   landmarkPillars:   ['textures/landmark_pillars.jpg'],
+  landmarkPillarsJwst: ['textures/landmark_pillars_jwst.jpg'],
   landmarkCrab:      ['textures/landmark_crab.jpg'],
   landmarkAndromeda: ['textures/landmark_andromeda.jpg'],
 };
