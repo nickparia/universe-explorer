@@ -69,22 +69,35 @@ function planNext() {
   warpTo(next);
 }
 
-function onInput() {
+// Asymmetric input rules — the fix for 'it never engages with a human
+// at the desk'. A resting finger on a Magic Mouse/trackpad emits micro
+// wheel events; sensors jitter; Chrome fires phantom mousemoves under a
+// stationary cursor. So: ENGAGEMENT is only blocked by inputs that
+// actually DO something in the app (keys, clicks, button-held drags —
+// bare mouse movement and wheel are no-ops in the main view anyway).
+// RELEASE stays hair-trigger: any sign of a human returns the helm.
+function deliberateInput() {
   idle = 0;
   if (engaged) release();
 }
+function presenceInput() {
+  if (engaged) { idle = 0; release(); }
+}
 
 export function initAutopilot() {
-  for (const ev of ['keydown', 'mousedown', 'wheel', 'touchstart']) {
-    window.addEventListener(ev, onInput, { passive: true });
+  for (const ev of ['keydown', 'mousedown', 'touchstart']) {
+    window.addEventListener(ev, deliberateInput, { passive: true });
   }
-  // mousemove needs a displacement gate: Chrome fires phantom mousemove
-  // events under a STATIONARY cursor whenever animated content moves
-  // beneath it — a mouse parked over the canvas froze the idle timer.
+  window.addEventListener('wheel', presenceInput, { passive: true });
   let lmx = null, lmy = null;
   window.addEventListener('mousemove', (e) => {
-    if (lmx !== null && Math.hypot(e.clientX - lmx, e.clientY - lmy) > 4) onInput();
+    const moved = lmx !== null && Math.hypot(e.clientX - lmx, e.clientY - lmy) > 4;
     lmx = e.clientX; lmy = e.clientY;
+    if (!moved) return;
+    // Movement with a button held is active flying (look-drag) —
+    // deliberate. Bare movement is just a human nearby — presence.
+    if (e.buttons) deliberateInput();
+    else presenceInput();
   }, { passive: true });
   on('starmap:toggled', (open) => { chartOpen = open; });
   on('orbit:enter', () => {
