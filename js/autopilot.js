@@ -81,7 +81,12 @@ function deliberateInput() {
   if (engaged) release();
 }
 function presenceInput() {
-  if (engaged) { idle = 0; release(); }
+  if (engaged) {
+    // A nudge hands back the helm, but if no deliberate input follows,
+    // SOLACE resumes in ~30s — a desk bump shouldn't cost the full wait.
+    idle = IDLE_ENGAGE - 30;
+    release();
+  }
 }
 
 export function initAutopilot() {
