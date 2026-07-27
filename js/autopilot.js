@@ -12,6 +12,15 @@ import {
 } from './flight.js';
 
 const IDLE_ENGAGE = 100;        // s of stillness before SOLACE takes the helm
+
+// Hidden flight recorder — `__helmLog` in the console shows exactly why
+// the helm engaged, released, or planned. Ring buffer, 60 entries.
+const LOG = [];
+function hlog(msg) {
+  LOG.push(`${(performance.now() / 1000).toFixed(1)}s ${msg}`);
+  if (LOG.length > 60) LOG.shift();
+}
+if (typeof window !== 'undefined') window.__helmLog = LOG;
 const DWELL_MIN = 110;          // s in orbit before moving on
 const DWELL_VAR = 130;
 
@@ -38,6 +47,7 @@ function releaseWake() {
 }
 
 function engage() {
+  hlog(`ENGAGE (orbiting=${isOrbiting()} body=${getOrbitBodyName() || '-'})`);
   engaged = true;
   setAutoCinema(true);
   emit('autopilot:engaged');
@@ -52,8 +62,9 @@ function engage() {
   }
 }
 
-function release() {
+function release(cause) {
   if (!engaged) return;
+  hlog(`RELEASE ${cause || '?'}`);
   engaged = false;
   setAutoCinema(false);
   emit('autopilot:released');
@@ -69,7 +80,9 @@ function planNext() {
   history.push(next);
   if (history.length > 5) history.shift();
   driftGrace = 15; // if the warp doesn't take, replan
+  hlog(`DEPART -> ${next}`);
   warpTo(next);
+  hlog(`warp active=${isWarpTraveling()}`);
 }
 
 // Asymmetric input rules — the fix for 'it never engages with a human
@@ -79,29 +92,30 @@ function planNext() {
 // actually DO something in the app (keys, clicks, button-held drags —
 // bare mouse movement and wheel are no-ops in the main view anyway).
 // RELEASE stays hair-trigger: any sign of a human returns the helm.
-function deliberateInput() {
+function deliberateInput(cause) {
   idle = 0;
-  if (engaged) release();
+  if (engaged) release(cause || 'deliberate');
 }
-function presenceInput() {
+function presenceInput(cause) {
   if (engaged) {
     // A nudge hands back the helm, but if no deliberate input follows,
     // SOLACE resumes in ~30s — a desk bump shouldn't cost the full wait.
     idle = IDLE_ENGAGE - 30;
-    release();
+    release(cause || 'presence');
   }
 }
 
 export function initAutopilot() {
   for (const ev of ['keydown', 'mousedown', 'touchstart']) {
-    window.addEventListener(ev, deliberateInput, { passive: true });
+    window.addEventListener(ev, (e) => deliberateInput(`${ev}:${e.code || e.button || ''}`), { passive: true });
   }
   // Release requires UNMISTAKABLE intent. A Magic Mouse with a finger
   // resting on it emits micro wheel events continuously; sensors drift a
   // few px. If those release the helm, autopilot lives in a 'tries to
   // move, freezes, tries again' loop and never completes a dwell.
   window.addEventListener('wheel', (e) => {
-    if (Math.abs(e.deltaY) + Math.abs(e.deltaX) > 20) presenceInput();
+    const mag = Math.abs(e.deltaY) + Math.abs(e.deltaX);
+    if (mag > 60) presenceInput(`wheel:${Math.round(mag)}`);
   }, { passive: true });
   let lmx = null, lmy = null;
   window.addEventListener('mousemove', (e) => {
@@ -110,8 +124,8 @@ export function initAutopilot() {
     if (d < 4) return;
     // Movement with a button held is active flying (look-drag) —
     // deliberate. Bare movement releases only on a real flick.
-    if (e.buttons) deliberateInput();
-    else if (d > 15) presenceInput();
+    if (e.buttons) deliberateInput(`drag:${Math.round(d)}px`);
+    else if (d > 25) presenceInput(`mousemove:${Math.round(d)}px`);
   }, { passive: true });
   on('starmap:toggled', (open) => { chartOpen = open; });
   on('orbit:enter', () => {
