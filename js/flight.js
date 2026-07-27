@@ -1619,6 +1619,12 @@ export function restorePose(pos, quat, orbitBodyRef) {
     orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / orbitDistance)));
     orbitMode = true;
     orbitTransition = false;
+    // Planets reset to boot positions each session while the saved pose
+    // is absolute — the body may now be tens of thousands of units from
+    // where you left it, leaving you 'in orbit' around a dot. Glide in
+    // to the framing distance whenever the restored orbit is too wide.
+    const nice = niceOrbitDist(orbitBodyRef);
+    _orbitSettleTarget = (nice > 0 && orbitDistance > nice * 1.4) ? nice : 0;
   }
 }
 
