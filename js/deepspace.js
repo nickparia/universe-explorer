@@ -251,15 +251,54 @@ function createBlackHole(scene) {
     new THREE.MeshBasicMaterial({ color: 0x000000 })
   ));
 
-  // 2. Photon ring — light bent into a thin brilliant halo at ~2.5 r_s
+  // Radial-gradient painter — soft-edged light, never flat ribbons
+  const radialTex = (stops) => {
+    const cv = document.createElement('canvas');
+    cv.width = 512; cv.height = 512;
+    const ctx = cv.getContext('2d');
+    const g = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
+    for (const [p, c] of stops) g.addColorStop(p, c);
+    ctx.fillStyle = g;
+    ctx.fillRect(0, 0, 512, 512);
+    return new THREE.CanvasTexture(cv);
+  };
+
+  // 2a. Horizon rim glow — gravitationally lensed light hugging the
+  // silhouette. A billboard glow centered on the hole, drawn WITH depth
+  // testing: the opaque black sphere occludes its middle, leaving only
+  // the burning margin around the disc. The iconic edge.
   {
-    const ringGeo = new THREE.RingGeometry(S * 2.3, S * 2.62, 128);
+    const rim = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: radialTex([
+        [0.0, 'rgba(255,235,205,1)'],
+        [0.42, 'rgba(255,225,190,0.85)'],
+        [0.55, 'rgba(255,170,90,0.30)'],
+        [0.75, 'rgba(200,90,30,0.08)'],
+        [1.0, 'rgba(0,0,0,0)'],
+      ]),
+      color: 0xffffff, transparent: true, opacity: 0.85,
+      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true,
+    }));
+    rim.scale.setScalar(S * 3.1);
+    rim.renderOrder = 2;
+    blackHoleGroup.add(rim);
+  }
+
+  // 2b. Photon ring — a thin brilliant halo at ~2.5 r_s, feathered
+  {
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xfff3e0, side: THREE.DoubleSide, transparent: true,
-      opacity: 0.55, blending: THREE.AdditiveBlending, depthWrite: false,
+      map: radialTex([
+        [0.80, 'rgba(255,244,228,0)'],
+        [0.885, 'rgba(255,244,228,0)'],
+        [0.92, 'rgba(255,248,235,1)'],
+        [0.955, 'rgba(255,214,160,0.30)'],
+        [1.0, 'rgba(255,190,130,0)'],
+      ]),
+      side: THREE.DoubleSide, transparent: true,
+      opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    const ring = new THREE.Mesh(ringGeo, ringMat);
-    ring.rotation.x = Math.PI * 0.28;
+    const ring = new THREE.Mesh(new THREE.PlaneGeometry(S * 5.24, S * 5.24), ringMat);
+    ring.rotation.x = Math.PI * 0.28 - Math.PI / 2;
     blackHoleGroup.add(ring);
   }
 
@@ -300,15 +339,23 @@ function createBlackHole(scene) {
   accretionParticles.rotation.x = Math.PI * 0.28; // match the ring plane
   blackHoleGroup.add(accretionParticles);
 
-  // 4. Inner disc sheet — continuous glow between the particles
+  // 4. Inner disc sheet — continuous hot glow between the particles,
+  // white-hot at the inner edge feathering to dark ember at the rim
   {
-    const ringGeo = new THREE.RingGeometry(S * 2.7, S * 5.2, 128, 3);
     const ringMat = new THREE.MeshBasicMaterial({
-      color: 0xff8a30, side: THREE.DoubleSide, transparent: true,
-      opacity: 0.22, blending: THREE.AdditiveBlending, depthWrite: false,
+      map: radialTex([
+        [0.0, 'rgba(0,0,0,0)'],
+        [0.49, 'rgba(0,0,0,0)'],
+        [0.53, 'rgba(255,238,210,0.85)'],
+        [0.62, 'rgba(255,150,60,0.42)'],
+        [0.82, 'rgba(150,40,10,0.15)'],
+        [1.0, 'rgba(60,12,3,0)'],
+      ]),
+      side: THREE.DoubleSide, transparent: true,
+      opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
     });
-    accretionDiskMesh = new THREE.Mesh(ringGeo, ringMat);
-    accretionDiskMesh.rotation.x = Math.PI * 0.28;
+    accretionDiskMesh = new THREE.Mesh(new THREE.PlaneGeometry(S * 10.4, S * 10.4), ringMat);
+    accretionDiskMesh.rotation.x = Math.PI * 0.28 - Math.PI / 2;
     blackHoleGroup.add(accretionDiskMesh);
   }
 
