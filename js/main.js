@@ -178,8 +178,9 @@ async function boot() {
     titleActive = false;
   }
   if (resume) {
-    // No ceremony on return — remove the title and hand over instantly
-    if (titleEl) titleEl.remove();
+    // Returning gets a breath, not a ceremony: a longer exhale from
+    // black and a whispered title (handled in revealWorld). Controls are
+    // live immediately.
     titleActive = false;
   } else {
     window.addEventListener('keydown', skipOpening);
@@ -194,8 +195,23 @@ async function boot() {
   function revealWorld() {
     if (bootFadeStarted) return;
     bootFadeStarted = true;
+    if (resume) bootFade.style.transition = 'opacity 2.8s ease-out';
     bootFade.style.opacity = '0';
-    setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 2000);
+    setTimeout(() => { if (bootFade.parentNode) bootFade.parentNode.removeChild(bootFade); }, 3200);
+
+    // Returning traveler: the word whispers — small, faint, brief.
+    // A greeting from the ship, not an opening sequence.
+    if (resume && titleEl) {
+      titleEl.style.transition = 'none';
+      titleEl.style.willChange = 'transform, opacity';
+      titleAnim = titleEl.animate([
+        { opacity: 0,    transform: 'translate(-50%, -50%) scale(0.5)' },
+        { opacity: 0.48, transform: 'translate(-50%, -50%) scale(0.51)', offset: 0.35 },
+        { opacity: 0.48, transform: 'translate(-50%, -50%) scale(0.515)', offset: 0.62 },
+        { opacity: 0,    transform: 'translate(-50%, -50%) scale(0.525)' },
+      ], { duration: 4200, easing: 'ease-in-out', fill: 'forwards' });
+      titleAnim.onfinish = () => { if (titleEl.parentNode) titleEl.remove(); };
+    }
 
     // The word: fade large, loom, then blow past the camera. Timed to the
     // 8s arrival glide — the letters tear past as the camera crosses.
