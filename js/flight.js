@@ -60,6 +60,8 @@ const _dir   = new THREE.Vector3();
 const _qPitch = new THREE.Quaternion();
 const _qYaw   = new THREE.Quaternion();
 const _qRoll  = new THREE.Quaternion();
+const _qLevel = new THREE.Quaternion();
+const _levelIdeal = new THREE.Vector3();
 const _axisX  = new THREE.Vector3();
 const _axisY  = new THREE.Vector3();
 const _axisZ  = new THREE.Vector3();
@@ -224,7 +226,7 @@ export function initFlight(camera) {
             e.preventDefault();
         }
 
-        if (e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD') {
+        if (e.code === 'KeyW' || e.code === 'KeyA' || e.code === 'KeyS' || e.code === 'KeyD' || e.code === 'Space') {
             _lastMoveKeyAt = performance.now();
         }
         if (e.code === 'KeyH') doHome();
@@ -520,7 +522,7 @@ export function updateFlight(dt, allBodies, dtWall) {
         // a keypress that happened AFTER the warp began counts, so stuck or
         // pre-held keys can't silently abort the journey.
         if (warpT > 0.1) {
-            const anyMove = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD']) &&
+            const anyMove = (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space']) &&
                             _lastMoveKeyAt > _warpStartedAt;
             if (anyMove) {
                 // Cancel warp — reset FOV, streaks, and vignette
@@ -707,7 +709,7 @@ export function updateFlight(dt, allBodies, dtWall) {
     // ── 1b. Orbit camera mode ────────────────────────────────────────────────
     if (orbitMode && orbitBody) {
         // Any movement input breaks orbit
-        if (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] ||
+        if (keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['KeyR'] ||
             keys['ArrowUp'] || keys['ArrowDown'] || keys['ArrowLeft'] || keys['ArrowRight'] ||
             keys['Space'] || keys['KeyC'] || keys['KeyQ'] || keys['KeyE']) {
             orbitMode = false;
@@ -787,7 +789,7 @@ export function updateFlight(dt, allBodies, dtWall) {
 
     // Cancel fly-to on manual input
     if (flyTarget) {
-      const anyKey = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'] || keys['KeyC'];
+      const anyKey = keys['KeyW'] || keys['KeyS'] || keys['KeyA'] || keys['KeyD'] || keys['Space'] || keys['KeyC'] || keys['KeyR'];
       if (anyKey || (rightDown && (mouseDX !== 0 || mouseDY !== 0))) {
         flyTarget = null;
       }
@@ -818,6 +820,26 @@ export function updateFlight(dt, allBodies, dtWall) {
     _qPitch.setFromAxisAngle(_axisX, pitchStep);
     _qYaw.setFromAxisAngle(_axisY, yawStep);
     _qRoll.setFromAxisAngle(_axisZ, _rollVel * dt);
+
+    // Gentle auto-level: when you're not rolling on purpose, the ship
+    // slowly rights itself toward the ecliptic horizon (~8s). Kills the
+    // accumulated-roll disorientation that makes mouse-look feel
+    // diagonal, without fighting deliberate Q/E rolls.
+    if (!keys['KeyQ'] && !keys['KeyE'] && Math.abs(_rollVel) < 0.02) {
+        const fwd2 = _axisZ; // local +Z in world space; forward is its negation
+        _levelIdeal.copy(_upVec).addScaledVector(fwd2, -_upVec.dot(fwd2));
+        const len2 = _levelIdeal.lengthSq();
+        if (len2 > 0.05) {
+            _levelIdeal.normalize();
+            const upW = _axisY, rightW = _axisX;
+            const err = Math.atan2(_levelIdeal.dot(rightW), _levelIdeal.dot(upW));
+            const k = (1 - Math.exp(-dt / 8)) * Math.min(1, len2 * 2);
+            if (Math.abs(err) > 0.002) {
+                _qLevel.setFromAxisAngle(fwd2, -err * k);
+                camQuat.premultiply(_qLevel);
+            }
+        }
+    }
 
     camQuat.premultiply(_qPitch);
     camQuat.premultiply(_qYaw);
@@ -872,12 +894,14 @@ export function updateFlight(dt, allBodies, dtWall) {
 
     _wish.set(0, 0, 0);
     let thrusting = false;
-    if (keys['KeyW'] || keys['ArrowUp'])    { _wish.add(fwd);   thrusting = true; }
+    // Space is the universal GO: one hand on Space, one on the mouse is
+    // a complete way to fly (tester feedback). Vertical lives on R/C.
+    if (keys['KeyW'] || keys['ArrowUp'] || keys['Space']) { _wish.add(fwd); thrusting = true; }
     if (keys['KeyS'] || keys['ArrowDown'])  { _wish.sub(fwd);   thrusting = true; }
     if (keys['KeyD'] || keys['ArrowRight']) { _wish.add(right); thrusting = true; }
     if (keys['KeyA'] || keys['ArrowLeft'])  { _wish.sub(right); thrusting = true; }
-    if (keys['Space']) { _wish.add(up); thrusting = true; }
-    if (keys['KeyC'])  { _wish.sub(up); thrusting = true; }
+    if (keys['KeyR']) { _wish.add(up); thrusting = true; }
+    if (keys['KeyC']) { _wish.sub(up); thrusting = true; }
     if (thrusting && _wish.lengthSq() > 0) {
         _wish.normalize().multiplyScalar(allowedTan);
         if (govBody) {
