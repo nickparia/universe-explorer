@@ -50,7 +50,7 @@ function getGrainTexture() {
 
 const COUNT = 360;
 const SHELL_MIN = 30;        // units — near-surface scale
-const SHELL_MAX = 400000;    // units — intergalactic scale
+const SHELL_MAX = 60000000;  // units — intergalactic scale
 const SHELL_FACTOR = 0.55;   // shell radius = factor × gap to nearest object
 const STREAK_TIME = 0.05;    // s — streak length = velocity × this
 const STREAK_MAX_FRAC = 0.11; // streak length cap as fraction of shell radius

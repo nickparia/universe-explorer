@@ -113,6 +113,7 @@ const PROCEDURAL = {
   landmarkPillars:   () => mkLandmarkFallback(512,512, [80,50,20], [255,180,80]),
   landmarkCrab:      () => mkLandmarkFallback(512,512, [180,40,20], [255,200,100]),
   landmarkAndromeda: () => mkLandmarkFallback(512,512, [20,20,60], [150,170,255]),
+  landmarkMilkyWay:  () => mkLandmarkFallback(512,512, [15,15,40], [210,200,255]),
 };
 
 // ── Texture catalog: key -> ordered list of paths to try ────────────
@@ -159,7 +160,8 @@ const TEXTURE_PATHS = {
   landmarkSombrero:  ['textures/landmark_sombrero.jpg'],
   landmarkSgra:      ['textures/landmark_sgra.jpg'],
   landmarkCrab:      ['textures/landmark_crab.jpg'],
-  landmarkAndromeda: ['textures/landmark_andromeda.jpg'],
+  landmarkAndromeda: ['textures/landmark_andromeda_kpno.jpg'],
+  landmarkMilkyWay:  ['textures/landmark_milkyway.jpg'],
 };
 
 // ── Loader ──────────────────────────────────────────────────────────

@@ -27,6 +27,7 @@ function makeFlareTex(size, innerColor, outerColor) {
 // ── Module state ──
 let sunGroup, sunMesh;
 let _homeBeacon = null, _homeHalo = null;
+let _beaconEnv = 1; // galaxy-membership dimmer — you can't pick out one star from outside
 let planets = [];   // { name, desc, g (Group), r, mesh, orb, spd, angle, moonOrbit, clouds }
 let bodies  = [];   // returned by getBodies()
 let comets  = [];   // { g, mesh, trail, trailPositions, a, b, cx, angle, spd }
@@ -1116,6 +1117,11 @@ function buildKuiperBelt(scene) {
 // updateBodies
 // ═══════════════════════════════════════════════════════════════
 
+/** Galaxy-membership factor for the homecoming beacon (0 outside, 1 inside). */
+export function setHomeBeaconFactor(f) {
+  _beaconEnv = Math.max(0, Math.min(1, f));
+}
+
 export function updateBodies(dt, camWorldPos) {
   // Homecoming beacon: constant angular size at range, dissolving as the
   // real sun takes over inside ~15 AU
@@ -1125,7 +1131,7 @@ export function updateBodies(dt, camWorldPos) {
     _homeBeacon.scale.set(scale, scale, 1);
     _homeHalo.scale.set(scale * 4.2, scale * 4.2, 1);
     const t = Math.max(0, Math.min(1, (dist - 40000) / 60000));
-    const f = t * t * (3 - 2 * t);
+    const f = t * t * (3 - 2 * t) * _beaconEnv;
     _homeBeacon.material.opacity = 0.9 * f;
     _homeHalo.material.opacity = 0.13 * f;
   }

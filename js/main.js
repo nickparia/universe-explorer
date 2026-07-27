@@ -1,10 +1,10 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
-import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity, updateStarParallax, updateSkyDrift, setWarpStarMode } from './engine.js';
+import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity, updateStarParallax, updateSkyDrift, setWarpStarMode, setGalaxyInteriorFactor, GALACTIC_CENTER } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
-import { createSolarSystem, updateBodies, getBodies } from './bodies.js';
+import { createSolarSystem, updateBodies, getBodies, setHomeBeaconFactor } from './bodies.js';
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
 import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, isIntroPlaying, startArrival, skipArrival, flyTo, warpTo } from './flight.js';
 import { initFieldNotes } from './fieldnotes.js';
@@ -23,7 +23,7 @@ import { initGasGiantHud, updateGasGiantDive } from './atmosphere/gasgiant.js';
 import { updateAtmosphere } from './atmosphere/scatter.js';
 import { updateAltitude, getAltitude } from './altitude.js';
 import { updateTerrain } from './terrain/manager.js';
-import { AU } from './constants.js';
+import { AU, MILKY_WAY_RADIUS } from './constants.js';
 import * as THREE from 'three';
 
 async function boot() {
@@ -58,7 +58,7 @@ async function boot() {
 
   // 4. Create skybox and stars
   createSkybox(textures.starmap);
-  createStars();
+  createStars(textures);
 
   // 5. Build solar system
   createSolarSystem(scene, textures);
@@ -364,7 +364,12 @@ async function boot() {
         // gradually during warp approach).
         const fadeStart = lm.radius * 7.0;
         const fadeEnd = lm.radius * 16.0;
-        const f = d <= fadeStart ? 1 : d >= fadeEnd ? 0 :
+        // Whole galaxies (and the void) never distance-fade: they are the
+        // destination looming across intergalactic space for the entire
+        // journey — perspective alone shrinks them. Sgr A* stays local:
+        // it lives inside the Milky Way's core, hidden until approach.
+        const alwaysVisible = lm.tier === 'intergalactic' && lm.visual !== 'supermassive_bh';
+        const f = alwaysVisible ? 1 : d <= fadeStart ? 1 : d >= fadeEnd ? 0 :
           1 - (d - fadeStart) / (fadeEnd - fadeStart);
         if (f <= 0) {
           lm.anchor.visible = false;
@@ -383,6 +388,24 @@ async function boot() {
           });
         }
       }
+    }
+
+    // ── Galaxy membership: inside vs outside the Milky Way ──────────
+    // World-driven, not scripted: deep inside, the sky IS the galaxy
+    // (skybox band + star layers + deep backdrop) and the galaxy-object
+    // is invisible; crossing the rim they crossfade over wide bands so
+    // entry takes unhurried seconds even at warp deceleration. The
+    // intro drives these fades itself while it plays.
+    if (!isIntroPlaying()) {
+      const u = getCamPos().distanceTo(GALACTIC_CENTER) / MILKY_WAY_RADIUS;
+      const tIn = Math.max(0, Math.min(1, (u - 0.92) / (1.45 - 0.92)));
+      const interior = 1 - tIn * tIn * (3 - 2 * tIn);
+      const tOut = Math.max(0, Math.min(1, (u - 1.02) / (2.1 - 1.02)));
+      const exterior = tOut * tOut * (3 - 2 * tOut);
+      setSkyboxOpacity(0.9 * interior);
+      setMilkyWayOpacity(exterior);
+      setGalaxyInteriorFactor(interior);
+      setHomeBeaconFactor(interior);
     }
 
     // Milky Way rotation — noticeable sweep while the landing page /

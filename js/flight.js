@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { AU } from './constants.js';
+import { AU, MILKY_WAY_RADIUS } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { emit, on } from './bus.js';
@@ -1032,12 +1032,18 @@ export function isFlyingTo() { return !!flyTarget; }
  * @param {{paused?:boolean}} [opts]
  */
 export function startIntro(opts = {}) {
-  // Start position: well outside the Milky Way disk (~620k units radius),
-  // offset from the galactic center so we see the spiral structure from
-  // above/side. The start is expressed relative to the galactic center so
-  // that even though the Sun is at world origin, the intro frames the
-  // galaxy itself, not the Sun.
-  introFromP.copy(GALACTIC_CENTER).add(new THREE.Vector3(1500000, 700000, 1200000));
+  // Start position: well outside the Milky Way disc, on the Sun's side
+  // of the galaxy and above the plane, so the opening frames the whole
+  // spiral from over the rim — and the dive home crosses the disc.
+  {
+    const R = MILKY_WAY_RADIUS;
+    const dirHome = GALACTIC_CENTER.clone().multiplyScalar(-1).normalize();
+    const side = new THREE.Vector3().crossVectors(dirHome, _upVec).normalize();
+    introFromP.copy(GALACTIC_CENTER)
+      .addScaledVector(dirHome, R * 2.6)
+      .addScaledVector(_upVec, R * 1.05)
+      .addScaledVector(side, R * 0.65);
+  }
   introFromQ.copy(camQuat);
   camPos.copy(introFromP);
 
@@ -1045,7 +1051,7 @@ export function startIntro(opts = {}) {
   // the galaxy floats in the lower half of the frame, leaving a calm
   // dark area above for the title. Looking-down-at-the-galaxy vibe.
   introInitialLookAt.copy(GALACTIC_CENTER).add(
-    new THREE.Vector3(0, -350000, 0)
+    new THREE.Vector3(0, -MILKY_WAY_RADIUS * 0.45, 0)
   );
   _lookMat.lookAt(camPos, introInitialLookAt, _upVec);
   camQuat.setFromRotationMatrix(_lookMat);

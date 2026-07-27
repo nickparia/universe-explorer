@@ -1,7 +1,7 @@
 // ── engine.js ── Rendering engine, post-processing, skybox, and particle stars
 import * as THREE from 'three';
 import { getPointTexture } from './textures.js';
-import { GALACTIC_CENTER as _GC } from './constants.js';
+import { GALACTIC_CENTER as _GC, MILKY_WAY_RADIUS } from './constants.js';
 import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
 import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
 import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
@@ -69,7 +69,7 @@ export function initEngine() {
     BASE_FOV,
     window.innerWidth / window.innerHeight,
     0.1,
-    100000000
+    2000000000
   );
 
   // ── Lights ──
@@ -432,9 +432,22 @@ export function updateStarParallax(camPos) {
   const dz = camPos.z - _spPrevCam.z;
   _spPrevCam.copy(camPos);
   const magSq = dx * dx + dy * dy + dz * dz;
-  if (magSq < 0.25) return; // stationary — skip the work
+  if (magSq < 0.25) {
+    // Stationary — relax any wrap-rate fades back in
+    for (const b of _localStarBuckets) {
+      b._speedFade = (b._speedFade ?? 1) + (1 - (b._speedFade ?? 1)) * 0.06;
+    }
+    return;
+  }
 
+  const mag = Math.sqrt(magSq);
   for (const b of _localStarBuckets) {
+    // Wrap-rate fade: when one frame crosses a meaningful fraction of the
+    // volume, its stars are shimmer noise — fade the volume out until the
+    // speed drops back into its regime. Each shell serves its own scale.
+    const ratio = mag / b.half;
+    const target = ratio > 0.3 ? 0 : ratio > 0.12 ? 1 - (ratio - 0.12) / 0.18 : 1;
+    b._speedFade = (b._speedFade ?? 1) + (target - (b._speedFade ?? 1)) * 0.12;
     const p = b.positions;
     const span = b.half * 2;
     for (let i = 0; i < b.count; i++) {
@@ -498,8 +511,11 @@ function makeStarLayer(count, minR, maxR, size, opacity) {
 // central bulge. The whole thing is tilted so the Sun's neighborhood
 // (near origin) sits slightly above the plane, matching our real-world
 // offset from the galactic midplane.
-function makeMilkyWay() {
+function makeMilkyWay(photoTex) {
   const group = new THREE.Group();
+  // The galaxy is real geometry now, not an intro prop: scaled so its
+  // disc radius equals MILKY_WAY_RADIUS around the Sgr A* center.
+  const K = MILKY_WAY_RADIUS / 624000;
 
   // ── Spiral arm disk (main component) ──────────────────────────────
   const count = 220000;
@@ -516,7 +532,7 @@ function makeMilkyWay() {
 
     // Biased radial distribution — more particles toward the core
     const t = Math.pow(Math.random(), 0.7);
-    const radius = 4000 + t * 620000;
+    const radius = (4000 + t * 620000) * K;
 
     // Tighter spiral winding in the inner disk
     const spiralAngle = armAngle + t * Math.PI * 3.2;
@@ -602,7 +618,9 @@ function makeMilkyWay() {
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    opacity: 0.62
+    // The photo disc carries the face-on structure; particles are the
+    // volumetric filler that gives the rim crossing real depth.
+    opacity: 0.34
   });
 
   group.add(new THREE.Points(geo, mat));
@@ -614,7 +632,7 @@ function makeMilkyWay() {
   for (let i = 0; i < haloCount; i++) {
     // Gaussian radial — most hug the bulge, few in the halo
     const u = Math.random(), v = Math.random();
-    const r = Math.abs(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)) * 90000;
+    const r = Math.abs(Math.sqrt(-2 * Math.log(u)) * Math.cos(2 * Math.PI * v)) * 90000 * K;
     const theta = Math.random() * Math.PI * 2;
     const phi = Math.acos(2 * Math.random() - 1);
     // Flattened ellipsoid — wider than tall
@@ -633,9 +651,32 @@ function makeMilkyWay() {
   const haloMat = new THREE.PointsMaterial({
     size: 2.2, map: getPointTexture(), vertexColors: true,
     sizeAttenuation: false, blending: THREE.AdditiveBlending,
-    depthWrite: false, transparent: true, opacity: 0.8
+    depthWrite: false, transparent: true, opacity: 0.55
   });
   group.add(new THREE.Points(haloGeo, haloMat));
+
+  // ── The photographic disc ──────────────────────────────────────────
+  // R. Hurt's Milky Way map (NASA/JPL-Caltech, from Spitzer survey data)
+  // — the canonical portrait of our galaxy — laid flat in the galactic
+  // plane as real geometry: the iconic barred spiral seen from above,
+  // correct foreshortening on a dive at the rim, paper-thin edge-on
+  // where the particle disc and bulge shells carry the profile.
+  if (photoTex) {
+    const planeSize = 624000 * K * 2.5; // photo's disc edge lands near R
+    const mwPlaneMat = new THREE.MeshBasicMaterial({
+      map: photoTex,
+      transparent: true,
+      opacity: 0.85,
+      blending: THREE.AdditiveBlending,
+      depthWrite: false,
+      side: THREE.DoubleSide,
+    });
+    const plane = new THREE.Mesh(
+      new THREE.PlaneGeometry(planeSize, planeSize), mwPlaneMat);
+    plane.rotateX(-Math.PI / 2);
+    plane.rotateZ(0.71); // image's Sun side roughly toward actual Sol
+    group.add(plane);
+  }
 
   // No tilt here — tilt is applied by a parent group so this inner group
   // can spin around the galactic axis cleanly (see createStars).
@@ -650,6 +691,8 @@ const _spPrevCam = new THREE.Vector3();
 let _spHasPrev = false;
 let _starTargetOpacity = 1.0;
 let _starCurrentOpacity = 1.0;
+let _galaxyF = 1.0;            // 1 = deep inside the Milky Way, 0 = intergalactic space
+const _farSkyMats = [];        // deep-backdrop materials faded by galaxy membership
 
 // Milky Way group — separate sub-group so we can rotate the galaxy slowly
 // and keep it offset from the Sun's position.
@@ -658,7 +701,7 @@ let _milkyWayGroup = null;
 // can scale them uniformly.
 const _milkyWayMats = []; // { material, baseOpacity }
 
-export function createStars() {
+export function createStars(textures) {
   const group = new THREE.Group();
   group.renderOrder = -10; // render before all planets
 
@@ -692,6 +735,14 @@ export function createStars() {
   for (let c = 0; c < 9; c++) _farSkyGroup.add(makeSkyCluster());
   group.add(_farSkyGroup);
 
+  // Record far-sky bases so galaxy membership can fade the whole deep
+  // backdrop (nebulosity, jewels, clusters) when you leave the galaxy.
+  _farSkyGroup.traverse((o) => {
+    if (o.material && o.material.opacity !== undefined) {
+      _farSkyMats.push({ material: o.material, baseOpacity: o.material.opacity });
+    }
+  });
+
   // Milky Way galaxy — three nested groups:
   //   mwOuter    → positioned at the galactic center (camera-relative)
   //   mwTilted   → applies the axial tilt relative to the world
@@ -706,7 +757,7 @@ export function createStars() {
   mwTilted.rotation.z = 0.04;
   const mwRotator = new THREE.Group();
 
-  mwRotator.add(makeMilkyWay());
+  mwRotator.add(makeMilkyWay(textures && textures.landmarkMilkyWay));
 
   // Galactic core bulge — shells are children of the rotator so they
   // stay locked to the galactic frame (they're symmetric, so the spin
@@ -722,8 +773,9 @@ export function createStars() {
     { r: 18000,  color: 0xffeecc, opacity: 0.10  },  // bright bulge
     { r: 7000,   color: 0xfff3d8, opacity: 0.18  },  // hot center
   ];
+  const shellK = MILKY_WAY_RADIUS / 624000;
   for (const s of coreShells) {
-    const geo = new THREE.SphereGeometry(s.r, 40, 40);
+    const geo = new THREE.SphereGeometry(s.r * shellK, 40, 40);
     const mat = new THREE.MeshBasicMaterial({
       color: s.color,
       transparent: true,
@@ -806,6 +858,15 @@ export function setStarFieldOpacity(opacity) {
 }
 
 /**
+ * Galaxy membership factor: 1 deep inside the Milky Way (full skybox-era
+ * star layers and deep-sky backdrop), 0 in intergalactic space (near-black
+ * sky, only a whisper of stray stars). Driven per-frame from main.
+ */
+export function setGalaxyInteriorFactor(f) {
+  _galaxyF = Math.max(0, Math.min(1, f));
+}
+
+/**
  * Lerp star field opacity toward target each frame.
  * Call once per frame from the render loop.
  */
@@ -824,11 +885,20 @@ export function updateStarFieldOpacity(dt) {
   for (const entry of _starBaseOpacities) {
     entry.material.opacity = entry.baseOpacity * _starCurrentOpacity;
   }
-  // Near volumes are shimmer-noise at warp speed — fade them with warp
+  // Per-volume modifiers: wrap-rate fade (a volume crossed in a couple of
+  // frames reads as shimmer noise, not motion — updateStarParallax tracks
+  // this per bucket), warp fade for the near shells, and galaxy
+  // membership (intergalactic space keeps only a whisper of stray stars).
+  const galaxyStarF = 0.25 + 0.75 * _galaxyF;
   for (const b of _localStarBuckets) {
-    if (b.isNear && b.material) {
-      b.material.opacity *= (1 - 0.9 * _warpK);
-    }
+    if (!b.material) continue;
+    let m = (b._speedFade ?? 1) * galaxyStarF;
+    if (b.isNear) m *= (1 - 0.9 * _warpK);
+    b.material.opacity *= m;
+  }
+  // Deep-sky backdrop belongs to the inside-the-galaxy view
+  for (const e of _farSkyMats) {
+    e.material.opacity = e.baseOpacity * _galaxyF;
   }
   // The skybox is controlled separately via setSkyboxOpacity so the intro
   // can fade it without affecting the star particle layers.

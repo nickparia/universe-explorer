@@ -125,16 +125,17 @@ function gaussRandom2() {
 }
 
 export function createSpiralGalaxy(group, def, textures) {
-  // Andromeda from the real NASA mosaic (GALEX UV survey), in 2.5D.
-  // floorSub removes the mosaic's circular tile seams — near-black sky
-  // level steps vanish once the floor is subtracted and the layers blend
-  // additively. Bulge floats ahead of the ring plane for parallax.
+  // Andromeda from the classic Kitt Peak optical portrait (Bill
+  // Schoening, NSF 0.9m — the textbook photograph of M31), in 2.5D:
+  // warm core, blue spiral disc, dust lanes, and both companions (M32,
+  // M110) in frame. floorSub kills the sky glow + plate vignette so the
+  // additive layers sit on true black.
   const sP = def.size * (def._scaleUnit || 500);
   const layers = textures && textures.landmarkAndromeda
     ? makePhotoLayers(textures.landmarkAndromeda, [
-        { kind: 'full', floorSub: 30 },
-        { kind: 'cool', floorSub: 30, lumLo: 150 },
-        { kind: 'bright', floorSub: 30, lumLo: 105 },
+        { kind: 'full', floorSub: 34 },
+        { kind: 'cool', floorSub: 34, lumLo: 140 },
+        { kind: 'bright', floorSub: 34, lumLo: 118 },
       ])
     : null;
 

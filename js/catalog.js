@@ -157,7 +157,7 @@ export const LOCATIONS = [
   {
     id: 'andromeda-galaxy',
     name: 'ANDROMEDA GALAXY',
-    tier: 'intergalactic', dist: 12000, angle: 5.2, phi: 0.5,
+    tier: 'intergalactic', dist: 120000, angle: 5.2, phi: 0.5,
     size: 800, color: 0x8899dd, visual: 'spiral_galaxy',
     imagery: null,
     music: ['audio/vivaldi_spring_largo.mp3'],
@@ -171,7 +171,7 @@ export const LOCATIONS = [
   {
     id: 'sombrero-galaxy',
     name: 'SOMBRERO GALAXY',
-    tier: 'intergalactic', dist: 14000, angle: 2.0, phi: -0.7,
+    tier: 'intergalactic', dist: 150000, angle: 2.0, phi: -0.7,
     size: 750, color: 0xddaa66, visual: 'sombrero_galaxy',
     imagery: null,
     music: ['audio/pachelbel_canon.mp3'],
@@ -185,7 +185,7 @@ export const LOCATIONS = [
   {
     id: 'bootes-void',
     name: 'BOOTES VOID',
-    tier: 'intergalactic', dist: 18000, angle: 3.2, phi: 0.3,
+    tier: 'intergalactic', dist: 220000, angle: 3.2, phi: 0.3,
     size: 1200, color: 0x112233, visual: 'void',
     imagery: null,
     music: ['audio/part_spiegel.mp3'],
