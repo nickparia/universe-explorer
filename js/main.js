@@ -269,6 +269,7 @@ async function boot() {
 
   let _frameCount = 0;
   let _galIn = null, _galEx = 0, _galVol = 1;
+  let _voidDim = 1; // Bootes proximity dims even the home galaxy — nothing survives the void
 const PHOTO_CONTEXT_VISUALS = new Set(['pillars', 'crab', 'carina', 'horsehead', 'ring', 'eta_carinae', 'supermassive_bh']); // smoothed galaxy-membership fades
 
 function animate() {
@@ -357,10 +358,12 @@ function animate() {
         // bed thins — absence you can hear. Same law as the visuals.
         setMusicDuck(1 - smoothed);
         setVoidHush(1 - smoothed);
+        _voidDim = smoothed;
       } else {
         setStarFieldOpacity(1.0);
         setMusicDuck(0);
         setVoidHush(0);
+        _voidDim = 1;
       }
     }
     updateStarFieldOpacity(dt);
@@ -446,7 +449,7 @@ function animate() {
       _galEx += (exterior - _galEx) * gk;
       _galVol += (volume - _galVol) * gk;
       setSkyboxOpacity(0.9 * _galIn);
-      setMilkyWayOpacity(_galEx, _galVol);
+      setMilkyWayOpacity(_galEx * _voidDim, _galVol);
       setGalaxyInteriorFactor(_galIn);
       setHomeBeaconFactor(_galIn);
     }
