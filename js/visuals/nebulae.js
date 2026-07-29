@@ -210,14 +210,18 @@ export function addOutskirtsShroud(group, s, opts = {}) {
     });
     const pts = new THREE.Points(geom, mat);
     pts.renderOrder = order;
+    pts.userData._shroud = true;
     group.add(pts);
   };
 
-  // Parent-cloud wisps: huge, whisper-dim, far beyond the photo
+  // Parent-cloud wisps: whisper-dim, far beyond the photo. Many SMALL
+  // wisps, never few large ones — a big soft sprite crossed up close
+  // reads as a bokeh smudge hanging in the void, while small overlapping
+  // wisps melt into continuous nebulosity.
   {
-    const buf = shell(110, 1.8, reach, 1.5, flat);
-    for (let i = 0; i < 110; i++) tint(buf.colors, i, 0.028 + Math.random() * 0.045);
-    points(buf, s * 1.7, 0.07, 0);
+    const buf = shell(240, 2.0, reach, 1.5, flat);
+    for (let i = 0; i < 240; i++) tint(buf.colors, i, 0.028 + Math.random() * 0.045);
+    points(buf, s * 0.9, 0.055, 0);
   }
   // Dust motes: sparse grains through the whole volume — what streams
   // past the glass on the way in

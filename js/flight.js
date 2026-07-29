@@ -1575,15 +1575,16 @@ export function warpTo(targetName, mode = 'warp') {
     const legLen = camPos.distanceTo(warpTargetP);
     const _dirLeg = new THREE.Vector3().copy(warpTargetP).sub(camPos).normalize();
     const candidates = [];
+    const _rejects = []; // __routeDebug — why each sight was passed over
     const consider = (pos, r, isLm, name) => {
       const toC = new THREE.Vector3().copy(pos).sub(camPos);
       const s = toC.dot(_dirLeg);
-      if (s < legLen * 0.18 || s > legLen * 0.82) return; // mid-route only
+      if (s < legLen * 0.18 || s > legLen * 0.82) { _rejects.push(`${name}: frac ${(s / legLen).toFixed(2)}`); return; } // mid-route only
       const closest = new THREE.Vector3().copy(camPos).addScaledVector(_dirLeg, s);
       const lat = closest.distanceTo(pos);
       const flybyDist = r * (isLm ? 2.2 : 9);
-      if (lat < flybyDist) return;              // already flying through it
-      if (lat > Math.min(legLen * 0.22, r * 60)) return; // too far off-corridor
+      if (lat < flybyDist) { _rejects.push(`${name}: inside flyby ${Math.round(lat)}<${Math.round(flybyDist)}`); return; } // already flying through it
+      if (lat > Math.min(legLen * 0.22, r * 60)) { _rejects.push(`${name}: off-corridor ${Math.round(lat)}`); return; } // too far off-corridor
       candidates.push({ pos: pos.clone(), closest, flybyDist, name, frac: s / legLen, score: r / lat });
     };
     for (const lm of allLandmarks) {
@@ -1608,6 +1609,13 @@ export function warpTo(targetName, mode = 'warp') {
       picked.push(c);
     }
     picked.sort((a, b) => a.frac - b.frac);
+    if (typeof window !== 'undefined') {
+      window.__routeDebug = {
+        target: targetName, legLen: Math.round(legLen),
+        candidates: candidates.map((c) => `${c.name}@${c.frac.toFixed(2)}`),
+        picked: picked.map((p) => p.name), rejects: _rejects,
+      };
+    }
     if (picked.length) {
       // Pass points: pulled from each sight toward the corridor, at a
       // respectful flyby distance — the spline arcs around the body and
