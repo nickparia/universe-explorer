@@ -727,9 +727,10 @@ async function handleVoice(request, env) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text:
-              'Speak slowly and very calmly, softly, with gentle unhurried ' +
-              'serenity — a ship\'s computer speaking over a cabin intercom, ' +
-              'never excited: ' + text }] }],
+              'Speak in a low, deep, quiet register, softly and with calm ' +
+              'serenity, at an easy natural conversational pace — a ship\'s ' +
+              'computer over a cabin intercom, never rushed, never ' +
+              'dramatic, never excited: ' + text }] }],
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: {

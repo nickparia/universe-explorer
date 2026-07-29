@@ -36,7 +36,7 @@ function ensureContext() {
     // The intercom: high-pass and low-pass shoulders, a presence peak
     // that adds the faint metal, and soft saturation for the wire.
     const hp = AC.createBiquadFilter();
-    hp.type = 'highpass'; hp.frequency.value = 210; hp.Q.value = 0.8;
+    hp.type = 'highpass'; hp.frequency.value = 185; hp.Q.value = 0.8;
     const lp = AC.createBiquadFilter();
     lp.type = 'lowpass'; lp.frequency.value = 3400; lp.Q.value = 0.9;
     const peak = AC.createBiquadFilter();
@@ -149,13 +149,17 @@ export async function prepareVoice(text) {
       stopActive();
       const src = AC.createBufferSource();
       src.buffer = buffer;
+      // A shade lower: ~a semitone down. The model is directed to an
+      // easy pace, so the slight slowing here still nets out quicker
+      // than the original delivery — deeper AND brisker.
+      src.playbackRate.value = 0.94;
       src.connect(chainIn);
       src.onended = () => { if (activeSource === src) stopActive(); };
       activeSource = src;
       setVoiceDuck(1);
       levelTimer = setInterval(meterLoop, 55);
       src.start();
-      return buffer.duration;
+      return buffer.duration / 0.94;
     },
     cancel() { /* never played — nothing to release */ },
   };
