@@ -17,6 +17,7 @@ import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
 import { initCompanionMark, setCompanionState, setTraceCursor } from './companion-mark.js';
 import { prepareVoice, hushVoice } from './voice.js';
+import { musicCommand, getNowPlaying } from './music.js';
 import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
 import { openSignonTerminal } from './signon.js';
 
@@ -316,6 +317,21 @@ function paceFor(durationS, text) {
   return Math.max(22, Math.min(72, (durationS * 1000) / Math.max(1, text.length)));
 }
 
+/** What the voice actually says: the printed line minus the traveler's
+ * name — TTS mangles names, and a mispronounced name is worse than an
+ * unspoken one. The glass keeps the name; the voice keeps its dignity. */
+function spokenText(text) {
+  const name = getCrewName();
+  if (!name) return text;
+  const esc = name.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+  return text
+    .replace(new RegExp('[,;—–-]?\\s*\\b' + esc + '\\b\\s*([,;])?', 'gi'), '$1 ')
+    .replace(/\s{2,}/g, ' ')
+    .replace(/\s+([.!?,;])/g, '$1')
+    .replace(/^[,;]\s*/, '')
+    .trim();
+}
+
 // Complete any active printout instantly (full text stays on the glass).
 function cancelStream() {
   if (!stream) return;
@@ -352,7 +368,7 @@ export function companionSay(text) {
   line.textContent = '▎';
   line.style.animation = 'sc-blink 1.06s steps(2,start) infinite';
   (async () => {
-    const v = await prepareVoice(text);
+    const v = await prepareVoice(spokenText(text));
     line.style.animation = '';
     if (!line.isConnected) { if (v) v.cancel(); return; }
     if (busy || stream) {
@@ -464,6 +480,34 @@ async function send() {
     }
     return;
   }
+  // Music intents: the library is Sol's own — the code moves the
+  // needle, then the question flows to the brain WITH a note of what
+  // was just done, so the acknowledgment comes in Sol's real voice.
+  let acted = '';
+  {
+    const s = q.toLowerCase();
+    const wantsPlay = /^(play|put on)\b/.test(s) ||
+      (/\bmusic\b/.test(s) && /\b(play|some|put|start|on|score|little)\b/.test(s)) ||
+      /^music( please)?$/.test(s);
+    const wantsStop = (/\b(stop|pause|off|enough|silence|kill|no more)\b/.test(s) && /\bmusic\b/.test(s)) ||
+      /^stop the music$/.test(s);
+    if (wantsStop) {
+      acted = musicCommand('stop') || '';
+    } else if (/\b(quieter|softer|turn (it|the music) down|lower the (music|volume))\b/.test(s)) {
+      acted = musicCommand('quieter') || '';
+    } else if (/\b(louder|turn (it|the music) up)\b/.test(s)) {
+      acted = musicCommand('louder') || '';
+    } else if (wantsPlay) {
+      const hint = s.replace(/^(play|put on)\b/, '')
+        .replace(/\b(music|some|something|the|a|please|for me|would you|now)\b/g, '')
+        .trim();
+      acted = musicCommand('play', hint.length >= 3 ? hint : null) || '';
+    } else if (/\bwhat('s| is) (this|playing|the music)\b/.test(s)) {
+      const nowP = getNowPlaying();
+      acted = nowP ? 'the cabin speakers are currently playing "' + nowP + '"' : 'no music is playing just now';
+    }
+  }
+
   // The ship listens everywhere — in orbit it knows the place beneath
   // you; adrift between places it simply knows you're in transit.
   const locName = currentLocation || 'deep space, between destinations';
@@ -495,6 +539,7 @@ async function send() {
         history: past,
         notes: notes.slice(0, 4000),
         crew: getCrewName() || '',
+        acted,
         ...bondSignals(),
       }),
     });
@@ -502,10 +547,22 @@ async function send() {
     if (res.ok && data.answer) {
       const answer = data.answer.trim();
       history.push({ role: 'assistant', content: answer });
-      const v = await prepareVoice(answer);
+      // The traveler is waiting on an ANSWER: give the voice a few
+      // seconds to warm so print and speech start together, but never
+      // hold the words hostage — past the grace, the teletype goes
+      // ahead and the voice joins mid-print when it lands.
+      const prep = prepareVoice(spokenText(answer));
+      const v = await Promise.race([prep, new Promise((r) => setTimeout(() => r('slow'), 6000))]);
       pending.style.animation = '';
-      const dur = v ? v.play() : 0;
-      streamInto(pending, answer, paceFor(dur, answer));
+      if (v === 'slow') {
+        streamInto(pending, answer);
+        prep.then((late) => {
+          if (late && stream && stream.line === pending) late.play();
+        });
+      } else {
+        const dur = v ? v.play() : 0;
+        streamInto(pending, answer, paceFor(dur, answer));
+      }
       scheduleReflect();
     } else {
       pending.style.animation = '';

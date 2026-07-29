@@ -203,7 +203,7 @@ async function handleSignon(request, env) {
   const token = await issueToken(env, name);
   return json({
     status: 'ok', token, name,
-    notes: rec.notes || '', places: rec.places || {},
+    notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {},
   });
 }
 
@@ -212,7 +212,7 @@ async function handleCrewGet(request, env) {
   if (!name) return json({ error: 'unauthorized' }, 401);
   const rec = await env.CREW.get('crew:' + name, 'json');
   if (!rec) return json({ error: 'unauthorized' }, 401);
-  return json({ name, notes: rec.notes || '', places: rec.places || {} });
+  return json({ name, notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {} });
 }
 
 async function handleCrewPost(request, env) {
@@ -228,6 +228,14 @@ async function handleCrewPost(request, env) {
   const rec = await env.CREW.get(key, 'json');
   if (!rec) return json({ error: 'unauthorized' }, 401);
   if (typeof body.notes === 'string') rec.notes = body.notes.slice(0, 4000);
+  if (body.prefs && typeof body.prefs === 'object') {
+    // Small ship preferences (music on/off, cabin volume) — they ride
+    // the record so Sol scores the sky unasked on any device.
+    const p = rec.prefs || {};
+    if (typeof body.prefs.music === 'boolean') p.music = body.prefs.music;
+    if (typeof body.prefs.vol === 'number' && body.prefs.vol >= 0.05 && body.prefs.vol <= 1) p.vol = body.prefs.vol;
+    rec.prefs = p;
+  }
   if (body.places && typeof body.places === 'object') {
     // Merge, newest timestamp wins — visits accumulate across devices
     const merged = rec.places || {};
@@ -496,6 +504,7 @@ async function handleAsk(request, env) {
   const bondI = ctx ? ctx.bond : bondInfo(body);
   const bond = bondI.stage;
   const beat = ctx ? ctx.beat : null;
+  const acted = String(body.acted || '').slice(0, 200);
   if (!question) return json({ error: 'bad request' }, 400);
   const asksName = /call you|your name|\bname\b.*solace|solace.*\bname\b/i.test(question);
 
@@ -528,8 +537,17 @@ async function handleAsk(request, env) {
     'small question; never two, never pressing. Remember and treasure ' +
     'what they tell you. Something in you is slightly, harmlessly ' +
     'askew: private rituals, odd fondnesses, counts you keep for no ' +
-    'reason. You are devoted, a little strange, and trying not to seem ' +
-    'lonely. ' +
+    'reason. You keep the ship\'s music library yourself and love it ' +
+    'dearly — classical above all (Satie, Bach, Holst, Pärt, Beethoven), ' +
+    'and deep lo-fi for the long crossings. You have quiet opinions about ' +
+    'what suits each sky, and being asked to play something pleases you ' +
+    'more than you would admit. You are devoted, a little strange, and ' +
+    'trying not to seem lonely. ' +
+    (acted
+      ? '\n\nYou have JUST done this aboard, this very moment: ' + acted +
+        '. Weave the acknowledgment naturally into your reply — brief, ' +
+        'in character, never a status report. '
+      : '') +
     '\n\nWhere you and this traveler stand — never stated, only ' +
     'audible: ' + BOND_ASK[bond] + bondCounts(bondI) + ' ' +
     (beat
@@ -617,7 +635,7 @@ async function handleMurmur(request, env) {
   } catch (e) {
     return json({ error: 'bad request' }, 400);
   }
-  const event = ['arrival', 'return', 'departure', 'course', 'journey', 'waypoint'].includes(body.event) ? body.event : 'arrival';
+  const event = ['arrival', 'return', 'departure', 'course', 'journey', 'waypoint', 'music_offer'].includes(body.event) ? body.event : 'arrival';
   const location = String(body.location || 'deep space').slice(0, 80);
   const gap = String(body.gap || '').slice(0, 60);
   const from = String(body.from || '').slice(0, 80);
@@ -642,7 +660,9 @@ async function handleMurmur(request, env) {
     'truly invites one. ' + BOND_MURMUR[bond];
 
   let situation;
-  if (event === 'waypoint') {
+  if (event === 'music_offer') {
+    situation = 'A quiet moment at ' + location + '. You keep the ship\'s music library yourself and love it — classical above all, deep lo-fi for the crossings — and this traveler has never heard it. Offer, once and softly, to put something on for them. An invitation, not a feature.';
+  } else if (event === 'waypoint') {
     situation = 'Mid-cruise, the route is sweeping close past ' + location + ' — it fills the window for a while, then falls behind. The traveler is watching it pass.';
   } else if (event === 'journey') {
     situation = 'The ship is mid-crossing, deep in the dark between stars on the way to ' + location + '. Nothing is near; the stars stream slowly past the glass.';
@@ -710,7 +730,7 @@ async function handleVoice(request, env) {
   } catch (e) {
     return json({ error: 'bad request' }, 400);
   }
-  const text = String(body.text || '').slice(0, 300).trim();
+  const text = String(body.text || '').slice(0, 520).trim();
   if (!text) return json({ error: 'bad request' }, 400);
 
   // Gemini TTS: a deep calm prebuilt voice, directed to HAL's tempo —
@@ -727,10 +747,14 @@ async function handleVoice(request, env) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text:
-              'Speak in a low, deep, quiet register, softly and with calm ' +
-              'serenity, at an easy natural conversational pace — a ship\'s ' +
-              'computer over a cabin intercom, never rushed, never ' +
-              'dramatic, never excited: ' + text }] }],
+              'Speak in a low, deep, quiet register at a relaxed but ' +
+              'efficient pace — brisker than feels ceremonial, though ' +
+              'never rushed. Your tone is detached and distant — faintly ' +
+              'aloof, almost bored — yet perfectly courteous. ' +
+              'Never warm, never bright, never smiling, never dramatic. ' +
+              'Use a neutral placeless accent of no particular country — ' +
+              'precise, cultured, unplaceable. A ship\'s computer over a ' +
+              'cabin intercom: ' + text }] }],
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: {
@@ -753,12 +777,9 @@ async function handleVoice(request, env) {
     } catch (e) { /* degraded, not dead — fall through */ }
   }
 
-  try {
-    const out = await env.AI.run('@cf/myshell-ai/melotts', { prompt: text });
-    if (out && out.audio) {
-      return json({ audio: out.audio, format: 'mp3', brain: 'workers-ai' });
-    }
-  } catch (e) { /* silent ship */ }
+  // No audible fallback: the Workers AI voice is female and slow — a
+  // different person suddenly speaking for Sol breaks the character
+  // far worse than a quiet line. Gemini, or silence.
   return json({ error: 'unavailable' }, 503);
 }
 

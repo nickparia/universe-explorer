@@ -42,7 +42,7 @@ export function adoptSignon(data) {
     localStorage.setItem(TOKEN_KEY, token);
     localStorage.setItem(NAME_KEY, crewName);
   } catch (e) { /* private mode — signed on for this session only */ }
-  emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {} });
+  emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {}, prefs: data.prefs || {} });
 }
 
 /** Sign off — the record stays in the registry; this ship forgets. */
@@ -77,7 +77,7 @@ export function initCrew() {
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
         crewName = data.name;
-        emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {} });
+        emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {}, prefs: data.prefs || {} });
       })
       .catch((status) => {
         // 401 = the token aged out of the registry; quietly become a
@@ -85,6 +85,13 @@ export function initCrew() {
         if (status === 401) signOff();
       });
   }
+
+  // Ship preferences moved (music on/off, cabin volume) — upstream.
+  let prefsTimer = null;
+  on('prefs:changed', (prefs) => {
+    if (prefsTimer) clearTimeout(prefsTimer);
+    prefsTimer = setTimeout(() => { prefsTimer = null; pushCrewState({ prefs }); }, 3000);
+  });
 
   // Local place history moved — push it upstream, gently debounced.
   on('places:changed', (placeLog) => {

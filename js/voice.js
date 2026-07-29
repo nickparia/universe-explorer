@@ -21,10 +21,11 @@ let analyser = null;
 let activeSource = null;
 let levelTimer = null;
 
-// TTS synthesis genuinely takes 3-6s — an impatient abort here reads
-// as "voice randomly missing" (and the first cut at 3.5s did exactly
-// that). The blinking cursor carries the wait; a breath, not a lag.
-const PREP_TIMEOUT_MS = 9000;
+// TTS synthesis genuinely takes 3-6s (longer lines, longer) — an
+// impatient abort here reads as "voice randomly missing" (the first
+// cut at 3.5s did exactly that; the second bug was a 300-char guard
+// that silently muted every full-length answer).
+const PREP_TIMEOUT_MS = 14000;
 
 function ensureContext() {
   if (!AC) {
@@ -108,7 +109,7 @@ function meterLoop() {
  * or timeout — the caller lets the teletype speak alone.
  */
 export async function prepareVoice(text) {
-  if (!text || text.length > 300) return null;
+  if (!text || text.length > 520) return null;
   if (!ensureContext()) return null;
   // Autoplay-blocked context: no voice until the traveler has touched
   // something. The text carries the line; the voice joins next time.
@@ -149,17 +150,17 @@ export async function prepareVoice(text) {
       stopActive();
       const src = AC.createBufferSource();
       src.buffer = buffer;
-      // A shade lower: ~a semitone down. The model is directed to an
-      // easy pace, so the slight slowing here still nets out quicker
-      // than the original delivery — deeper AND brisker.
-      src.playbackRate.value = 0.94;
+      // A shade lower without dragging: the depth mostly survives at
+      // 0.955 while giving back some tempo, and the directive asks the
+      // model itself for a brisker-than-ceremonial delivery.
+      src.playbackRate.value = 0.955;
       src.connect(chainIn);
       src.onended = () => { if (activeSource === src) stopActive(); };
       activeSource = src;
       setVoiceDuck(1);
       levelTimer = setInterval(meterLoop, 55);
       src.start();
-      return buffer.duration / 0.94;
+      return buffer.duration / 0.955;
     },
     cancel() { /* never played — nothing to release */ },
   };

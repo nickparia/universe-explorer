@@ -2,7 +2,7 @@
 
 import { AU } from './constants.js';
 import { getLandmarks } from './deepspace.js';
-import { on } from './bus.js';
+import { on, emit } from './bus.js';
 
 // ── Track catalog ──────────────────────────────────────────────
 // Lofi is the foundation (long ambient sessions; sits over the synth
@@ -53,6 +53,10 @@ const ZONES = [
 let warping = false;
 on('warp:start', () => { warping = true; });
 on('warp:end', () => { warping = false; });
+
+// A crew record opening carries the music preference across devices —
+// applied silently; Sol simply scores the sky the way they like it.
+on('crew:signed-on', ({ prefs }) => applyMusicPref(prefs));
 
 // ── Zone detection with landmark support ─────────────────────
 // Travel deliberately does NOT change the music: the playlist is the
@@ -122,6 +126,113 @@ let usingSynth     = false;
 let audioFailed    = false;
 let failCount      = 0;
 let _currentTrackPath = null;  // track path for landmark/warp zones (for replay)
+
+// ── The library is Sol's own ──────────────────────────────────
+// There is no music interface: the traveler ASKS the ship, and the
+// preference (on/off, volume) persists — locally, and in the crew
+// record for signed-on travelers, so Sol scores the sky unasked on
+// the next voyage. The ship boots quiet until first invited.
+const WANT_KEY = 'solace_music_on_v1';
+const VOL_KEY = 'solace_music_vol_v1';
+let musicWanted = false;
+try {
+  musicWanted = localStorage.getItem(WANT_KEY) === '1';
+  const v = parseFloat(localStorage.getItem(VOL_KEY));
+  if (!Number.isNaN(v)) masterVol = Math.max(0.05, Math.min(1, v));
+} catch (e) { /* private mode */ }
+let _lastPos = null, _lastBodies = null; // cached from updateMusic for immediate commands
+
+function persistPrefs() {
+  try {
+    localStorage.setItem(WANT_KEY, musicWanted ? '1' : '0');
+    localStorage.setItem(VOL_KEY, String(masterVol));
+  } catch (e) { /* fine */ }
+  emit('prefs:changed', { music: musicWanted, vol: masterVol });
+}
+
+function prettyTrack(path) {
+  if (!path) return null;
+  return path.split('/').pop().replace(/\.(mp3|ogg)$/, '').replace(/_/g, ' ');
+}
+
+export function isMusicWanted() { return musicWanted; }
+export function getNowPlaying() {
+  const active = getActiveEl();
+  if (usingSynth && musicWanted) return 'the ship\'s own hum';
+  if (!active || active.paused || !active.src) return null;
+  return prettyTrack(decodeURIComponent(active.src));
+}
+
+/** Adopt a preference from the crew record — silently, no ceremony. */
+export function applyMusicPref(prefs) {
+  if (!prefs) return;
+  if (typeof prefs.vol === 'number' && !Number.isNaN(prefs.vol)) {
+    masterVol = Math.max(0.05, Math.min(1, prefs.vol));
+  }
+  if (typeof prefs.music === 'boolean' && prefs.music !== musicWanted) {
+    musicWanted = prefs.music;
+    if (!musicWanted) { fadeOut(channelA, 3000); fadeOut(channelB, 3000); }
+  }
+  try {
+    localStorage.setItem(WANT_KEY, musicWanted ? '1' : '0');
+    localStorage.setItem(VOL_KEY, String(masterVol));
+  } catch (e) { /* fine */ }
+}
+
+/**
+ * Sol's hands on the library. action: 'play' | 'stop' | 'quieter' |
+ * 'louder'. hint: a composer / mood fragment ("bach", "lofi") matched
+ * against the library. Returns a short factual note of what happened,
+ * for the brain to acknowledge in character — or null.
+ */
+export function musicCommand(action, hint) {
+  if (action === 'stop') {
+    if (!musicWanted && !getNowPlaying()) return 'the music was already off';
+    musicWanted = false;
+    persistPrefs();
+    fadeOut(channelA, 3500);
+    fadeOut(channelB, 3500);
+    if (usingSynth && AC) AC.suspend();
+    return 'you let the music fall away';
+  }
+  if (action === 'quieter' || action === 'louder') {
+    masterVol = Math.max(0.05, Math.min(1, masterVol + (action === 'louder' ? 0.14 : -0.14)));
+    persistPrefs();
+    const active = getActiveEl();
+    if (active && !active.paused && !active._fadeInterval) active.volume = effVol();
+    if (usingSynth && masterGain) masterGain.gain.value = effVol();
+    return 'you brought the music ' + (action === 'louder' ? 'up a little' : 'down a little');
+  }
+  // play
+  musicWanted = true;
+  persistPrefs();
+  if (usingSynth) {
+    if (AC && AC.state === 'suspended') AC.resume();
+    return 'you woke the ship\'s own hum — the library is unreachable out here';
+  }
+  let track = null;
+  if (hint) {
+    const h = hint.toLowerCase();
+    const all = Object.values(TRACKS).flat();
+    track = all.find((p) => p.toLowerCase().includes(h)) || null;
+  }
+  const zone = (_lastPos && _lastBodies) ? detectZone(_lastPos, _lastBodies) : null;
+  if (track) {
+    currentZone = (zone && zone.name) || currentZone || 'deep';
+    crossfadeToTrack(track, currentZone);
+    return 'you put on "' + prettyTrack(track) + '"';
+  }
+  if (zone) {
+    currentZone = zone.name;
+    if (zone.track) crossfadeToTrack(zone.track, zone.name);
+    else crossfadeTo(currentZone);
+    const chosen = getActiveEl() && getActiveEl().src
+      ? prettyTrack(decodeURIComponent(getActiveEl().src)) : 'something fitting';
+    return 'you put on "' + chosen + '"' + (hint ? ' — nothing in the library matched "' + hint + '", so you chose yourself' : '');
+  }
+  currentZone = null; // updateMusic adopts the zone within a beat
+  return 'you started the music';
+}
 
 // Per-zone track index rotation
 const trackIdx = {};
@@ -343,7 +454,12 @@ export function initMusic() {
 
 // ── updateMusic ───────────────────────────────────────────────
 export function updateMusic(camPos, allBodies) {
+  _lastPos = camPos;
+  _lastBodies = allBodies;
   if (!musicStarted || paused) return;
+  // The library plays only when the traveler has asked for it — the
+  // ship boots quiet, and the preference persists across voyages.
+  if (!musicWanted) return;
 
   const now = performance.now();
   const dt  = (now - lastFrameTime) / 1000;

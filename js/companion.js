@@ -15,6 +15,7 @@ import { getLocation } from './catalog.js';
 import { setCompanionState, getCompanionState } from './companion-mark.js';
 import { companionSay, getTravelerNotes } from './shipchat.js';
 import { getCrewName, crewHeaders } from './crew.js';
+import { isMusicWanted } from './music.js';
 
 // ── Line pools — the HAL register: measured, courteous, a little too
 // attentive. {place} is replaced with the location name. ──────────────
@@ -244,8 +245,23 @@ export function initCompanion() {
  * @param {number} dt — wall-clock seconds
  * @param {{inDive:boolean, hullStress:number}|null} diveState
  */
+let _musicOffered = false;
+
 export function updateCompanion(dt, diveState) {
   tSec += dt;
+
+  // Once, ever: a traveler who has never heard the library gets a soft
+  // offer after they've settled in — an invitation, not a feature tour.
+  if (!_musicOffered && tSec > 110 && orbitName && !isMusicWanted() &&
+      tSec - lastMurmurAt > MURMUR_GAP) {
+    _musicOffered = true;
+    try {
+      if (!localStorage.getItem('solace_music_offered_v1')) {
+        localStorage.setItem('solace_music_offered_v1', '1');
+        brainMurmur('music_offer', orbitName, 0, null);
+      }
+    } catch (e) { /* private mode — stay quiet */ }
+  }
 
   // Danger: the dive is the one signal that overrides restraint.
   const diving = !!(diveState && diveState.inDive);
