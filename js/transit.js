@@ -24,7 +24,7 @@ const _tmp = new THREE.Vector3();
 const _lat = new THREE.Vector3();
 let _glintTimer = 6;
 
-const MAX_WISPS = 14;
+const MAX_WISPS = 8;
 
 // ── Space weather ────────────────────────────────────────────────────
 // Long crossings pass through weather: every minute or so the ship hits
@@ -34,8 +34,8 @@ const MAX_WISPS = 14;
 // cruise alive; uniform density would fade into wallpaper.
 let travelTime = 0;      // accumulated seconds of active travel
 let stormUntil = -1;     // travelTime at which the current squall ends
-let nextStormAt = 30 + Math.random() * 40;
-const STORM_WISPS = 18;
+let nextStormAt = 45 + Math.random() * 50;
+const STORM_WISPS = 10;
 
 // ── Nebula banks ─────────────────────────────────────────────────────
 // The set pieces between squalls: every minute or so a coherent bank of
@@ -57,7 +57,7 @@ function spawnBank(camPos, speed) {
   // One shared side so the bank passes as a single coherent mass
   _lat.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
     .addScaledVector(_dir, -_lat.dot(_dir)).normalize();
-  const count = 3 + Math.floor(Math.random() * 3);
+  const count = 2 + Math.floor(Math.random() * 2);
   const baseAhead = speed * 5;
   const passDist = baseAhead * (0.06 + Math.random() * 0.06);
   for (let i = 0; i < count; i++) {
@@ -74,11 +74,11 @@ function spawnBank(camPos, speed) {
     const pos = new THREE.Vector3().copy(camPos)
       .addScaledVector(_dir, lookahead)
       .addScaledVector(_lat, passDist * (0.85 + Math.random() * 0.4));
-    const size = passDist * (1.8 + Math.random() * 1.4);
+    const size = passDist * (1.2 + Math.random() * 0.9);
     sprite.scale.set(size, size * (0.35 + Math.random() * 0.3), 1);
     scene.add(sprite);
     setWorldPos(sprite, pos);
-    wisps.push({ sprite, pos, size, target: 0.11 + Math.random() * 0.11 });
+    wisps.push({ sprite, pos, size, target: 0.06 + Math.random() * 0.07 });
   }
 }
 
@@ -95,7 +95,7 @@ function makeWispTex() {
     const y = H * 0.5 + (Math.random() - 0.5) * H * 0.3;
     const r = H * (0.22 + Math.random() * 0.22);
     const g = ctx.createRadialGradient(x, y, 0, x, y, r);
-    g.addColorStop(0, 'rgba(255,255,255,0.45)');
+    g.addColorStop(0, 'rgba(255,255,255,0.28)');
     g.addColorStop(0.6, 'rgba(255,255,255,0.14)');
     g.addColorStop(1, 'rgba(255,255,255,0)');
     ctx.fillStyle = g;
@@ -172,11 +172,11 @@ function spawnWisp(camPos, speed, stormBoost) {
     .addScaledVector(_lat, latDist);
   // Sized to its passing distance so every wisp reads at a similar,
   // gentle angular scale — none dominate, none vanish
-  const size = Math.max(latDist * 1.4, lookahead * 0.1);
+  const size = Math.max(latDist * 1.0, lookahead * 0.07);
   sprite.scale.set(size, size * (0.35 + Math.random() * 0.3), 1);
   scene.add(sprite);
   setWorldPos(sprite, pos);
-  wisps.push({ sprite, pos, size, target: (0.11 + Math.random() * 0.15) * (stormBoost ? 1.3 : 1) });
+  wisps.push({ sprite, pos, size, target: (0.07 + Math.random() * 0.09) * (stormBoost ? 1.15 : 1) });
 }
 
 function spawnGlint(camPos, speed) {
@@ -224,8 +224,8 @@ export function updateTransit(dt, camPos, feel) {
   if (active) {
     travelTime += dt;
     if (travelTime >= nextStormAt && travelTime >= stormUntil) {
-      stormUntil = travelTime + 8 + Math.random() * 6;
-      nextStormAt = stormUntil + 55 + Math.random() * 55;
+      stormUntil = travelTime + 6 + Math.random() * 5;
+      nextStormAt = stormUntil + 90 + Math.random() * 70;
     }
   }
   const inStorm = active && travelTime < stormUntil;
@@ -238,14 +238,14 @@ export function updateTransit(dt, camPos, feel) {
 
   // Spawn while the drive is working — hard in a squall, sparse in clear void
   const cap = inStorm ? STORM_WISPS : MAX_WISPS;
-  const rate = inStorm ? 5.5 : 2.2;
+  const rate = inStorm ? 3 : 1.4;
   if (active && wisps.length < cap && Math.random() < dt * rate) {
     spawnWisp(camPos, speed, inStorm);
   }
   // Nebula banks pass in the clear stretches, between squalls
   if (active && !inStorm && travelTime >= nextBankAt) {
     spawnBank(camPos, speed);
-    nextBankAt = travelTime + 80 + Math.random() * 60;
+    nextBankAt = travelTime + 130 + Math.random() * 80;
   }
   _glintTimer -= dt;
   if (active && _glintTimer <= 0) {

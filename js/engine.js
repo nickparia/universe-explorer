@@ -366,14 +366,17 @@ function makeDriftGlows(count, half) {
   geo.setAttribute('position', new THREE.BufferAttribute(positions, 3));
   geo.setAttribute('color', new THREE.BufferAttribute(colors, 3));
   const mat = new THREE.PointsMaterial({
-    size: 900000,               // world units — soft giants, shrink with distance
+    // Soft giants that shrink with distance. Restraint: at 900k/0.12 a
+    // near pass filled a quarter of the frame with colored fog — depth
+    // should be felt at the edge of vision, never as a cloud bank.
+    size: 420000,
     map: getPointTexture(),
     vertexColors: true,
     sizeAttenuation: true,
     blending: THREE.AdditiveBlending,
     depthWrite: false,
     transparent: true,
-    opacity: 0.12,
+    opacity: 0.035,
   });
   const pts = new THREE.Points(geo, mat);
   // fadeShift: these are physically huge and pass CLOSE, so the limit that
@@ -663,7 +666,9 @@ function makeMilkyWay(photoTex) {
     const mwPlaneMat = new THREE.MeshBasicMaterial({
       map: photoTex,
       transparent: true,
-      opacity: 0.72,
+      // Restraint: additive + the bloom pass blow the disc into a solid
+      // white egg from intergalactic range at anything higher.
+      opacity: 0.42,
       blending: THREE.AdditiveBlending,
       depthWrite: false,
       side: THREE.DoubleSide,
@@ -718,7 +723,7 @@ export function createStars(textures) {
   // Passers-by: rare, LARGE, soft glows (distant nebulae) with true size
   // attenuation — during a cruise one drifts past every few seconds, big
   // and dim and unhurried. Depth you can feel, not more dots.
-  group.add(makeDriftGlows(30, 22000000));
+  group.add(makeDriftGlows(18, 22000000));
 
   // The deep sky is a place, not a salt-scatter: the far backdrop gets
   // colored nebulosity regions, vivid jewel stars, and a few tight
@@ -766,11 +771,11 @@ export function createStars(textures) {
   // Restraint: additive shells + bloom saturate to a white egg from
   // intergalactic range — the bulge should glow, not burn.
   const coreShells = [
-    { r: 140000, color: 0xffe4a8, opacity: 0.010 },  // far halo haze
-    { r: 80000,  color: 0xffe8b8, opacity: 0.018 },  // outer haze
-    { r: 40000,  color: 0xffddaa, opacity: 0.032 },  // mid
-    { r: 18000,  color: 0xffeecc, opacity: 0.04  },  // bright bulge
-    { r: 7000,   color: 0xfff3d8, opacity: 0.065 },  // hot center
+    { r: 140000, color: 0xffe4a8, opacity: 0.005 },  // far halo haze
+    { r: 80000,  color: 0xffe8b8, opacity: 0.009 },  // outer haze
+    { r: 40000,  color: 0xffddaa, opacity: 0.016 },  // mid
+    { r: 18000,  color: 0xffeecc, opacity: 0.022 },  // bright bulge
+    { r: 7000,   color: 0xfff3d8, opacity: 0.036 },  // hot center
   ];
   const shellK = MILKY_WAY_RADIUS / 624000;
   for (const s of coreShells) {
