@@ -220,8 +220,8 @@ export function addOutskirtsShroud(group, s, opts = {}) {
   // wisps melt into continuous nebulosity.
   {
     const buf = shell(240, 2.0, reach, 1.5, flat);
-    for (let i = 0; i < 240; i++) tint(buf.colors, i, 0.028 + Math.random() * 0.045);
-    points(buf, s * 0.9, 0.055, 0);
+    for (let i = 0; i < 240; i++) tint(buf.colors, i, 0.022 + Math.random() * 0.036);
+    points(buf, s * 0.9, 0.04, 0);
   }
   // Dust motes: sparse grains through the whole volume — what streams
   // past the glass on the way in

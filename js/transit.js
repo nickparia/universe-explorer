@@ -24,7 +24,7 @@ const _tmp = new THREE.Vector3();
 const _lat = new THREE.Vector3();
 let _glintTimer = 6;
 
-const MAX_WISPS = 22;
+const MAX_WISPS = 14;
 
 // ── Space weather ────────────────────────────────────────────────────
 // Long crossings pass through weather: every minute or so the ship hits
@@ -34,8 +34,8 @@ const MAX_WISPS = 22;
 // cruise alive; uniform density would fade into wallpaper.
 let travelTime = 0;      // accumulated seconds of active travel
 let stormUntil = -1;     // travelTime at which the current squall ends
-let nextStormAt = 20 + Math.random() * 30;
-const STORM_WISPS = 30;
+let nextStormAt = 30 + Math.random() * 40;
+const STORM_WISPS = 18;
 
 // ── Nebula banks ─────────────────────────────────────────────────────
 // The set pieces between squalls: every minute or so a coherent bank of
@@ -57,7 +57,7 @@ function spawnBank(camPos, speed) {
   // One shared side so the bank passes as a single coherent mass
   _lat.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
     .addScaledVector(_dir, -_lat.dot(_dir)).normalize();
-  const count = 4 + Math.floor(Math.random() * 4);
+  const count = 3 + Math.floor(Math.random() * 3);
   const baseAhead = speed * 5;
   const passDist = baseAhead * (0.06 + Math.random() * 0.06);
   for (let i = 0; i < count; i++) {
@@ -78,7 +78,7 @@ function spawnBank(camPos, speed) {
     sprite.scale.set(size, size * (0.35 + Math.random() * 0.3), 1);
     scene.add(sprite);
     setWorldPos(sprite, pos);
-    wisps.push({ sprite, pos, size, target: 0.2 + Math.random() * 0.2 });
+    wisps.push({ sprite, pos, size, target: 0.11 + Math.random() * 0.11 });
   }
 }
 
@@ -176,7 +176,7 @@ function spawnWisp(camPos, speed, stormBoost) {
   sprite.scale.set(size, size * (0.35 + Math.random() * 0.3), 1);
   scene.add(sprite);
   setWorldPos(sprite, pos);
-  wisps.push({ sprite, pos, size, target: (0.16 + Math.random() * 0.22) * (stormBoost ? 1.5 : 1) });
+  wisps.push({ sprite, pos, size, target: (0.11 + Math.random() * 0.15) * (stormBoost ? 1.3 : 1) });
 }
 
 function spawnGlint(camPos, speed) {
@@ -224,8 +224,8 @@ export function updateTransit(dt, camPos, feel) {
   if (active) {
     travelTime += dt;
     if (travelTime >= nextStormAt && travelTime >= stormUntil) {
-      stormUntil = travelTime + 10 + Math.random() * 8;
-      nextStormAt = stormUntil + 35 + Math.random() * 45;
+      stormUntil = travelTime + 8 + Math.random() * 6;
+      nextStormAt = stormUntil + 55 + Math.random() * 55;
     }
   }
   const inStorm = active && travelTime < stormUntil;
@@ -238,14 +238,14 @@ export function updateTransit(dt, camPos, feel) {
 
   // Spawn while the drive is working — hard in a squall, sparse in clear void
   const cap = inStorm ? STORM_WISPS : MAX_WISPS;
-  const rate = inStorm ? 9 : 3.5;
+  const rate = inStorm ? 5.5 : 2.2;
   if (active && wisps.length < cap && Math.random() < dt * rate) {
     spawnWisp(camPos, speed, inStorm);
   }
   // Nebula banks pass in the clear stretches, between squalls
   if (active && !inStorm && travelTime >= nextBankAt) {
     spawnBank(camPos, speed);
-    nextBankAt = travelTime + 50 + Math.random() * 40;
+    nextBankAt = travelTime + 80 + Math.random() * 60;
   }
   _glintTimer -= dt;
   if (active && _glintTimer <= 0) {

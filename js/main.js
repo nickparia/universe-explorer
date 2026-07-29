@@ -417,7 +417,7 @@ function animate() {
         // Photo-based visuals only: galaxies ARE their full layer, the
         // void is emptiness, and the procedural three are all-particle.
         const hasContext = PHOTO_CONTEXT_VISUALS.has(lm.visual);
-        let c = 1;
+        let c = 1, sh = 1;
         if (hasContext) {
           // Log-spaced band (200r -> 30r, most of a distance decade) plus
           // time smoothing: at warp approach speeds a linear band is
@@ -429,16 +429,25 @@ function animate() {
           const prev = lm._ctxSmooth ?? target;
           c = prev + (target - prev) * (1 - Math.exp(-dt / 1.2));
           lm._ctxSmooth = c;
+          // Immersion fade for the outskirts shroud: you cannot see the
+          // cloud you are inside. From mid-range the shroud is the
+          // environment; entering it (arrival standoffs, slingshot
+          // passes, departures) it thins right down, or every travel
+          // beat near a nebula becomes soup.
+          const u = Math.max(0, Math.min(1, (d / lm.radius - 2.5) / (7 - 2.5)));
+          sh = 0.15 + 0.85 * (u * u * (3 - 2 * u));
         }
-        if (Math.abs((lm._ctx ?? -1) - c) > 0.02) {
-          lm._ctx = c;
+        const sig = c + sh * 3; // decorrelated: either factor moving re-traverses
+        if (Math.abs((lm._ctxSig ?? -1) - sig) > 0.02) {
+          lm._ctxSig = sig;
           lm.anchor.traverse((o) => {
             if (o.material) {
               if (o.material.userData._baseOpacity === undefined) {
                 o.material.userData._baseOpacity = o.material.opacity;
               }
               const isContext = o.isPoints || o.material.userData._contextPhoto;
-              o.material.opacity = o.material.userData._baseOpacity * (isContext ? c : 1);
+              o.material.opacity = o.material.userData._baseOpacity *
+                (isContext ? c : 1) * (o.userData._shroud ? sh : 1);
             }
           });
         }
