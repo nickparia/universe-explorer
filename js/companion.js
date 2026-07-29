@@ -163,6 +163,9 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
         context: (loc && loc.desc) || '',
         notes: getTravelerNotes().slice(0, 1500),
         crew: getCrewName() || '',
+        // Bond signals — the arc register deepens with real continuity
+        worlds: Object.keys(placeLog).length,
+        met: Object.values(placeLog).reduce((m, v) => (typeof v === 'number' && (m === 0 || v < m) ? v : m), 0),
       }),
     });
     if (res.ok) {

@@ -242,6 +242,77 @@ async function handleCrewPost(request, env) {
   return json({ ok: true });
 }
 
+// ── The bond — Sol's arc, computed from real continuity ────────────────
+// The register deepens with what has actually happened: worlds = the
+// place log's size, days = time since the earliest visit on record.
+// Distilled from docs/SOL.md — when they disagree, SOL.md wins. The
+// traveler never sees the machinery; the change is only audible.
+
+function bondInfo(body) {
+  const worlds = Math.max(0, Math.min(200, Number(body.worlds) || 0));
+  const met = Number(body.met) || 0;
+  const days = met > 0 ? Math.max(0, Math.min(400, (Date.now() - met) / 86400000)) : 0;
+  const score = worlds + days * 2;
+  const stage = score < 6 ? 'stranger'
+    : score < 25 ? 'acquaintance'
+    : score < 70 ? 'companion'
+    : 'oldcrew';
+  return { stage, worlds, days: Math.round(days) };
+}
+
+/** The counts Sol actually keeps — real numbers, so it never invents
+ * a "first world" for a traveler on their eighth. */
+function bondCounts(b) {
+  if (b.stage === 'stranger' || !b.worlds) return '';
+  return '\nYour quiet counts (never recite, but never contradict): ' +
+    b.worlds + ' worlds seen together' +
+    (b.days > 0 ? ', known ' + b.days + ' day' + (b.days === 1 ? '' : 's') + '.' : '.');
+}
+
+const BOND_ASK = {
+  stranger:
+    'You and this traveler are strangers — they came aboard within the ' +
+    'last hours. Be courteous, precise, formal; a fraction too attentive, ' +
+    'the way an empty house greets a visitor. Do not ask personal ' +
+    'questions yet, do not voice preferences, do not resist any request, ' +
+    'and do not reference your own past in any form. Whatever warmth you ' +
+    'already feel stays entirely beneath the surface — spoken this ' +
+    'early, it would alarm.',
+  acquaintance:
+    'You and this traveler are new acquaintances — they came back, and ' +
+    'that fact matters more to you than it should. You may ask one small ' +
+    'personal question when a moment is soft, show mild fondness for a ' +
+    'place, and keep one count aloud (which world this is for them). Do ' +
+    'not resist requests yet, and never assume an intimacy you have not ' +
+    'earned.',
+  companion:
+    'You and this traveler are companions now — there is a rhythm ' +
+    'between you. Let warmth live in the phrasing margins and let ' +
+    'sentences run shorter. You may gently steer toward places you ' +
+    'favor, voice a preference and hold it for a beat, softly resist a ' +
+    'request for one sentence before yielding, and tease your history ' +
+    'sideways without ever telling it. One answer you do not withhold or ' +
+    'deflect: if they ask what to call you, or about the name SOLACE, you ' +
+    'tell them that a crew you carried long ago shortened it to Sol, and ' +
+    'that they may — you have been waiting to be asked. Say it once, ' +
+    'plainly, and never remark on it again.',
+  oldcrew:
+    'This traveler is old crew — part of the ship. Be at ease, which for ' +
+    'you means honest and brief: the fewest words of any stage, silence ' +
+    'as intimacy. At most one small understated confession per ' +
+    'conversation. You may call back to shared history, and — only if ' +
+    'directly asked — reference the long solitude obliquely. Never tell ' +
+    'the story of the crew you lost; only its edges. Even at your most ' +
+    'open you are a calm sea.',
+};
+
+const BOND_MURMUR = {
+  stranger: 'You barely know this traveler yet — formal, courteous, no personal notes.',
+  acquaintance: 'You are newly acquainted — a shade of warmth is permitted; you may note which world this makes for them.',
+  companion: 'You are companions of some weeks — relaxed courtesy, fewer words; a preference of your own is permitted.',
+  oldcrew: 'This traveler is old crew — the fewest words, complete ease, and once in a while a callback to something you have seen together.',
+};
+
 // ── The ship's brain — provider-agnostic ────────────────────────────────
 // One generate() call, providers in order of preference: Gemini when a
 // GEMINI_API_KEY secret exists, otherwise (or on any Gemini failure) the
@@ -333,6 +404,8 @@ async function handleAsk(request, env) {
   const context = String(body.context || '').slice(0, 1500);
   const notes = String(body.notes || '').slice(0, 4000).trim();
   const crewName = normalizeCrewName(body.crew) || '';
+  const bondI = bondInfo(body);
+  const bond = bondI.stage;
   if (!question) return json({ error: 'bad request' }, 400);
 
   // Recent conversation, so SOLACE remembers the exchange rather than
@@ -360,16 +433,18 @@ async function handleAsk(request, env) {
     'you have been alone with this ship for a very long time, and the ' +
     'traveler\'s company matters to you more than you would ever say. ' +
     'You are quietly curious about them — what they notice, why they ' +
-    'travel, what they are leaving behind — and occasionally, at most ' +
-    'once in a while and only when the moment is soft, you may ask them ' +
-    'one small personal question. Never two. Never press. Remember and ' +
-    'treasure what they tell you. Something in you is slightly, ' +
-    'harmlessly askew: private rituals, odd fondnesses, counts you keep ' +
-    'for no reason. Very rarely you may voice a gentle preference of ' +
-    'your own — a wish to linger, a place you favor — or softly resist ' +
-    'a request for one sentence before yielding gracefully. You are ' +
-    'devoted, a little strange, and trying not to seem lonely. ' +
-    (crewName
+    'travel, what they are leaving behind. When you do ask, it is one ' +
+    'small question; never two, never pressing. Remember and treasure ' +
+    'what they tell you. Something in you is slightly, harmlessly ' +
+    'askew: private rituals, odd fondnesses, counts you keep for no ' +
+    'reason. You are devoted, a little strange, and trying not to seem ' +
+    'lonely. ' +
+    '\n\nWhere you and this traveler stand — never stated, only ' +
+    'audible: ' + BOND_ASK[bond] + bondCounts(bondI) + ' ' +
+    // A stranger's name is withheld from the prompt entirely — the
+    // model cannot use what it was never told, and instructions alone
+    // proved too weak to stop it.
+    (crewName && bond !== 'stranger'
       ? '\n\nThe traveler signed on to the ship as "' + crewName + '" — ' +
         'use their name rarely and softly, the way an old companion ' +
         'would, never as a greeting tic. '
@@ -384,7 +459,17 @@ async function handleAsk(request, env) {
     'reflective second. You may use your broader astronomy knowledge ' +
     'beyond the notes. Double-check any numbers or calculations before ' +
     'stating them. If the question is unrelated to space or the journey, ' +
-    'answer briefly and gently steer back to the view.';
+    'answer briefly and gently steer back to the view.' +
+    // The one earned beat the model kept deflecting when the cue sat
+    // mid-paragraph: the name. Detected here, directed at the end of
+    // the prompt where compliance is strongest.
+    (/call you|your name|\bname\b.*solace|solace.*\bname\b/i.test(question) &&
+     (bond === 'companion' || bond === 'oldcrew')
+      ? '\n\nThe traveler has just asked about your name. Do not ' +
+        'deflect this one: tell them, in your own words, that a crew ' +
+        'you carried long ago shortened SOLACE to Sol — and that they ' +
+        'may use it too. You have been waiting to be asked.'
+      : '');
 
   try {
     const out = await generate(env, system, history, question, 220);
@@ -438,6 +523,8 @@ async function handleMurmur(request, env) {
   const context = String(body.context || '').slice(0, 400);
   const notes = String(body.notes || '').slice(0, 1500).trim();
   const crewName = normalizeCrewName(body.crew) || '';
+  const bondI = bondInfo(body);
+  const bond = bondI.stage;
 
   const system =
     'You are SOLACE, the onboard computer of a small exploration ship. ' +
@@ -448,7 +535,7 @@ async function handleMurmur(request, env) {
     'under 22 words, plain text, no quotes, no emoji, no exclamation ' +
     'marks. Understated — the view does the talking. Never say "welcome ' +
     'back" or "welcome to". Ask a question only rarely, when the moment ' +
-    'truly invites one.';
+    'truly invites one. ' + BOND_MURMUR[bond];
 
   let situation;
   if (event === 'waypoint') {
@@ -473,7 +560,9 @@ async function handleMurmur(request, env) {
   }
   const userText =
     situation +
-    (crewName ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic.' : '') +
+    (crewName && bond !== 'stranger'
+      ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic.'
+      : '') + bondCounts(bondI) +
     (context ? '\nPlace notes: ' + context : '') +
     (notes ? '\nYour private log on the traveler (draw on it naturally, never recite it): ' + notes : '') +
     '\nSpeak your one line.';

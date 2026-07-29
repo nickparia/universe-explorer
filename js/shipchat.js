@@ -51,6 +51,20 @@ const REFLECT_QUIET_MS = 90000; // a lull in conversation → distill it
 
 const HALO = 'text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 10px rgba(0,0,0,0.6);';
 
+// The bond signals — how long Sol has known this traveler and how many
+// worlds they have seen together (companion.js's place log; read fresh
+// each time, importing companion here would be a cycle). The worker
+// turns these into the arc register — see docs/SOL.md.
+function bondSignals() {
+  try {
+    const log = JSON.parse(localStorage.getItem('solace_placelog_v1') || '{}');
+    const ts = Object.values(log).filter((v) => typeof v === 'number');
+    return { worlds: ts.length, met: ts.length ? Math.min(...ts) : 0 };
+  } catch (e) {
+    return { worlds: 0, met: 0 };
+  }
+}
+
 export function initShipChat() {
   // Always present — the mark is the companion's body, not an orbit
   // widget. It sleeps (dormant) in transit and wakes when you arrive.
@@ -447,6 +461,7 @@ async function send() {
         history: past,
         notes: notes.slice(0, 4000),
         crew: getCrewName() || '',
+        ...bondSignals(),
       }),
     });
     const data = await res.json();
