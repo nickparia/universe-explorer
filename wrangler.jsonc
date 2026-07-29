@@ -12,6 +12,13 @@
   "ai": {
     "binding": "AI"
   },
+  "kv_namespaces": [
+    {
+      // Crew records: sign-on credentials + SOLACE's per-traveler log
+      "binding": "CREW",
+      "id": "42616bc6594741c487a2e09d6e09089a"
+    }
+  ],
   "r2_buckets": [
     {
       "binding": "MEDIA",

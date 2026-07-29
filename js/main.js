@@ -15,6 +15,9 @@ import { initDust, updateDust } from './dust.js';
 import { initTransit, updateTransit } from './transit.js';
 import { initAutopilot, updateAutopilot } from './autopilot.js';
 import { initSession, getResumePose } from './session.js';
+import { initCrew } from './crew.js';
+import { initSignon } from './signon.js';
+import { on } from './bus.js';
 import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
 import { restorePose, settleIntoNearestOrbit } from './flight.js';
 import { initHoverSelect, updateHoverSelect } from './hover-select.js';
@@ -170,6 +173,14 @@ async function boot() {
   initCompanion();
   initSession();
   initSoundscape();
+  initCrew();
+
+  // First boot offers the crew sign-on terminal over black — MOTHER's
+  // chamber before the vista. The opening shot waits for it: the title
+  // fly-through belongs to the moment the traveler actually boards.
+  if (initSignon()) {
+    await new Promise((resolve) => on('signon:closed', resolve));
+  }
 
   // One zero-dt pass so every body has its world position before we compose
   updateBodies(0, getCamPos());

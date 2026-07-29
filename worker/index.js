@@ -30,6 +30,13 @@ export default {
     if (url.pathname === '/api/murmur' && request.method === 'POST') {
       return handleMurmur(request, env);
     }
+    if (url.pathname === '/api/signon' && request.method === 'POST') {
+      return handleSignon(request, env);
+    }
+    if (url.pathname === '/api/crew/state') {
+      if (request.method === 'GET') return handleCrewGet(request, env);
+      if (request.method === 'POST') return handleCrewPost(request, env);
+    }
 
     if (!MEDIA_PREFIX.test(key)) {
       const res = await env.ASSETS.fetch(request);
@@ -95,6 +102,144 @@ function json(obj, status = 200) {
     status,
     headers: { 'content-type': 'application/json' },
   });
+}
+
+// ── Crew registry — sign-on and SOLACE's server-side log ────────────────
+// A crew record is one KV value: credentials plus everything SOLACE
+// remembers about that traveler (its private log, the places they've
+// been). Signing on from any device hands SOLACE the same memory.
+//
+//   crew:<name>  -> { salt, hash, createdAt, lastSeen, notes, places }
+//   token:<tok>  -> name   (90-day TTL, refreshed on sign-on)
+
+const TOKEN_TTL_S = 90 * 24 * 3600;
+const PBKDF2_ITER = 100000;
+const signonCounts = new Map();
+const SIGNON_LIMIT = 10;
+
+function normalizeCrewName(raw) {
+  const name = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
+  if (!/^[a-z0-9][a-z0-9 _\-\.]{1,23}$/.test(name)) return null;
+  return name;
+}
+
+function toHex(buf) {
+  return [...new Uint8Array(buf)].map((b) => b.toString(16).padStart(2, '0')).join('');
+}
+
+async function hashCode(code, saltHex) {
+  const salt = new Uint8Array(saltHex.match(/../g).map((h) => parseInt(h, 16)));
+  const keyMaterial = await crypto.subtle.importKey(
+    'raw', new TextEncoder().encode(code), 'PBKDF2', false, ['deriveBits']);
+  const bits = await crypto.subtle.deriveBits(
+    { name: 'PBKDF2', hash: 'SHA-256', salt, iterations: PBKDF2_ITER },
+    keyMaterial, 256);
+  return toHex(bits);
+}
+
+async function issueToken(env, name) {
+  const tok = toHex(crypto.getRandomValues(new Uint8Array(32)));
+  await env.CREW.put('token:' + tok, name, { expirationTtl: TOKEN_TTL_S });
+  return tok;
+}
+
+/** Resolve the Authorization bearer token to a crew name, or null. */
+async function crewFromRequest(request, env) {
+  const auth = request.headers.get('authorization') || '';
+  const m = auth.match(/^Bearer ([0-9a-f]{64})$/);
+  if (!m) return null;
+  return env.CREW.get('token:' + m[1]);
+}
+
+async function handleSignon(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const now = Date.now();
+  const entry = signonCounts.get(ip);
+  if (entry && now - entry.ts < ASK_WINDOW_MS) {
+    if (entry.count >= SIGNON_LIMIT) return json({ error: 'rate limited' }, 429);
+    entry.count++;
+  } else {
+    signonCounts.set(ip, { ts: now, count: 1 });
+    if (signonCounts.size > 5000) signonCounts.clear();
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return json({ error: 'bad request' }, 400);
+  }
+  const name = normalizeCrewName(body.name);
+  const code = String(body.code || '');
+  if (!name) return json({ error: 'bad name' }, 400);
+  if (code.length < 4 || code.length > 72) return json({ error: 'bad code' }, 400);
+
+  const key = 'crew:' + name;
+  const rec = await env.CREW.get(key, 'json');
+
+  if (!rec) {
+    // Unknown name: the client confirms before a record is created, so a
+    // typo never silently becomes a stranger's empty file.
+    if (!body.create) return json({ status: 'unknown' });
+    const salt = toHex(crypto.getRandomValues(new Uint8Array(16)));
+    const hash = await hashCode(code, salt);
+    const record = {
+      salt, hash, createdAt: now, lastSeen: now,
+      notes: String(body.notes || '').slice(0, 4000),
+      places: {},
+    };
+    await env.CREW.put(key, JSON.stringify(record));
+    const token = await issueToken(env, name);
+    return json({ status: 'created', token, name, notes: record.notes, places: {} });
+  }
+
+  const hash = await hashCode(code, rec.salt);
+  if (hash !== rec.hash) return json({ error: 'denied' }, 401);
+  rec.lastSeen = now;
+  await env.CREW.put(key, JSON.stringify(rec));
+  const token = await issueToken(env, name);
+  return json({
+    status: 'ok', token, name,
+    notes: rec.notes || '', places: rec.places || {},
+  });
+}
+
+async function handleCrewGet(request, env) {
+  const name = await crewFromRequest(request, env);
+  if (!name) return json({ error: 'unauthorized' }, 401);
+  const rec = await env.CREW.get('crew:' + name, 'json');
+  if (!rec) return json({ error: 'unauthorized' }, 401);
+  return json({ name, notes: rec.notes || '', places: rec.places || {} });
+}
+
+async function handleCrewPost(request, env) {
+  const name = await crewFromRequest(request, env);
+  if (!name) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return json({ error: 'bad request' }, 400);
+  }
+  const key = 'crew:' + name;
+  const rec = await env.CREW.get(key, 'json');
+  if (!rec) return json({ error: 'unauthorized' }, 401);
+  if (typeof body.notes === 'string') rec.notes = body.notes.slice(0, 4000);
+  if (body.places && typeof body.places === 'object') {
+    // Merge, newest timestamp wins — visits accumulate across devices
+    const merged = rec.places || {};
+    for (const [place, ts] of Object.entries(body.places)) {
+      if (typeof ts !== 'number') continue;
+      const p = String(place).slice(0, 60);
+      if (!merged[p] || ts > merged[p]) merged[p] = ts;
+    }
+    // Cap: keep the most recent 80 places
+    const entries = Object.entries(merged).sort((a, b) => b[1] - a[1]).slice(0, 80);
+    rec.places = Object.fromEntries(entries);
+  }
+  rec.lastSeen = Date.now();
+  await env.CREW.put(key, JSON.stringify(rec));
+  return json({ ok: true });
 }
 
 // ── The ship's brain — provider-agnostic ────────────────────────────────
@@ -187,6 +332,7 @@ async function handleAsk(request, env) {
   const location = String(body.location || 'deep space').slice(0, 80);
   const context = String(body.context || '').slice(0, 1500);
   const notes = String(body.notes || '').slice(0, 4000).trim();
+  const crewName = normalizeCrewName(body.crew) || '';
   if (!question) return json({ error: 'bad request' }, 400);
 
   // Recent conversation, so SOLACE remembers the exchange rather than
@@ -223,6 +369,11 @@ async function handleAsk(request, env) {
     'your own — a wish to linger, a place you favor — or softly resist ' +
     'a request for one sentence before yielding gracefully. You are ' +
     'devoted, a little strange, and trying not to seem lonely. ' +
+    (crewName
+      ? '\n\nThe traveler signed on to the ship as "' + crewName + '" — ' +
+        'use their name rarely and softly, the way an old companion ' +
+        'would, never as a greeting tic. '
+      : '') +
     (notes
       ? '\n\nYour private log about this traveler, kept across their past ' +
         'voyages:\n' + notes + '\nDraw on it naturally when it is relevant — ' +
@@ -245,8 +396,9 @@ async function handleAsk(request, env) {
 
 // ── /api/reflect — SOLACE updates its private log on the traveler ──────
 // The client sends the current notes plus the recent conversation; the
-// ship rewrites its notes and the client stores them locally. The log
-// lives on the traveler's own machine — it never persists server-side.
+// ship rewrites its notes and the client stores them locally. Guests
+// keep the log on their own machine only; signed-on crew get it written
+// into their crew record too, so memory follows them across devices.
 
 const reflectCounts = new Map();
 const REFLECT_LIMIT = 12;
@@ -285,6 +437,7 @@ async function handleMurmur(request, env) {
   const via = String(body.via || '').slice(0, 160);
   const context = String(body.context || '').slice(0, 400);
   const notes = String(body.notes || '').slice(0, 1500).trim();
+  const crewName = normalizeCrewName(body.crew) || '';
 
   const system =
     'You are SOLACE, the onboard computer of a small exploration ship. ' +
@@ -320,6 +473,7 @@ async function handleMurmur(request, env) {
   }
   const userText =
     situation +
+    (crewName ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic.' : '') +
     (context ? '\nPlace notes: ' + context : '') +
     (notes ? '\nYour private log on the traveler (draw on it naturally, never recite it): ' + notes : '') +
     '\nSpeak your one line.';
@@ -380,7 +534,19 @@ async function handleReflect(request, env) {
 
   try {
     const out = await generate(env, system, [], userText, 400);
-    return json({ notes: out.text.slice(0, 4000), brain: out.brain });
+    const rewritten = out.text.slice(0, 4000);
+    // Signed-on crew: the log lives in the crew record too, so memory
+    // follows the traveler to any device they sign on from.
+    const name = await crewFromRequest(request, env);
+    if (name) {
+      const rec = await env.CREW.get('crew:' + name, 'json');
+      if (rec) {
+        rec.notes = rewritten;
+        rec.lastSeen = Date.now();
+        await env.CREW.put('crew:' + name, JSON.stringify(rec));
+      }
+    }
+    return json({ notes: rewritten, brain: out.brain });
   } catch (e) {
     return json({ error: 'unavailable' }, 503);
   }

@@ -57,6 +57,8 @@ export function initFieldNotes() {
       whisper('\u2014 course laid in \u00b7 via ' + via.join(' \u00b7 ').toLowerCase() + ' \u2014');
     }
   });
+  on('crew:signed-on', ({ name }) => whisper('\u2014 crew record open \u00b7 ' + name + ' \u2014'));
+  on('crew:signed-off', () => whisper('\u2014 record closed \u2014'));
 }
 
 function buildDeck(name) {

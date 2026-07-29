@@ -10,10 +10,11 @@
 // one gentle line per event, nothing repeated back-to-back, and the
 // mask slips at most once per session. A companion, not a narrator.
 
-import { on } from './bus.js';
+import { on, emit } from './bus.js';
 import { getLocation } from './catalog.js';
 import { setCompanionState, getCompanionState } from './companion-mark.js';
 import { companionSay, getTravelerNotes } from './shipchat.js';
+import { getCrewName } from './crew.js';
 
 // ── Line pools — the HAL register: measured, courteous, a little too
 // attentive. {place} is replaced with the location name. ──────────────
@@ -100,7 +101,23 @@ function classifyArrival(name) {
 function notePlace(name) {
   placeLog[name] = Date.now();
   try { localStorage.setItem(PLACELOG_KEY, JSON.stringify(placeLog)); } catch (e) { /* full */ }
+  emit('places:changed', placeLog); // crew.js pushes it to the record
 }
+
+// A crew record opening merges its place history into this machine's —
+// newest visit wins — so "you were here three weeks ago" survives a new
+// browser, a new device, a wiped cache.
+on('crew:signed-on', ({ places }) => {
+  if (!places) return;
+  let changed = false;
+  for (const [place, ts] of Object.entries(places)) {
+    if (typeof ts !== 'number') continue;
+    if (!placeLog[place] || ts > placeLog[place]) { placeLog[place] = ts; changed = true; }
+  }
+  if (changed) {
+    try { localStorage.setItem(PLACELOG_KEY, JSON.stringify(placeLog)); } catch (e) { /* full */ }
+  }
+});
 
 function gapPhrase(gapMs) {
   const h = gapMs / 3600000;
@@ -145,6 +162,7 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
         via: via || '',
         context: (loc && loc.desc) || '',
         notes: getTravelerNotes().slice(0, 1500),
+        crew: getCrewName() || '',
       }),
     });
     if (res.ok) {

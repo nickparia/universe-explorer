@@ -16,6 +16,8 @@ import { getLocation } from './catalog.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
 import { initCompanionMark, setCompanionState } from './companion-mark.js';
+import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
+import { openSignonTerminal } from './signon.js';
 
 let wrap = null;
 let log = null;
@@ -327,6 +329,23 @@ export function getTravelerNotes() {
   return notes;
 }
 
+// A crew record opening hands SOLACE its memory of this traveler. The
+// registry's copy wins when it has one; otherwise whatever this machine
+// remembers boards with them (first sign-on adopts the guest log).
+on('crew:signed-on', ({ notes: serverNotes }) => {
+  if (serverNotes && serverNotes.trim()) {
+    notes = serverNotes;
+    try { localStorage.setItem(NOTES_KEY, notes); } catch (e) { /* full/private */ }
+  } else if (notes.trim()) {
+    pushCrewState({ notes });
+  }
+});
+on('crew:signed-off', () => {
+  // The record keeps the memory; this ship forgets the traveler.
+  notes = '';
+  try { localStorage.removeItem(NOTES_KEY); } catch (e) { /* fine */ }
+});
+
 // After a conversation settles (or every few exchanges), SOLACE rewrites
 // its log on the traveler. Failures are silent — memory is a grace, not
 // a feature the traveler should ever see erroring.
@@ -337,7 +356,9 @@ async function reflect() {
   try {
     const res = await fetch('/api/reflect', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      // Signed-on crew: the worker persists the rewritten log into the
+      // crew record as it reflects — one round trip, memory that travels.
+      headers: { 'content-type': 'application/json', ...crewHeaders() },
       body: JSON.stringify({ notes, transcript: history.slice(-16) }),
     });
     if (res.ok) {
@@ -379,6 +400,25 @@ function buildContext(name) {
 async function send() {
   const q = input.value.trim();
   if (!q || busy) return;
+  // Registry intents are handled by the ship's OS, not the brain: the
+  // traveler asks SOLACE to sign them on (or off) in plain words.
+  if (/^sign[ -]?on$|^log[ -]?in$/i.test(q)) {
+    input.value = '';
+    if (isSignedOn()) { companionSay('the record is already open, ' + getCrewName() + '.'); return; }
+    openSignonTerminal();
+    return;
+  }
+  if (/^sign[ -]?off$|^log[ -]?out$/i.test(q)) {
+    input.value = '';
+    if (isSignedOn()) {
+      const name = getCrewName();
+      signOff();
+      companionSay('record closed. this ship will keep its silence, ' + name + '.');
+    } else {
+      companionSay('no record is open aboard.');
+    }
+    return;
+  }
   // The ship listens everywhere — in orbit it knows the place beneath
   // you; adrift between places it simply knows you're in transit.
   const locName = currentLocation || 'deep space, between destinations';
@@ -406,6 +446,7 @@ async function send() {
         context: buildContext(currentLocation),
         history: past,
         notes: notes.slice(0, 4000),
+        crew: getCrewName() || '',
       }),
     });
     const data = await res.json();
