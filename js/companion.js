@@ -129,7 +129,7 @@ function murmur(key, place) {
 // The brain composes the line from real context (place, absence, the
 // ship's log on the traveler); the canned pools are only the offline
 // fallback. `fallbackKey` null means: if the brain is silent, so are we.
-async function brainMurmur(event, name, gapMs, fallbackKey, from) {
+async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
   lastMurmurAt = tSec; // reserve the slot — no doubled murmurs while we wait
   let line = null;
   try {
@@ -142,6 +142,7 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from) {
         location: name,
         gap: gapMs ? gapPhrase(gapMs) : '',
         from: from || '',
+        via: via || '',
         context: (loc && loc.desc) || '',
         notes: getTravelerNotes().slice(0, 1500),
       }),
@@ -190,12 +191,16 @@ export function initCompanion() {
     pendingArrival = null;
     afterglow = null;
   });
-  on('warp:start', ({ name, duration, mode }) => {
+  on('warp:start', ({ name, duration, mode, via }) => {
     pendingArrival = null;
     if (tSec - lastMurmurAt > MURMUR_GAP * 0.5) {
       // orbitName still holds the place being LEFT — warp:start fires
-      // before the next frame's orbit:exit
-      brainMurmur('departure', name, 0, 'departure', orbitName);
+      // before the next frame's orbit:exit. A cruise with slingshot
+      // waypoints announces the plotted course instead of a plain
+      // departure — SOLACE names the road it chose.
+      const hasCourse = mode === 'cruise' && via && via.length;
+      brainMurmur(hasCourse ? 'course' : 'departure', name, 0, 'departure',
+        orbitName, hasCourse ? via.join(', ') : '');
     }
     // A cruise is long enough to have a rhythm — a few lines spaced
     // through the crossing, brain-composed or nothing. Hypnotic, not

@@ -7,7 +7,8 @@
 // Events currently in use:
 //   'nav:target'      (name)               — a travel target was chosen
 //   'flyto:start'     ({ name })           — autopilot fly-to began
-//   'warp:start'      ({ name, duration }) — interstellar warp began
+//   'warp:start'      ({ name, duration, mode, via }) — crossing began; via lists slingshot waypoints
+//   'cruise:pass'     ({ name })           — a plotted waypoint is sweeping the window
 //   'warp:end'        ({ name, reason })   — warp finished: 'arrived' | 'cancelled'
 //   'starmap:toggled' (isOpen)             — star map drawer opened/closed
 

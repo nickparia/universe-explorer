@@ -116,7 +116,7 @@ let warpDuration = 0;
 let warpMode = 'warp';
 const cruiseLookP = new THREE.Vector3(); // the place being LEFT — the look-back
 let cruiseHasLookBack = false;
-let warpPassInfo = null; // { name, pos, frac, announced } — the sight the route bends past
+let warpPassList = []; // [{ name, pos, frac, announced }] — the sights the course slingshots past, in flight order
 let warpU0 = -8, warpU1 = 8; // log-odds endpoints of the sigmoid travel profile
 const warpFromP = new THREE.Vector3();
 const warpFromQ = new THREE.Quaternion();
@@ -137,10 +137,7 @@ const _arrTo = new THREE.Vector3();
 const _arrFromRel = new THREE.Vector3(); // glide endpoints relative to a moving body
 const _arrToRel = new THREE.Vector3();
 let warpChaseBody = null;                // moving destination to track during warp
-const warpCtrlP = new THREE.Vector3();   // bezier control point — routes CURVE past sights
-let warpCurved = false;                  // straight line when nothing worth passing
-const _bzA = new THREE.Vector3();
-const _bzB = new THREE.Vector3();
+let warpRoute = null;                    // CatmullRomCurve3 through the plotted course — null flies straight
 const warpAimP = new THREE.Vector3();    // what the camera LOOKS at — the body itself, never the standoff point
 const warpParkDir = new THREE.Vector3(); // body → standoff, unit
 let warpArrOffset = 0;
@@ -653,7 +650,13 @@ export function updateFlight(dt, allBodies, dtWall) {
                     const burn = Math.min(1, t2 / 0.03) * (1 - smoothstep(0.09, 0.16, t2));
                     const brake = smoothstep(0.86, 0.93, t2) * (1 - smoothstep(0.965, 1.0, t2));
                     const coast = 0.3 * Math.min(1, t2 / 0.03);
-                    speedFeeling = Math.max(burn * 0.85, brake * 0.6, coast);
+                    // Slingshot swells: the ship leans into each waypoint's
+                    // well and whips back out — felt in the drive, not told
+                    let swell = 0;
+                    for (const p of warpPassList) {
+                      swell = Math.max(swell, Math.exp(-Math.pow((eased - p.frac) / 0.07, 2)));
+                    }
+                    speedFeeling = Math.max(burn * 0.85, brake * 0.6, coast + swell * 0.3);
                     warpPhase = t2 < 0.16 ? 'accelerating' : t2 < 0.86 ? 'cruising' : 'decelerating';
                 } else {
                     // Log-symmetric travel: the sigmoid in log-odds space makes
@@ -686,16 +689,17 @@ export function updateFlight(dt, allBodies, dtWall) {
                 warpTargetP.copy(bp)
                     .addScaledVector(warpParkDir, warpArrOffset)
                     .addScaledVector(_upVec, warpArrOffset * warpUpBias);
+                // The course's last point IS warpTargetP (by reference) —
+                // refresh the arc-length table so the pace stays honest
+                if (warpRoute) warpRoute.updateArcLengths();
             }
 
-            // Interpolate position — along the curved route when the
-            // journey has a sight to pass
+            // Interpolate position — along the plotted course when the
+            // journey has sights to pass. Arc-length parameterization
+            // keeps the pace steady through the slingshot arcs.
             const _e = Math.min(eased, 1);
-            if (warpCurved) {
-                const u = 1 - _e;
-                _bzA.copy(warpFromP).multiplyScalar(u * u);
-                _bzB.copy(warpCtrlP).multiplyScalar(2 * u * _e);
-                camPos.copy(_bzA).add(_bzB).addScaledVector(warpTargetP, _e * _e);
+            if (warpRoute) {
+                warpRoute.getPointAt(_e, camPos);
             } else {
                 camPos.lerpVectors(warpFromP, warpTargetP, _e);
             }
@@ -717,15 +721,17 @@ export function updateFlight(dt, allBodies, dtWall) {
             } else {
               _dir.copy(warpAimP);
             }
-            // The vista sweep: as the route skims its chosen sight, the
+            // The vista sweeps: as the course skims each waypoint, the
             // gaze turns to hold it through the pass, then returns to
             // the road. The journey acknowledges its own scenery.
-            if (warpMode === 'cruise' && warpPassInfo) {
-              const b = Math.exp(-Math.pow((_e - warpPassInfo.frac) / 0.09, 2)) * 0.85;
-              if (b > 0.02) _dir.lerp(warpPassInfo.pos, b);
-              if (!warpPassInfo.announced && _e > warpPassInfo.frac - 0.03) {
-                warpPassInfo.announced = true;
-                emit('cruise:pass', { name: warpPassInfo.name });
+            if (warpMode === 'cruise' && warpPassList.length) {
+              for (const p of warpPassList) {
+                const b = Math.exp(-Math.pow((_e - p.frac) / 0.09, 2)) * 0.85;
+                if (b > 0.02) _dir.lerp(p.pos, b);
+                if (!p.announced && _e > p.frac - 0.03) {
+                  p.announced = true;
+                  emit('cruise:pass', { name: p.name });
+                }
               }
             }
             _lookMat.lookAt(camPos, _dir, _upVec);
@@ -1557,16 +1563,18 @@ export function warpTo(targetName, mode = 'warp') {
   warpTargetP.copy(targetPos)
     .addScaledVector(warpParkDir, arrivalOffset)
     .addScaledVector(_upVec, arrivalOffset * warpUpBias);
-  // ── Route planning: curve past something worth seeing ─────────────
-  // A journey is content. If a landmark or planet sits near the corridor,
-  // bend the route (quadratic bezier) to skim past it — with the gaze
-  // locked on the destination, the sight sweeps across the view like a
-  // nebula passing the window. Straight lines are for couriers.
-  warpCurved = false;
+  // ── Course plotting: slingshot waypoints ──────────────────────────
+  // A journey is content. Every landmark or planet near the corridor is
+  // a candidate; the plotted course threads a spline past the best few
+  // at respectful flyby distance — with the gaze locked on the
+  // destination, each sight sweeps across the view like a nebula
+  // passing the window. Straight lines are for couriers.
+  warpRoute = null;
+  warpPassList = [];
   {
     const legLen = camPos.distanceTo(warpTargetP);
     const _dirLeg = new THREE.Vector3().copy(warpTargetP).sub(camPos).normalize();
-    let best = null, bestScore = 0;
+    const candidates = [];
     const consider = (pos, r, isLm, name) => {
       const toC = new THREE.Vector3().copy(pos).sub(camPos);
       const s = toC.dot(_dirLeg);
@@ -1576,8 +1584,7 @@ export function warpTo(targetName, mode = 'warp') {
       const flybyDist = r * (isLm ? 2.2 : 9);
       if (lat < flybyDist) return;              // already flying through it
       if (lat > Math.min(legLen * 0.22, r * 60)) return; // too far off-corridor
-      const score = r / lat;
-      if (score > bestScore) { bestScore = score; best = { pos: pos.clone(), closest, lat, flybyDist, name, frac: s / legLen }; }
+      candidates.push({ pos: pos.clone(), closest, flybyDist, name, frac: s / legLen, score: r / lat });
     };
     for (const lm of allLandmarks) {
       if (lm.name === targetName) continue;
@@ -1589,19 +1596,39 @@ export function warpTo(targetName, mode = 'warp') {
         consider(b.g.userData._worldPos || b.g.position, b.r, false, b.name);
       }
     }
-    if (best) {
-      // Pass point: pulled from the sight toward the corridor, at a
-      // respectful flyby distance
-      const pass = new THREE.Vector3().copy(best.closest).sub(best.pos)
-        .normalize().multiplyScalar(best.flybyDist).add(best.pos);
-      // Quadratic bezier through `pass` at t=0.5: B = 2*pass - (P0+P2)/2
-      warpCtrlP.copy(pass).multiplyScalar(2)
-        .addScaledVector(camPos, -0.5)
-        .addScaledVector(warpTargetP, -0.5);
-      warpCurved = true;
-      warpPassInfo = { name: best.name, pos: best.pos.clone(), frac: best.frac, announced: false };
-    } else {
-      warpPassInfo = null;
+    // Greedy by score, waypoints kept a healthy stretch apart so each
+    // pass gets its own sweep. A warp takes one; a cruise is long enough
+    // to plot a real course — up to three assists on a single crossing.
+    candidates.sort((a, b) => b.score - a.score);
+    const cap = mode === 'cruise' ? 3 : 1;
+    const picked = [];
+    for (const c of candidates) {
+      if (picked.length >= cap) break;
+      if (picked.some((p) => Math.abs(p.frac - c.frac) < 0.16)) continue;
+      picked.push(c);
+    }
+    picked.sort((a, b) => a.frac - b.frac);
+    if (picked.length) {
+      // Pass points: pulled from each sight toward the corridor, at a
+      // respectful flyby distance — the spline arcs around the body and
+      // whips back onto the corridor, a gravity assist you can see
+      const pts = [warpFromP];
+      for (const p of picked) {
+        pts.push(new THREE.Vector3().copy(p.closest).sub(p.pos)
+          .normalize().multiplyScalar(p.flybyDist).add(p.pos));
+      }
+      pts.push(warpTargetP); // by reference — chase updates flow into the curve
+      warpRoute = new THREE.CatmullRomCurve3(pts, false, 'centripetal');
+      // Pass timing lives in arc-length space — where each flyby happens
+      // along the course actually FLOWN, not the straight corridor
+      const lengths = warpRoute.getLengths(200);
+      const total = lengths[lengths.length - 1];
+      warpPassList = picked.map((p, i) => ({
+        name: p.name,
+        pos: p.pos,
+        frac: lengths[Math.round(((i + 1) / (pts.length - 1)) * 200)] / total,
+        announced: false,
+      }));
     }
   }
 
@@ -1635,7 +1662,7 @@ export function warpTo(targetName, mode = 'warp') {
   warpPhase = 'accelerating';
   _arrivalShown = false;
   emit('nav:target', targetName);
-  emit('warp:start', { name: targetName, duration: warpDuration, mode });
+  emit('warp:start', { name: targetName, duration: warpDuration, mode, via: warpPassList.map((p) => p.name) });
 
   // Clear velocity
   velocity.set(0, 0, 0);

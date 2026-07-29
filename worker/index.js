@@ -278,10 +278,11 @@ async function handleMurmur(request, env) {
   } catch (e) {
     return json({ error: 'bad request' }, 400);
   }
-  const event = ['arrival', 'return', 'departure', 'journey', 'waypoint'].includes(body.event) ? body.event : 'arrival';
+  const event = ['arrival', 'return', 'departure', 'course', 'journey', 'waypoint'].includes(body.event) ? body.event : 'arrival';
   const location = String(body.location || 'deep space').slice(0, 80);
   const gap = String(body.gap || '').slice(0, 60);
   const from = String(body.from || '').slice(0, 80);
+  const via = String(body.via || '').slice(0, 160);
   const context = String(body.context || '').slice(0, 400);
   const notes = String(body.notes || '').slice(0, 1500).trim();
 
@@ -301,6 +302,13 @@ async function handleMurmur(request, env) {
     situation = 'Mid-cruise, the route is sweeping close past ' + location + ' — it fills the window for a while, then falls behind. The traveler is watching it pass.';
   } else if (event === 'journey') {
     situation = 'The ship is mid-crossing, deep in the dark between stars on the way to ' + location + '. Nothing is near; the stars stream slowly past the glass.';
+  } else if (event === 'course') {
+    situation =
+      (from
+        ? 'The ship is leaving ' + from + ', bound for ' + location + '.'
+        : 'The ship is departing, bound for ' + location + '.') +
+      ' You have plotted the course yourself: it slingshots past ' + (via || 'nothing of note') +
+      ' on the way, borrowing their gravity. Mention the road you chose, lightly — as a fact of navigation, not a boast.';
   } else if (event === 'departure') {
     situation = from
       ? 'The ship is leaving ' + from + ', bound for ' + location + ' — the drive engaging for the crossing.'

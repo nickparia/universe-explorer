@@ -51,6 +51,12 @@ export function initFieldNotes() {
   };
   on('autopilot:engaged', () => whisper('\u2014 solace has the helm \u2014'));
   on('autopilot:released', () => whisper('\u2014 helm yours \u2014'));
+  // The plotted course, stated as the ship's log would: quiet fact
+  on('warp:start', ({ mode, via }) => {
+    if (mode === 'cruise' && via && via.length) {
+      whisper('\u2014 course laid in \u00b7 via ' + via.join(' \u00b7 ').toLowerCase() + ' \u2014');
+    }
+  });
 }
 
 function buildDeck(name) {
