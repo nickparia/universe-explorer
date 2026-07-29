@@ -152,6 +152,11 @@ async function boot() {
   }
   window.addEventListener('click', startMusicOnGesture);
   window.addEventListener('keydown', startMusicOnGesture);
+  // The sign-on terminal swallows its keystrokes (stopPropagation), so
+  // the gesture that types a crew name never reaches the listeners
+  // above — yet it IS a user activation, so audio may begin. Start the
+  // sound with the reveal, not minutes later at the next stray click.
+  on('signon:closed', startMusicOnGesture);
 
   // Debug: expose for testing
   window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };

@@ -347,15 +347,18 @@ export function updateMusic(camPos, allBodies) {
   // Hold the current music through warp (the journey has its own
   // voice), and require a zone to be stable for two consecutive
   // checks before switching — boundary flapping was crossfading
-  // every few seconds, stacking overlapped tracks.
-  if (!warping && zone.name !== currentZone) {
+  // every few seconds, stacking overlapped tracks. Neither rule
+  // applies before the FIRST track: silence held through a whole
+  // cruise ("no sound for a minute") because the initial zone was
+  // blocked like a switch. When nothing is playing, adopt at once.
+  if ((!warping || !currentZone) && zone.name !== currentZone) {
     if (zone.name === _pendingZone) {
       _pendingCount++;
     } else {
       _pendingZone = zone.name;
       _pendingCount = 1;
     }
-    if (_pendingCount >= 2) {
+    if (_pendingCount >= (currentZone ? 2 : 1)) {
       currentZone = zone.name;
       _pendingZone = null;
       _pendingCount = 0;

@@ -85,40 +85,17 @@ export function initShipChat() {
   // phosphor bloom plus a hard dark halo on every character.
   const style = document.createElement('style');
   style.textContent =
-    // The mark lives IN the ship: a slim shipboard intercom — hairline
-    // bezel, vent slots, status pips, an etched designation — with the
-    // strands breathing behind its glass. An instrument on the cabin
-    // wall, not a logo on the screen. Hovering warms the phosphor
-    // strongly (subtle brightness is imperceptible); clicking anywhere
-    // on the housing opens the line.
-    '#ship-chat .sc-housing{cursor:pointer;flex:none;position:relative;' +
-    'display:flex;flex-direction:column;align-items:center;gap:5px;' +
-    'padding:7px 6px 6px;border-radius:3px;' +
-    'background:linear-gradient(180deg,rgba(11,17,28,0.72),rgba(5,9,16,0.62));' +
-    'border:1px solid rgba(140,180,240,0.16);' +
-    'box-shadow:inset 0 0 14px rgba(0,0,0,0.55),inset 0 1px 0 rgba(180,210,255,0.07),' +
-    '0 2px 12px rgba(0,0,0,0.45);backdrop-filter:blur(2px);}' +
-    '#ship-chat .sc-housing::before{content:"";position:absolute;inset:2px;' +
-    'border-radius:2px;border:1px solid rgba(120,170,240,0.06);pointer-events:none;}' +
-    '#ship-chat .sc-vents{display:flex;flex-direction:column;gap:2px;width:26px;}' +
-    '#ship-chat .sc-vents i{display:block;height:1px;background:rgba(150,190,255,0.14);}' +
-    '#ship-chat canvas{display:block;transition:filter 0.45s;}' +
-    '#ship-chat .sc-housing:hover canvas{filter:brightness(1.9) ' +
-    'drop-shadow(0 0 7px rgba(150,200,255,0.9)) drop-shadow(0 0 18px rgba(120,180,255,0.5));}' +
-    '#ship-chat .sc-housing:hover{border-color:rgba(150,195,255,0.3);}' +
-    '#ship-chat .sc-pips{display:flex;gap:5px;align-items:center;}' +
-    '#ship-chat .sc-pips i{width:3px;height:3px;border-radius:50%;' +
-    'background:rgba(140,185,255,0.85);opacity:0.12;transition:opacity 0.5s;}' +
-    '#ship-chat .sc-pips i.on{opacity:0.85;box-shadow:0 0 5px rgba(140,190,255,0.8);}' +
-    '#ship-chat .sc-pips i.dim{opacity:0.4;}' +
-    '#ship-chat .sc-pips.warm i{background:rgba(255,200,120,0.9);}' +
-    '#ship-chat .sc-pips.breathe i.on{animation:sc-pulse 3.2s ease-in-out infinite;}' +
-    '#ship-chat .sc-pips.chase i{animation:sc-chase 0.9s steps(1) infinite;}' +
-    '#ship-chat .sc-pips.chase i:nth-child(2){animation-delay:0.3s;}' +
-    '#ship-chat .sc-pips.chase i:nth-child(3){animation-delay:0.6s;}' +
-    '@keyframes sc-chase{0%{opacity:0.85;}33%{opacity:0.12;}100%{opacity:0.12;}}' +
-    '#ship-chat .sc-etch{font-family:' + MONO + ';font-size:6.5px;letter-spacing:2.5px;' +
-    'color:rgba(150,190,255,0.30);text-transform:uppercase;user-select:none;}' +
+    // Sol has no body. At rest the corner is empty sky — the ship
+    // itself is Sol. When it thinks or speaks, a phosphor breath (the
+    // strands) rises with the words and dissolves after. Drifting the
+    // cursor near makes the breath stir faintly — the ship noticing
+    // you approach — and clicking opens the line.
+    '#ship-chat canvas{cursor:pointer;display:block;flex:none;opacity:0;' +
+    'transition:opacity 1.6s ease,filter 0.45s;}' +
+    '#ship-chat canvas.sc-present{opacity:1;transition:opacity 0.9s ease,filter 0.45s;}' +
+    '#ship-chat canvas.sc-stir{opacity:0.45;transition:opacity 0.7s ease,filter 0.45s;}' +
+    '#ship-chat canvas:hover{filter:brightness(1.6) ' +
+    'drop-shadow(0 0 7px rgba(150,200,255,0.7)) drop-shadow(0 0 16px rgba(120,180,255,0.4));}' +
     '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) transparent;}' +
     '#ship-chat .sc-log::-webkit-scrollbar{width:4px;}' +
     '#ship-chat .sc-log::-webkit-scrollbar-track{background:transparent;}' +
@@ -202,42 +179,27 @@ export function initShipChat() {
   inputWrap.appendChild(measurer);
   row.appendChild(inputWrap);
 
-  // The companion mark, seated in its intercom housing — the strands
-  // breathe behind instrument glass. Rendering and state animation live
-  // in companion-mark.js; the render loop in main.js drives it.
-  const housing = document.createElement('div');
-  housing.className = 'sc-housing';
-  const vents = document.createElement('div');
-  vents.className = 'sc-vents';
-  for (let i = 0; i < 3; i++) vents.appendChild(document.createElement('i'));
-  housing.appendChild(vents);
+  // The breath — Sol's only visible form, and only when it has
+  // something to be present FOR: thinking, speaking, feeling, being
+  // approached, or being spoken to. The rest of the time the corner is
+  // empty sky. Rendering and state animation live in companion-mark.js;
+  // the render loop in main.js drives it.
   const mark = document.createElement('canvas');
-  mark.style.cssText = 'width:44px;height:118px;';
+  mark.style.cssText = 'width:48px;height:132px;';
   initCompanionMark(mark);
-  housing.appendChild(mark);
-  const pips = document.createElement('div');
-  pips.className = 'sc-pips breathe';
-  for (let i = 0; i < 3; i++) pips.appendChild(document.createElement('i'));
-  housing.appendChild(pips);
-  const etch = document.createElement('div');
-  etch.className = 'sc-etch';
-  etch.textContent = 'solace';
-  housing.appendChild(etch);
-  // The status pips follow the companion's state — an instrument's
-  // honest telltale, not an interface element.
+  let markHover = false;
+  mark.addEventListener('mouseenter', () => { markHover = true; });
+  mark.addEventListener('mouseleave', () => { markHover = false; });
   setInterval(() => {
     const s = getCompanionState();
-    const [a, b, c] = pips.children;
-    pips.className = 'sc-pips' +
-      (s === 'thinking' ? ' chase' : s === 'idle' || s === 'dormant' ? ' breathe' : '') +
-      (s === 'concerned' || s === 'pleased' || s === 'sinister' ? ' warm' : '');
-    a.className = s === 'speaking' || s === 'thinking' || s === 'pleased' || s === 'sinister' ? 'on' : s === 'idle' ? 'dim' : '';
-    b.className = s === 'dormant' ? 'dim' : 'on';
-    c.className = s === 'speaking' || s === 'thinking' || s === 'concerned' || s === 'sinister' ? 'on' : s === 'idle' ? 'dim' : '';
+    const present = s === 'thinking' || s === 'speaking' || s === 'pleased' ||
+      s === 'concerned' || s === 'sinister';
+    const attended = markHover || document.activeElement === input;
+    mark.className = present ? 'sc-present' : attended ? 'sc-stir' : '';
   }, 240);
-  // Addressing the ship: click the intercom and the line opens for you.
-  housing.addEventListener('click', () => input.focus());
-  row.appendChild(housing);
+  // Addressing the ship: click where the breath lives, the line opens.
+  mark.addEventListener('click', () => input.focus());
+  row.appendChild(mark);
 
   wrap.appendChild(row);
   document.body.appendChild(wrap);
