@@ -1,5 +1,5 @@
 import * as THREE from 'three';
-import { makePhotoLayers, addPhotoLayerStack } from './nebulae.js';
+import { makePhotoLayers, addPhotoLayerStack, addOutskirtsShroud } from './nebulae.js';
 import { getPointTexture } from '../textures.js';
 
 // ═══════════════════════════════════════════════════════════════════════
@@ -202,6 +202,12 @@ export function createRingNebula(group, def, textures) {
     group.add(core);
   }
 
+  // The halo the smoke-ring is still exhaling into — a planetary nebula
+  // is small and alone, so its shroud stays modest
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.72, 0.42], cool: [0.5, 0.8, 0.9], reach: 4.5,
+  });
+
   // Field stars in true depth
   {
     const tex2 = getGlowTex();
@@ -264,6 +270,12 @@ export function createEtaCarinae(group, def, textures) {
     core.renderOrder = 5;
     group.add(core);
   }
+
+  // Eta Car sits deep inside the greater Carina complex — its shroud
+  // carries the surrounding nebulosity, tinged with the skirt's magenta
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.6, 0.62], cool: [0.5, 0.6, 1.0], warmFrac: 0.6, reach: 8,
+  });
 
   // Field stars in true depth
   {

@@ -160,6 +160,74 @@ export function addPhotoLayerStack(group, layers, spec, width, aspect) {
   }
 }
 
+/**
+ * The greater complex — an outskirts shroud shared by the photo
+ * landmarks. A photograph that ends where its feather ends reads as
+ * pasted on the void; real nebulae sit inside the cloud they condensed
+ * from. Two scales of environment beyond the frame: giant whisper-dim
+ * wisps out to many radii (the parent cloud), and a sparse grain of
+ * dust motes threading the whole volume — the parallax that connects
+ * the last leg of an approach to the place itself. Both are Points, so
+ * the context resolve in main.js breathes them in on approach like a
+ * telescope closing in. Doctrine: dim additive only (never bright
+ * enough to bloom), gaussian shells — nothing ends like a lightswitch.
+ */
+export function addOutskirtsShroud(group, s, opts = {}) {
+  const {
+    warm = [1.0, 0.7, 0.4],
+    cool = [0.45, 0.55, 1.0],
+    warmFrac = 0.5,
+    flat = 0.55,   // vertical squash — complexes sprawl wider than tall
+    reach = 7,     // wisp shell outer edge, in radii
+  } = opts;
+  const tex = getNebulaParticleTex();
+
+  const shell = (count, rLo, rHi, inward, squash) => {
+    const positions = new Float32Array(count * 3);
+    const colors = new Float32Array(count * 3);
+    for (let i = 0; i < count; i++) {
+      const r = s * (rLo + Math.pow(Math.random(), inward) * (rHi - rLo));
+      let x = gaussRandom(), y = gaussRandom(), z = gaussRandom();
+      const n = Math.hypot(x, y, z) || 1;
+      positions[i * 3]     = (x / n) * r;
+      positions[i * 3 + 1] = (y / n) * r * squash;
+      positions[i * 3 + 2] = (z / n) * r;
+    }
+    return { positions, colors };
+  };
+  const tint = (colors, i, b) => {
+    const c = Math.random() < warmFrac ? warm : cool;
+    colors[i * 3] = b * c[0]; colors[i * 3 + 1] = b * c[1]; colors[i * 3 + 2] = b * c[2];
+  };
+  const points = (buf, size, opacity, order) => {
+    const geom = new THREE.BufferGeometry();
+    geom.setAttribute('position', new THREE.BufferAttribute(buf.positions, 3));
+    geom.setAttribute('color', new THREE.BufferAttribute(buf.colors, 3));
+    const mat = new THREE.PointsMaterial({
+      vertexColors: true, map: tex, size, sizeAttenuation: true,
+      blending: THREE.AdditiveBlending, transparent: true, opacity,
+      depthWrite: false,
+    });
+    const pts = new THREE.Points(geom, mat);
+    pts.renderOrder = order;
+    group.add(pts);
+  };
+
+  // Parent-cloud wisps: huge, whisper-dim, far beyond the photo
+  {
+    const buf = shell(110, 1.8, reach, 1.5, flat);
+    for (let i = 0; i < 110; i++) tint(buf.colors, i, 0.028 + Math.random() * 0.045);
+    points(buf, s * 1.7, 0.07, 0);
+  }
+  // Dust motes: sparse grains through the whole volume — what streams
+  // past the glass on the way in
+  {
+    const buf = shell(420, 1.3, reach + 2, 1.3, Math.min(1, flat * 1.5));
+    for (let i = 0; i < 420; i++) tint(buf.colors, i, 0.05 + Math.random() * 0.1);
+    points(buf, s * 0.02, 0.5, 5);
+  }
+}
+
 // ═══════════════════════════════════════════════════════════════════════
 // 1. Pillars of Creation
 // ═══════════════════════════════════════════════════════════════════════
@@ -239,6 +307,11 @@ export function createPillars(group, def, textures) {
     pts.renderOrder = 1;
     group.add(pts);
   }
+
+  // ── The greater Eagle — outskirts far beyond the towers ──
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.7, 0.4], cool: [0.45, 0.55, 1.0], warmFrac: 0.4, reach: 8,
+  });
 
   // ── Reference-point stars: a deep corridor threading the approach ──
   // Denser near the object, thinning along +z toward arriving travelers;
@@ -357,6 +430,11 @@ export function createCrabNebula(group, def, textures) {
     group.add(pts);
   }
 
+  // ── The greater remnant — thinning ejecta far beyond the shell ──
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.75, 0.4], cool: [0.5, 0.75, 1.0], reach: 6,
+  });
+
   // ── Taurus field stars in true depth ──
   {
     const count = 320;
@@ -442,6 +520,11 @@ export function createCarinaNebula(group, def, textures) {
     group.add(pts);
   }
 
+  // The greater Carina complex — outskirts sprawling past the cliffs
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.65, 0.38], cool: [0.45, 0.6, 1.0], warmFrac: 0.55, reach: 8, flat: 0.45,
+  });
+
   // Star corridor — Carina is one of the richest star fields in the sky
   {
     const count = 1300;
@@ -496,6 +579,11 @@ export function createHorsehead(group, def, textures) {
       { z:  s * 0.18, scale: 0.92, opacity: 0.5, order: 4 },
     ], s * 1.5, 2826 / 2704);
   }
+
+  // The greater Orion B cloud — the sea the head rides on continues
+  addOutskirtsShroud(group, s, {
+    warm: [1.0, 0.6, 0.45], cool: [0.5, 0.65, 1.0], reach: 6,
+  });
 
   // Reference-star volume threading the scene in true depth
   {
