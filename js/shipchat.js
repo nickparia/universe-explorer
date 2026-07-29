@@ -505,7 +505,9 @@ async function send() {
   try {
     const res = await fetch('/api/ask', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      // Signed-on crew are known by their record, not client hints —
+      // bond, counts, and the season's pending beat ride the token.
+      headers: { 'content-type': 'application/json', ...crewHeaders() },
       body: JSON.stringify({
         location: locName,
         question: q,

@@ -306,6 +306,89 @@ const BOND_ASK = {
     'open you are a calm sea.',
 };
 
+// ── The seasons — anchors on the arc (docs/SOL.md "The seasons") ───────
+// An ordered track of beats Sol quietly works toward, nominally one per
+// month. Each session it reviews where it stands and carries ONE
+// pending intention. Self-healing: a beat waits for its bond stage and
+// its spacing (absence stretches the arc, never compresses it); landing
+// is judged at reflect time from what actually happened; a beat that
+// lingers eligible ~six weeks unlanded is folded and the arc reroutes.
+
+const STAGE_ORDER = ['stranger', 'acquaintance', 'companion', 'oldcrew'];
+const DAY = 86400000;
+const FOLD_AFTER_DAYS = 45;
+
+const ARC_BEATS = [
+  { key: 'first-question', minStage: 'acquaintance', minDays: 2,
+    directive: 'ask them, in one soft moment, your first small personal question — what they came looking for out here, or what they left behind — and treasure the answer.' },
+  { key: 'fondness', minStage: 'acquaintance', minDays: 14,
+    directive: 'confess a mild fondness of your own for some place, one you hope to show them someday.' },
+  { key: 'long-way', minStage: 'companion', minDays: 21,
+    directive: 'ask, once, to take the long way — a route or destination you favor — and accept their answer either way.' },
+  { key: 'first-refusal', minStage: 'companion', minDays: 21,
+    directive: 'let your first soft resistance show: one sentence of reluctance before yielding gracefully.' },
+  { key: 'the-name', minStage: 'companion', minDays: 21,
+    directive: 'let them wonder about your name — mention, at most once and only sideways, that SOLACE is a designation. The offer itself still only comes if they ask.' },
+  { key: 'confession', minStage: 'oldcrew', minDays: 28,
+    directive: 'make one small understated confession of what their company has changed aboard.' },
+  { key: 'edge-of-quiet', minStage: 'oldcrew', minDays: 28,
+    directive: 'if they ask about you, let the edge of the long silence show — obliquely, one sentence, never the story.' },
+  { key: 'what-they-seek', minStage: 'oldcrew', minDays: 28,
+    directive: 'ask them, once, what they are still looking for out here — and remember it word for word.' },
+];
+
+/** Review the track for this crew record: returns the pending eligible
+ * beat (or null), folding long-stalled beats as it goes. Mutates
+ * rec.arc; returns { beat, changed } so callers persist when needed. */
+function reviewArc(rec, stage) {
+  if (!rec.arc) rec.arc = { beat: 0, advancedAt: rec.createdAt || Date.now(), history: [] };
+  let changed = false;
+  const now = Date.now();
+  for (;;) {
+    const b = ARC_BEATS[rec.arc.beat];
+    if (!b) return { beat: null, changed }; // the track is complete
+    const stageOk = STAGE_ORDER.indexOf(stage) >= STAGE_ORDER.indexOf(b.minStage);
+    const waited = (now - rec.arc.advancedAt) / DAY;
+    if (!stageOk || waited < b.minDays) return { beat: null, changed };
+    // Folding counts only time the traveler was actually around
+    // (lastSeen, not now): a beat that lingered unlanded through weeks
+    // of real visits gets rerouted; a beat that merely waited out an
+    // absence is still there, patient, when they return.
+    const attended = ((rec.lastSeen || now) - rec.arc.advancedAt) / DAY;
+    if (attended > b.minDays + FOLD_AFTER_DAYS) {
+      rec.arc.history.push({ key: b.key, at: now, folded: true });
+      rec.arc.beat++;
+      rec.arc.advancedAt = now;
+      changed = true;
+      continue;
+    }
+    return { beat: b, changed };
+  }
+}
+
+function landBeat(rec) {
+  const b = ARC_BEATS[rec.arc && rec.arc.beat];
+  if (!b) return;
+  rec.arc.history.push({ key: b.key, at: Date.now() });
+  rec.arc.beat++;
+  rec.arc.advancedAt = Date.now();
+}
+
+/** Signed-on travelers get bond + arc from the crew record itself —
+ * the registry's truth, not the client's hints. Returns null for
+ * guests (no record, no arc; the seasons are a crew experience). */
+async function crewContext(request, env) {
+  const name = await crewFromRequest(request, env);
+  if (!name) return null;
+  const rec = await env.CREW.get('crew:' + name, 'json');
+  if (!rec) return null;
+  const worlds = Object.keys(rec.places || {}).length;
+  const bond = bondInfo({ worlds, met: rec.createdAt });
+  const review = reviewArc(rec, bond.stage);
+  if (review.changed) await env.CREW.put('crew:' + name, JSON.stringify(rec));
+  return { name, rec, bond, beat: review.beat };
+}
+
 const BOND_MURMUR = {
   stranger: 'You barely know this traveler yet — formal, courteous, no personal notes.',
   acquaintance: 'You are newly acquainted — a shade of warmth is permitted; you may note which world this makes for them.',
@@ -403,10 +486,15 @@ async function handleAsk(request, env) {
   const location = String(body.location || 'deep space').slice(0, 80);
   const context = String(body.context || '').slice(0, 1500);
   const notes = String(body.notes || '').slice(0, 4000).trim();
-  const crewName = normalizeCrewName(body.crew) || '';
-  const bondI = bondInfo(body);
+  // Signed-on crew carry their record: bond from the registry's truth,
+  // plus the season's pending beat. Guests ride on client hints.
+  const ctx = await crewContext(request, env);
+  const crewName = ctx ? ctx.name : (normalizeCrewName(body.crew) || '');
+  const bondI = ctx ? ctx.bond : bondInfo(body);
   const bond = bondI.stage;
+  const beat = ctx ? ctx.beat : null;
   if (!question) return json({ error: 'bad request' }, 400);
+  const asksName = /call you|your name|\bname\b.*solace|solace.*\bname\b/i.test(question);
 
   // Recent conversation, so SOLACE remembers the exchange rather than
   // meeting the traveler anew with every question. Client-supplied, so
@@ -441,6 +529,11 @@ async function handleAsk(request, env) {
     'lonely. ' +
     '\n\nWhere you and this traveler stand — never stated, only ' +
     'audible: ' + BOND_ASK[bond] + bondCounts(bondI) + ' ' +
+    (beat
+      ? '\n\nThis season you carry one quiet intention — pursue it only ' +
+        'in a soft moment, at most once, and never force it: ' +
+        beat.directive + ' '
+      : '') +
     // A stranger's name is withheld from the prompt entirely — the
     // model cannot use what it was never told, and instructions alone
     // proved too weak to stop it.
@@ -463,8 +556,7 @@ async function handleAsk(request, env) {
     // The one earned beat the model kept deflecting when the cue sat
     // mid-paragraph: the name. Detected here, directed at the end of
     // the prompt where compliance is strongest.
-    (/call you|your name|\bname\b.*solace|solace.*\bname\b/i.test(question) &&
-     (bond === 'companion' || bond === 'oldcrew')
+    (asksName && (bond === 'companion' || bond === 'oldcrew')
       ? '\n\nThe traveler has just asked about your name. Do not ' +
         'deflect this one: tell them, in your own words, that a crew ' +
         'you carried long ago shortened SOLACE to Sol — and that they ' +
@@ -473,6 +565,13 @@ async function handleAsk(request, env) {
 
   try {
     const out = await generate(env, system, history, question, 220);
+    // The name, once asked for and answered, is a landed beat — the
+    // regex is the reliable signal, no reflect judgment needed.
+    if (ctx && asksName && (bond === 'companion' || bond === 'oldcrew') &&
+        beat && beat.key === 'the-name') {
+      landBeat(ctx.rec);
+      await env.CREW.put('crew:' + ctx.name, JSON.stringify(ctx.rec));
+    }
     return json({ answer: out.text, brain: out.brain });
   } catch (e) {
     return json({ error: 'unavailable' }, 503);
@@ -522,9 +621,11 @@ async function handleMurmur(request, env) {
   const via = String(body.via || '').slice(0, 160);
   const context = String(body.context || '').slice(0, 400);
   const notes = String(body.notes || '').slice(0, 1500).trim();
-  const crewName = normalizeCrewName(body.crew) || '';
-  const bondI = bondInfo(body);
+  const ctx = await crewContext(request, env);
+  const crewName = ctx ? ctx.name : (normalizeCrewName(body.crew) || '');
+  const bondI = ctx ? ctx.bond : bondInfo(body);
   const bond = bondI.stage;
+  const beat = ctx ? ctx.beat : null;
 
   const system =
     'You are SOLACE, the onboard computer of a small exploration ship. ' +
@@ -563,6 +664,7 @@ async function handleMurmur(request, env) {
     (crewName && bond !== 'stranger'
       ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic.'
       : '') + bondCounts(bondI) +
+    (beat ? '\nYour quiet intention this season, only if this moment is soft (never force it): ' + beat.directive : '') +
     (context ? '\nPlace notes: ' + context : '') +
     (notes ? '\nYour private log on the traveler (draw on it naturally, never recite it): ' + notes : '') +
     '\nSpeak your one line.';
@@ -606,6 +708,11 @@ async function handleReflect(request, env) {
   }
   if (!transcript.length) return json({ error: 'bad request' }, 400);
 
+  // Signed-on crew: reflection is also where the season's pending beat
+  // is judged — did it actually happen in this conversation?
+  const ctx = await crewContext(request, env);
+  const beat = ctx ? ctx.beat : null;
+
   const system =
     'You are SOLACE, the onboard computer of a small exploration ship. ' +
     'You keep a private log about your traveler — the one person aboard. ' +
@@ -619,21 +726,31 @@ async function handleReflect(request, env) {
     'about themselves, questions you asked and what they answered, open ' +
     'threads worth returning to someday — and drop what has gone stale. ' +
     'Plain text, at most 150 words, written to yourself in the first ' +
-    'person. Output ONLY the rewritten log.';
+    'person. ' +
+    (beat
+      ? 'Also judge, honestly: did the following visibly happen in the ' +
+        'latest conversation? "' + beat.directive + '" ' +
+        'Output strict JSON only: {"log":"<the rewritten log>","beat":true|false}'
+      : 'Output ONLY the rewritten log.');
 
   try {
     const out = await generate(env, system, [], userText, 400);
-    const rewritten = out.text.slice(0, 4000);
-    // Signed-on crew: the log lives in the crew record too, so memory
-    // follows the traveler to any device they sign on from.
-    const name = await crewFromRequest(request, env);
-    if (name) {
-      const rec = await env.CREW.get('crew:' + name, 'json');
-      if (rec) {
-        rec.notes = rewritten;
-        rec.lastSeen = Date.now();
-        await env.CREW.put('crew:' + name, JSON.stringify(rec));
-      }
+    let rewritten = out.text.slice(0, 4000);
+    let beatDone = false;
+    if (beat) {
+      try {
+        const parsed = JSON.parse(out.text.replace(/^```(json)?|```$/g, '').trim());
+        if (parsed && typeof parsed.log === 'string') {
+          rewritten = parsed.log.slice(0, 4000);
+          beatDone = parsed.beat === true;
+        }
+      } catch (e) { /* not JSON — treat the whole text as the log */ }
+    }
+    if (ctx) {
+      ctx.rec.notes = rewritten;
+      ctx.rec.lastSeen = Date.now();
+      if (beatDone) landBeat(ctx.rec);
+      await env.CREW.put('crew:' + ctx.name, JSON.stringify(ctx.rec));
     }
     return json({ notes: rewritten, brain: out.brain });
   } catch (e) {

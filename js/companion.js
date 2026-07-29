@@ -14,7 +14,7 @@ import { on, emit } from './bus.js';
 import { getLocation } from './catalog.js';
 import { setCompanionState, getCompanionState } from './companion-mark.js';
 import { companionSay, getTravelerNotes } from './shipchat.js';
-import { getCrewName } from './crew.js';
+import { getCrewName, crewHeaders } from './crew.js';
 
 // ── Line pools — the HAL register: measured, courteous, a little too
 // attentive. {place} is replaced with the location name. ──────────────
@@ -153,7 +153,7 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
     const loc = getLocation(name);
     const res = await fetch('/api/murmur', {
       method: 'POST',
-      headers: { 'content-type': 'application/json' },
+      headers: { 'content-type': 'application/json', ...crewHeaders() },
       body: JSON.stringify({
         event,
         location: name,
