@@ -16,6 +16,7 @@ import { getLocation } from './catalog.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
 import { initCompanionMark, setCompanionState, setTraceCursor } from './companion-mark.js';
+import { prepareVoice, hushVoice } from './voice.js';
 import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
 import { openSignonTerminal } from './signon.js';
 
@@ -279,7 +280,7 @@ function addLine(text, who) {
 // cursor — teletype from the Nostromo's mother chamber. The mark holds
 // its speech envelope for as long as the printout runs; the cursor
 // lingers a moment after the last character, then goes dark.
-function streamInto(line, text) {
+function streamInto(line, text, paceMs) {
   cancelStream();
   line.textContent = '';
   line.style.animation = 'none'; // already risen as the pending line
@@ -305,7 +306,14 @@ function streamInto(line, text) {
       // The cursor blinks once or twice more, then the line is just text
       stream.lingerTimer = setTimeout(() => stopSpeaking(), 1600);
     }
-  }, 30); // ~35 chars/s
+  }, paceMs || 30); // ~35 chars/s, or paced to the spoken line
+}
+
+/** Teletype pace matched to a spoken duration so print and voice end
+ * near-together — clamped so text never crawls nor teleports. */
+function paceFor(durationS, text) {
+  if (!durationS) return undefined;
+  return Math.max(22, Math.min(72, (durationS * 1000) / Math.max(1, text.length)));
 }
 
 // Complete any active printout instantly (full text stays on the glass).
@@ -337,7 +345,27 @@ function stopSpeaking() {
 export function companionSay(text) {
   if (busy || stream) return false;
   const line = addLine('', 'solace');
-  streamInto(line, text);
+  line._fadeAt = Infinity;
+  // The voice warms up first (a breath, not a lag) — print and audio
+  // then begin together, paced to end together. If the voice is
+  // unavailable the teletype simply speaks alone.
+  line.textContent = '▎';
+  line.style.animation = 'sc-blink 1.06s steps(2,start) infinite';
+  (async () => {
+    const v = await prepareVoice(text);
+    line.style.animation = '';
+    if (!line.isConnected) { if (v) v.cancel(); return; }
+    if (busy || stream) {
+      // Something else took the glass while the voice warmed — the
+      // line lands as plain text, already true, no voice over it.
+      if (v) v.cancel();
+      line.textContent = text;
+      line._fadeAt = performance.now() + readingHold(text);
+      return;
+    }
+    const dur = v ? v.play() : 0;
+    streamInto(line, text, paceFor(dur, text));
+  })();
   return true;
 }
 
@@ -442,6 +470,7 @@ async function send() {
   input.value = '';
   busy = true;
   cancelStream(); // a question interrupts any murmur mid-printout
+  hushVoice();    // …and cuts its voice, mid-word if need be
   setCompanionState('thinking');
   addLine(q, 'you');
   // While the ship thinks, the line is just a cursor, blinking
@@ -473,8 +502,10 @@ async function send() {
     if (res.ok && data.answer) {
       const answer = data.answer.trim();
       history.push({ role: 'assistant', content: answer });
+      const v = await prepareVoice(answer);
       pending.style.animation = '';
-      streamInto(pending, answer);
+      const dur = v ? v.play() : 0;
+      streamInto(pending, answer, paceFor(dur, answer));
       scheduleReflect();
     } else {
       pending.style.animation = '';

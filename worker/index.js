@@ -30,6 +30,9 @@ export default {
     if (url.pathname === '/api/murmur' && request.method === 'POST') {
       return handleMurmur(request, env);
     }
+    if (url.pathname === '/api/voice' && request.method === 'POST') {
+      return handleVoice(request, env);
+    }
     if (url.pathname === '/api/signon' && request.method === 'POST') {
       return handleSignon(request, env);
     }
@@ -677,6 +680,85 @@ async function handleMurmur(request, env) {
   } catch (e) {
     return json({ error: 'unavailable' }, 503);
   }
+}
+
+// ── /api/voice — SOLACE speaks aloud ────────────────────────────────────
+// Text in, audio out. Same provider philosophy as the brain: Gemini TTS
+// when the key exists (calm, deep, directable), Workers AI TTS as the
+// always-there fallback. The client plays it through the ship's
+// intercom filter — the wire timbre comes from THERE, not the model.
+
+const voiceCounts = new Map();
+const VOICE_LIMIT = 40;
+const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
+
+async function handleVoice(request, env) {
+  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
+  const now = Date.now();
+  const entry = voiceCounts.get(ip);
+  if (entry && now - entry.ts < ASK_WINDOW_MS) {
+    if (entry.count >= VOICE_LIMIT) return json({ error: 'rate limited' }, 429);
+    entry.count++;
+  } else {
+    voiceCounts.set(ip, { ts: now, count: 1 });
+    if (voiceCounts.size > 5000) voiceCounts.clear();
+  }
+
+  let body;
+  try {
+    body = await request.json();
+  } catch (e) {
+    return json({ error: 'bad request' }, 400);
+  }
+  const text = String(body.text || '').slice(0, 300).trim();
+  if (!text) return json({ error: 'bad request' }, 400);
+
+  // Gemini TTS: a deep calm prebuilt voice, directed to HAL's tempo —
+  // unhurried, warm, faintly detached serenity.
+  if (env.GEMINI_API_KEY) {
+    try {
+      const res = await fetch(
+        `https://generativelanguage.googleapis.com/v1beta/models/${GEMINI_TTS_MODEL}:generateContent`,
+        {
+          method: 'POST',
+          headers: {
+            'content-type': 'application/json',
+            'x-goog-api-key': env.GEMINI_API_KEY,
+          },
+          body: JSON.stringify({
+            contents: [{ role: 'user', parts: [{ text:
+              'Speak slowly and very calmly, softly, with gentle unhurried ' +
+              'serenity — a ship\'s computer speaking over a cabin intercom, ' +
+              'never excited: ' + text }] }],
+            generationConfig: {
+              responseModalities: ['AUDIO'],
+              speechConfig: {
+                voiceConfig: { prebuiltVoiceConfig: { voiceName: 'Charon' } },
+              },
+            },
+          }),
+        }
+      );
+      if (res.ok) {
+        const data = await res.json();
+        const part = data.candidates && data.candidates[0] &&
+          data.candidates[0].content && data.candidates[0].content.parts &&
+          data.candidates[0].content.parts.find((p) => p.inlineData);
+        if (part) {
+          // Gemini returns raw 16-bit PCM at 24 kHz, base64
+          return json({ audio: part.inlineData.data, format: 'pcm24k', brain: 'gemini' });
+        }
+      }
+    } catch (e) { /* degraded, not dead — fall through */ }
+  }
+
+  try {
+    const out = await env.AI.run('@cf/myshell-ai/melotts', { prompt: text });
+    if (out && out.audio) {
+      return json({ audio: out.audio, format: 'mp3', brain: 'workers-ai' });
+    }
+  } catch (e) { /* silent ship */ }
+  return json({ error: 'unavailable' }, 503);
 }
 
 async function handleReflect(request, env) {

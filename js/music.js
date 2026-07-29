@@ -88,7 +88,19 @@ let masterVol     = 0.25;
 let musicDuck     = 0;   // 0..1 — the void presses music toward silence
 
 function effVol() {
-  return masterVol * (1 - 0.94 * musicDuck);
+  return masterVol * (1 - 0.94 * musicDuck) * (1 - 0.6 * voiceDuck);
+}
+
+// Voice duck — its own channel so Sol speaking and the Void hush
+// (setMusicDuck) compose instead of fighting over one knob.
+let voiceDuck = 0;
+export function setVoiceDuck(d) {
+  d = Math.max(0, Math.min(1, d));
+  if (Math.abs(d - voiceDuck) < 0.003) return;
+  voiceDuck = d;
+  const active = typeof getActiveEl === 'function' ? getActiveEl() : null;
+  if (active && !active.paused && !active._fadeInterval) active.volume = effVol();
+  if (usingSynth && masterGain) masterGain.gain.value = effVol();
 }
 
 /** External duck (Bootes Void): 1 = near-silence. Applied live. */

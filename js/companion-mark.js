@@ -52,6 +52,12 @@ export function getCompanionState() { return cur; }
 let cursorOn = true;
 export function setTraceCursor(v) { cursorOn = !!v; }
 
+// When real audio is playing, the trace follows the actual level —
+// the line on the glass IS the waveform of the voice. Negative = no
+// live audio; the procedural speech envelope carries the motion.
+let voiceLevel = -1;
+export function setVoiceLevel(v) { voiceLevel = v; }
+
 function ease(x) {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
@@ -70,7 +76,9 @@ function envelope(key, tt) {
     case 'thinking':
       return 0.26 + 0.07 * Math.sin(tt * 1.4);
     case 'speaking': {
-      // Syllables, not a hum: bursts at speech cadence with gaps between
+      // Live voice: the real audio level drives the trace
+      if (voiceLevel >= 0) return 0.12 + Math.min(1.05, voiceLevel * 1.8);
+      // Silent teletype: syllable bursts at speech cadence
       const syll = Math.max(0, Math.sin(tt * 6.1) * Math.sin(tt * 2.9 + 0.7));
       const phrase = 0.6 + 0.4 * Math.sin(tt * 0.9 + 2.1);
       return 0.22 + 0.68 * syll * phrase;
