@@ -7,4 +7,11 @@ export default defineConfig({
     // whole engine, splitting it further just adds requests.
     chunkSizeWarningLimit: 1500,
   },
+  server: {
+    // The ship's brain (and R2 media) live on the deployed worker — proxy
+    // API calls there so SOLACE answers in local dev too.
+    proxy: {
+      '/api': 'https://solace.nicholasjprince.workers.dev',
+    },
+  },
 });

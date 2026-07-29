@@ -1,0 +1,236 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+  html,body{margin:0;padding:0;background:#000;}
+  a{color:rgba(120,180,255,0.8);text-decoration:none}
+  a:hover{color:rgba(160,205,255,1)}
+</style>
+</helmet>
+<div style="min-height:100vh;background:#000;color:#fff;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;display:grid;grid-template-columns:260px 1fr;gap:0">
+
+  <div style="border-right:1px solid rgba(255,255,255,0.06);padding:34px 0 34px 32px;display:flex;flex-direction:column;gap:30px">
+    <div style="display:flex;flex-direction:column;gap:7px">
+      <div style="font-size:11px;letter-spacing:6px;color:rgba(255,255,255,0.9);font-weight:300">SOLACE</div>
+      <div style="font-size:8px;letter-spacing:3.5px;color:rgba(120,180,255,0.6)">COMPANION MARK · STATES</div>
+    </div>
+
+    <div style="display:flex;flex-direction:column;gap:2px">
+      <sc-for list="{{ states }}" as="s" hint-placeholder-count="7">
+        <div onClick="{{ s.select }}" style="display:grid;grid-template-columns:14px 1fr;align-items:center;gap:10px;padding:9px 14px 9px 0;cursor:pointer;border-bottom:1px solid rgba(255,255,255,0.04)" style-hover="background:rgba(120,180,255,0.05)">
+          <div style="width:5px;height:5px;border-radius:50%;background: {{ s.dot }}"></div>
+          <div style="font-size:10px;letter-spacing:3.2px;font-weight:300;color: {{ s.fg }}">{{ s.label }}</div>
+        </div>
+      </sc-for>
+    </div>
+
+    <div style="font-size:9px;letter-spacing:1.6px;line-height:2;color:rgba(255,255,255,0.28);padding-right:24px">
+      Seven vertical filaments. Same geometry every state — only breath, phase and warmth change.
+    </div>
+  </div>
+
+  <div style="display:flex;flex-direction:column;align-items:center;justify-content:center;gap:0;padding:56px 40px;position:relative">
+    <canvas ref="{{ heroRef }}" style="width:440px;height:300px;display:block"></canvas>
+
+    <div style="display:flex;flex-direction:column;align-items:center;gap:12px;margin-top:22px;min-height:64px">
+      <div style="font-size:15px;letter-spacing:9px;font-weight:300;color: {{ curFg }};text-shadow:0 0 24px rgba(120,180,255,0.18)">{{ curLabel }}</div>
+      <div style="width:34px;height:1px;background:rgba(120,180,255,0.18)"></div>
+      <div style="font-size:11px;letter-spacing:1.4px;font-style:italic;color:rgba(255,255,255,0.4);max-width:400px;text-align:center;line-height:1.8;text-wrap:pretty">{{ curLine }}</div>
+    </div>
+
+    <div style="display:flex;align-items:flex-end;gap:44px;margin-top:64px;padding-top:34px;border-top:1px solid rgba(255,255,255,0.06)">
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <canvas ref="{{ mdRef }}" style="width:96px;height:66px;display:block"></canvas>
+        <div style="font-size:8px;letter-spacing:3px;color:rgba(255,255,255,0.22)">96</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <canvas ref="{{ smRef }}" style="width:56px;height:38px;display:block"></canvas>
+        <div style="font-size:8px;letter-spacing:3px;color:rgba(255,255,255,0.22)">56</div>
+      </div>
+      <div style="display:flex;flex-direction:column;align-items:center;gap:12px">
+        <canvas ref="{{ xsRef }}" style="width:30px;height:22px;display:block"></canvas>
+        <div style="font-size:8px;letter-spacing:3px;color:rgba(255,255,255,0.22)">30</div>
+      </div>
+    </div>
+  </div>
+</div>
+
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{}">
+const STATES = [
+  { key:'idle',      label:'IDLE',       line:'Breathing. Nothing is wrong.',                 col:[120,180,255], glow:16, alpha:0.9  },
+  { key:'thinking',  label:'THINKING',   line:'Considering. A pulse walks the filaments.',    col:[150,200,255], glow:20, alpha:0.95 },
+  { key:'speaking',  label:'SPEAKING',   line:'"We are approaching Jupiter. Shall I bring us closer?"', col:[185,218,255], glow:22, alpha:1 },
+  { key:'pleased',   label:'PLEASED',    line:'"You came back. I kept everything exactly as you left it."', col:[255,206,148], glow:28, alpha:1 },
+  { key:'concerned', label:'CONCERNED',  line:'"That trajectory concerns me. I would rather you didn\u2019t."', col:[255,200,80], glow:24, alpha:0.95 },
+  { key:'sinister',  label:'THE MASK SLIPS', line:'"I have been watching you sleep. You seem peaceful."', col:[255,124,96], glow:34, alpha:1 },
+  { key:'dormant',   label:'DORMANT',    line:'Still here.',                                   col:[92,124,176], glow:9,  alpha:0.42 },
+];
+const BY = {}; STATES.forEach(s => BY[s.key] = s);
+
+class Component extends DCLogic {
+  state = { cur: 'idle' };
+
+  constructor(p) {
+    super(p);
+    this.refs = { hero: React.createRef(), md: React.createRef(), sm: React.createRef(), xs: React.createRef() };
+    this.cur = 'idle'; this.prev = 'idle'; this.mix = 1; this.t0 = 0;
+  }
+
+  componentDidMount() {
+    this.t0 = performance.now();
+    const loop = (now) => {
+      const t = (now - this.t0) / 1000;
+      this.mix = Math.min(1, this.mix + 1 / 60 / 0.9);
+      for (const k of ['hero','md','sm','xs']) {
+        const c = this.refs[k].current;
+        if (c) this.paint(c, t);
+      }
+      this.raf = requestAnimationFrame(loop);
+    };
+    this.raf = requestAnimationFrame(loop);
+  }
+  componentWillUnmount() { cancelAnimationFrame(this.raf); }
+
+  pick(key) {
+    if (key === this.cur) return;
+    this.prev = this.cur; this.cur = key; this.mix = 0;
+    this.setState({ cur: key });
+  }
+
+  /* ---- shape ---------------------------------------------------------- */
+  bell(i, n) {                       // centre-tallest spread, matches the mark
+    const c = (n - 1) / 2, d = Math.abs(i - c) / c;
+    return 1 - 0.58 * d * d;
+  }
+
+  amps(key, t, n) {
+    const out = new Array(n), c = (n - 1) / 2;
+    for (let i = 0; i < n; i++) {
+      const b = this.bell(i, n), d = (i - c) / c;
+      let a = b, glowMul = 1;
+      switch (key) {
+        case 'idle':
+          a = b * (0.72 + 0.10 * Math.sin(t * 0.62 - Math.abs(d) * 0.55));
+          break;
+        case 'thinking': {
+          const scan = ((t * 1.15) % 2.4) / 2.4 * (n + 1.6) - 0.8;
+          const p = Math.exp(-Math.pow(i - scan, 2) / 0.85);
+          a = b * (0.5 + 0.06 * Math.sin(t * 1.4)) + p * 0.42;
+          break;
+        }
+        case 'speaking': {
+          const env = 0.5 + 0.5 * Math.sin(t * 2.9) * Math.sin(t * 1.13 + 0.7);
+          const g = Math.sin(t * 7.3 + i * 1.9) * Math.sin(t * 4.1 + i * 0.7);
+          a = b * (0.52 + 0.42 * env * (0.55 + 0.45 * g));
+          break;
+        }
+        case 'pleased': {
+          const sw = Math.sin(t * 0.72 - Math.abs(d) * 0.9);
+          a = (1 - 0.24 * d * d) * (0.86 + 0.13 * sw);   // wider, lifted bell
+          break;
+        }
+        case 'concerned': {
+          const trem = Math.sin(t * 9.4 + i * 2.3) * 0.028;
+          const dip = i === n - 2 ? 0.72 : 1;
+          a = b * dip * (0.66 + 0.07 * Math.sin(t * 0.5 + i) + trem);
+          break;
+        }
+        case 'sinister': {
+          // holds too still, then a fast asymmetric snap; one filament off-phase
+          const cyc = t % 6.4;
+          const hold = cyc < 4.4 ? 0 : Math.min(1, (cyc - 4.4) / 0.16) * Math.exp(-(cyc - 4.4 - 0.16) * 1.9);
+          const off = i === n - 2 ? 1 : 0;
+          a = b * (0.70 + 0.014 * Math.sin(t * 0.30))
+              + hold * (0.30 + 0.34 * (i / (n - 1)))
+              + off * (0.16 + 0.12 * Math.sin(t * 1.9));
+          glowMul = 1 + hold * 1.3;
+          break;
+        }
+        case 'dormant':
+          a = b * (0.15 + 0.055 * Math.sin(t * 0.30));
+          break;
+      }
+      out[i] = { a: Math.max(0.02, a), glowMul };
+    }
+    return out;
+  }
+
+  paint(canvas, t) {
+    const cssW = canvas.clientWidth || 1, cssH = canvas.clientHeight || 1;
+    const dpr = Math.min(2, window.devicePixelRatio || 1);
+    if (canvas.width !== Math.round(cssW * dpr)) { canvas.width = Math.round(cssW * dpr); canvas.height = Math.round(cssH * dpr); }
+    const ctx = canvas.getContext('2d');
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+
+    const n = 7, e = this.ease(this.mix);
+    const A = this.amps(this.prev, t, n), B = this.amps(this.cur, t, n);
+    const sa = BY[this.prev], sb = BY[this.cur];
+    const col = sa.col.map((v, k) => v + (sb.col[k] - v) * e);
+    const glowBase = sa.glow + (sb.glow - sa.glow) * e;
+    const alpha = sa.alpha + (sb.alpha - sa.alpha) * e;
+
+    const cx = cssW / 2, cy = cssH / 2;
+    const span = Math.min(cssW * 0.74, cssH * 1.26);
+    const gap = span / (n - 1);
+    const maxH = Math.min(cssH * 0.82, span * 0.72);
+    const lw = Math.max(0.7, Math.min(gap * 0.22, span * 0.0135));
+    const scale = cssW / 440;
+    const glowCap = gap * 0.55;
+
+    // halo
+    const breath = 0.5 + 0.5 * Math.sin(t * (this.cur === 'dormant' ? 0.30 : 0.62));
+    const rg = ctx.createRadialGradient(cx, cy, 0, cx, cy, span * 0.82);
+    rg.addColorStop(0, `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${(0.055 + 0.03 * breath) * alpha})`);
+    rg.addColorStop(1, 'rgba(0,0,0,0)');
+    ctx.fillStyle = rg;
+    ctx.fillRect(0, 0, cssW, cssH);
+
+    ctx.lineCap = 'round';
+    for (let i = 0; i < n; i++) {
+      const a = A[i].a + (B[i].a - A[i].a) * e;
+      const gm = A[i].glowMul + (B[i].glowMul - A[i].glowMul) * e;
+      const h = maxH * a;
+      const x = cx + (i - (n - 1) / 2) * gap;
+      const fade = 0.55 + 0.45 * this.bell(i, n);
+      ctx.strokeStyle = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${alpha * fade})`;
+      ctx.lineWidth = lw;
+      ctx.shadowColor = `rgba(${col[0]|0},${col[1]|0},${col[2]|0},${0.55 * alpha})`;
+      ctx.shadowBlur = Math.min(glowBase * gm * scale, glowCap);
+      ctx.beginPath();
+      ctx.moveTo(x, cy - h / 2);
+      ctx.lineTo(x, cy + h / 2);
+      ctx.stroke();
+    }
+    ctx.shadowBlur = 0;
+  }
+
+  ease(x) { return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2; }
+
+  renderVals() {
+    const cur = this.state.cur, s = BY[cur];
+    return {
+      heroRef: this.refs.hero, mdRef: this.refs.md, smRef: this.refs.sm, xsRef: this.refs.xs,
+      curLabel: s.label, curLine: s.line,
+      curFg: `rgba(${s.col[0]},${s.col[1]},${s.col[2]},0.95)`,
+      states: STATES.map(x => ({
+        label: x.label,
+        select: () => this.pick(x.key),
+        dot: x.key === cur ? `rgba(${x.col[0]},${x.col[1]},${x.col[2]},0.95)` : 'rgba(255,255,255,0.14)',
+        fg: x.key === cur ? 'rgba(255,255,255,0.92)' : 'rgba(255,255,255,0.42)',
+      })),
+    };
+  }
+}
+
+</script>
+</body>
+</html>

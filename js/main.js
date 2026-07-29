@@ -9,6 +9,8 @@ import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } f
 import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, isIntroPlaying, startArrival, skipArrival, flyTo, warpTo } from './flight.js';
 import { initFieldNotes } from './fieldnotes.js';
 import { initShipChat } from './shipchat.js';
+import { updateCompanionMark } from './companion-mark.js';
+import { initCompanion, updateCompanion } from './companion.js';
 import { initDust, updateDust } from './dust.js';
 import { initTransit, updateTransit } from './transit.js';
 import { initAutopilot, updateAutopilot } from './autopilot.js';
@@ -165,6 +167,7 @@ async function boot() {
   // slowly brings dawn around the limb. Any input skips.
   initFieldNotes();
   initShipChat();
+  initCompanion();
   initSession();
   initSoundscape();
 
@@ -328,12 +331,14 @@ function animate() {
 
     // Update HUD
     updateHud(getCamPos(), getSpeed(), allBodies);
+    updateCompanionMark(dtWall);
 
     // Atmospheric entry effects
     updateAtmoEffects(dt, getCamPos(), getVelocity(), camera, scene);
 
     // Gas giant dive system
     const diveState = updateGasGiantDive(dt, getCamPos(), getVelocity());
+    updateCompanion(dtWall, diveState);
 
     // Update navigation markers
     updateNavigation(dt, getCamPos(), getSpeed(), allBodies);
