@@ -113,7 +113,7 @@ export function initEngine() {
     new THREE.Vector2(window.innerWidth, window.innerHeight),
     0.22,  // strength
     0.2,   // radius
-    0.98   // threshold
+    0.92   // threshold — lowered so the raymarched accretion disc blooms (per gargantua handoff)
   );
   composer.addPass(bloomPass);
 

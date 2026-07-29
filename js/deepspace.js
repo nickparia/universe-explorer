@@ -1,6 +1,7 @@
 import * as THREE from 'three';
 import { getPointTexture } from './textures.js';
 import { setWorldPos } from './engine.js';
+import { createGargantua, updateGargantua } from './blackhole.js';
 
 import { AU, INTERSTELLAR_SCALE, INTERGALACTIC_SCALE } from './constants.js';
 import { LOCATIONS } from './catalog.js';
@@ -54,8 +55,6 @@ const NEBULA_CLOUD_DEFS = [
 // ── Module state ──────────────────────────────────────────────────────
 const landmarks = [];
 let blackHoleGroup = null;
-let accretionParticles = null;
-let accretionDiskMesh = null;
 
 // ═══════════════════════════════════════════════════════════════════════
 // createDeepSpace
@@ -230,13 +229,13 @@ function createNebulaClouds(scene) {
 
 // ── Black Hole ────────────────────────────────────────────────────────
 function createBlackHole(scene) {
-  // A STELLAR-MASS black hole — the Cygnus X-1 archetype, counterpoint
-  // to Sgr A*'s supermassive EHT portrait. Black horizon, photon ring,
-  // white-hot thin accretion disc with Doppler beaming (the approaching
-  // side outshines the receding one), and faint relativistic jets.
-  // (The old version was never rescaled — a 40-unit disc tagged
-  // _solarSystemOnly, so it was both microscopic AND always hidden.)
-  const S = 2000; // horizon radius, world units
+  // "Gargantua" — the Interstellar treatment, from
+  // design_handoff_gargantua_blackhole: a camera-facing quad running a
+  // per-pixel geodesic raymarcher (js/blackhole.js). The thin disc is
+  // seen in front of the shadow AND lensed over/under it, with the
+  // photon ring, doppler beaming, flaring hot spots, and the plunging
+  // region all in the shader. Replaces the hand-built sprite composite.
+  const S = 2000; // event horizon radius, world units
   blackHoleGroup = new THREE.Group();
   const bhPos = new THREE.Vector3(
     Math.cos(4.0) * 6000 * AU,
@@ -245,140 +244,7 @@ function createBlackHole(scene) {
   );
   blackHoleGroup.position.copy(bhPos);
 
-  // 1. Event horizon — a hole in the world
-  blackHoleGroup.add(new THREE.Mesh(
-    new THREE.SphereGeometry(S, 64, 64),
-    new THREE.MeshBasicMaterial({ color: 0x000000 })
-  ));
-
-  // Radial-gradient painter — soft-edged light, never flat ribbons
-  const radialTex = (stops) => {
-    const cv = document.createElement('canvas');
-    cv.width = 512; cv.height = 512;
-    const ctx = cv.getContext('2d');
-    const g = ctx.createRadialGradient(256, 256, 0, 256, 256, 256);
-    for (const [p, c] of stops) g.addColorStop(p, c);
-    ctx.fillStyle = g;
-    ctx.fillRect(0, 0, 512, 512);
-    return new THREE.CanvasTexture(cv);
-  };
-
-  // 2a. Horizon rim glow — gravitationally lensed light hugging the
-  // silhouette. A billboard glow centered on the hole, drawn WITH depth
-  // testing: the opaque black sphere occludes its middle, leaving only
-  // the burning margin around the disc. The iconic edge.
-  {
-    const rim = new THREE.Sprite(new THREE.SpriteMaterial({
-      map: radialTex([
-        [0.0, 'rgba(255,235,205,1)'],
-        [0.42, 'rgba(255,225,190,0.85)'],
-        [0.55, 'rgba(255,170,90,0.30)'],
-        [0.75, 'rgba(200,90,30,0.08)'],
-        [1.0, 'rgba(0,0,0,0)'],
-      ]),
-      color: 0xffffff, transparent: true, opacity: 0.85,
-      blending: THREE.AdditiveBlending, depthWrite: false, depthTest: true,
-    }));
-    rim.scale.setScalar(S * 3.1);
-    rim.renderOrder = 2;
-    blackHoleGroup.add(rim);
-  }
-
-  // 2b. Photon ring — a thin brilliant halo at ~2.5 r_s, feathered
-  {
-    const ringMat = new THREE.MeshBasicMaterial({
-      map: radialTex([
-        [0.80, 'rgba(255,244,228,0)'],
-        [0.885, 'rgba(255,244,228,0)'],
-        [0.92, 'rgba(255,248,235,1)'],
-        [0.955, 'rgba(255,214,160,0.30)'],
-        [1.0, 'rgba(255,190,130,0)'],
-      ]),
-      side: THREE.DoubleSide, transparent: true,
-      opacity: 0.9, blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    const ring = new THREE.Mesh(new THREE.PlaneGeometry(S * 5.24, S * 5.24), ringMat);
-    ring.rotation.x = Math.PI * 0.28 - Math.PI / 2;
-    blackHoleGroup.add(ring);
-  }
-
-  // 3. Accretion disc — thin, white-hot inner edge to deep red rim,
-  // Doppler-beamed: brightness leans hard to the approaching side
-  const diskCount = 9000;
-  const diskPositions = new Float32Array(diskCount * 3);
-  const diskColors = new Float32Array(diskCount * 3);
-  for (let i = 0; i < diskCount; i++) {
-    const angle = Math.random() * Math.PI * 2;
-    const radius = S * (2.7 + Math.pow(Math.random(), 1.6) * 3.8); // 2.7-6.5 S, denser inward
-    const ySpread = (Math.random() - 0.5) * S * 0.12;
-    diskPositions[i * 3]     = Math.cos(angle) * radius;
-    diskPositions[i * 3 + 1] = ySpread;
-    diskPositions[i * 3 + 2] = Math.sin(angle) * radius;
-    const t = (radius / S - 2.7) / 3.8; // 0 inner -> 1 outer
-    // Doppler beaming: one side burns brighter
-    const beam = 0.55 + 0.45 * Math.sin(angle);
-    const heat = (1 - t);
-    diskColors[i * 3]     = (0.75 + heat * 0.25) * (0.5 + beam * 0.7);
-    diskColors[i * 3 + 1] = (0.25 + heat * 0.65) * (0.45 + beam * 0.65);
-    diskColors[i * 3 + 2] = (0.08 + heat * 0.72) * (0.35 + beam * 0.75);
-  }
-  const diskGeom = new THREE.BufferGeometry();
-  diskGeom.setAttribute('position', new THREE.BufferAttribute(diskPositions, 3));
-  diskGeom.setAttribute('color', new THREE.BufferAttribute(diskColors, 3));
-  const diskMat = new THREE.PointsMaterial({
-    vertexColors: true,
-    // Small and restrained: size-attenuated points near the disc plane
-    // otherwise swell into overlapping blobs and fuse into solid paint.
-    size: S * 0.018,
-    map: getPointTexture(),
-    sizeAttenuation: true,
-    blending: THREE.AdditiveBlending,
-    transparent: true,
-    opacity: 0.55,
-    depthWrite: false,
-  });
-  accretionParticles = new THREE.Points(diskGeom, diskMat);
-  accretionParticles.rotation.x = Math.PI * 0.28; // match the ring plane
-  blackHoleGroup.add(accretionParticles);
-
-  // 4. Inner disc sheet — continuous hot glow between the particles,
-  // white-hot at the inner edge feathering to dark ember at the rim
-  {
-    const ringMat = new THREE.MeshBasicMaterial({
-      map: radialTex([
-        [0.0, 'rgba(0,0,0,0)'],
-        [0.49, 'rgba(0,0,0,0)'],
-        [0.53, 'rgba(255,238,210,0.85)'],
-        [0.62, 'rgba(255,150,60,0.42)'],
-        [0.82, 'rgba(150,40,10,0.15)'],
-        [1.0, 'rgba(60,12,3,0)'],
-      ]),
-      side: THREE.DoubleSide, transparent: true,
-      opacity: 0.5, blending: THREE.AdditiveBlending, depthWrite: false,
-    });
-    accretionDiskMesh = new THREE.Mesh(new THREE.PlaneGeometry(S * 10.4, S * 10.4), ringMat);
-    accretionDiskMesh.rotation.x = Math.PI * 0.28 - Math.PI / 2;
-    blackHoleGroup.add(accretionDiskMesh);
-  }
-
-  // 5. (no jets) — even at whisper opacity a giant uniform cylinder
-  // reads as solid geometry, glowing brightest where it crosses the
-  // black silhouette. This is a QUIESCENT hole: silhouette, burning
-  // rim, photon ring, disc. Restraint is the design.
-
-  // 6. Faint heat shells
-  for (const g of [
-    { r: S * 4.5, color: 0xff4400, opacity: 0.05 },
-    { r: S * 8, color: 0x881800, opacity: 0.02 },
-  ]) {
-    blackHoleGroup.add(new THREE.Mesh(
-      new THREE.SphereGeometry(g.r, 32, 32),
-      new THREE.MeshBasicMaterial({
-        color: g.color, transparent: true, opacity: g.opacity,
-        blending: THREE.AdditiveBlending, side: THREE.BackSide, depthWrite: false,
-      })
-    ));
-  }
+  createGargantua(blackHoleGroup, S);
 
   scene.add(blackHoleGroup);
   setWorldPos(blackHoleGroup, blackHoleGroup.position);
@@ -413,12 +279,7 @@ function updateLandmarks(dt) {
 // updateDeepSpace
 // ═══════════════════════════════════════════════════════════════════════
 export function updateDeepSpace(dt, camPos) {
-  if (accretionParticles) {
-    accretionParticles.rotation.y += dt * 0.5;
-  }
-  if (accretionDiskMesh) {
-    accretionDiskMesh.rotation.z += dt * 0.3;
-  }
+  updateGargantua(dt); // advance the accretion-disc animation
   updateLandmarks(dt);
 }
 
