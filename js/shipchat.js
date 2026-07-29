@@ -15,7 +15,7 @@ import { on } from './bus.js';
 import { getLocation } from './catalog.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
-import { initCompanionMark, setCompanionState, getCompanionState } from './companion-mark.js';
+import { initCompanionMark, setCompanionState, setTraceCursor } from './companion-mark.js';
 import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
 import { openSignonTerminal } from './signon.js';
 
@@ -85,17 +85,14 @@ export function initShipChat() {
   // phosphor bloom plus a hard dark halo on every character.
   const style = document.createElement('style');
   style.textContent =
-    // Sol has no body. At rest the corner is empty sky — the ship
-    // itself is Sol. When it thinks or speaks, a phosphor breath (the
-    // strands) rises with the words and dissolves after. Drifting the
-    // cursor near makes the breath stir faintly — the ship noticing
-    // you approach — and clicking opens the line.
-    '#ship-chat canvas{cursor:pointer;display:block;flex:none;opacity:0;' +
-    'transition:opacity 1.6s ease,filter 0.45s;}' +
-    '#ship-chat canvas.sc-present{opacity:1;transition:opacity 0.9s ease,filter 0.45s;}' +
-    '#ship-chat canvas.sc-stir{opacity:0.45;transition:opacity 0.7s ease,filter 0.45s;}' +
-    '#ship-chat canvas:hover{filter:brightness(1.6) ' +
-    'drop-shadow(0 0 7px rgba(150,200,255,0.7)) drop-shadow(0 0 16px rgba(120,180,255,0.4));}' +
+    // Sol's voiceprint is always on the glass — a quiet resting line
+    // with MOTHER's blinking prompt at its head, so a new traveler can
+    // SEE the ship listening. It ripples to life when Sol thinks or
+    // speaks; hovering warms the phosphor; clicking opens the line.
+    '#ship-chat canvas{cursor:pointer;display:block;flex:none;' +
+    'transition:filter 0.45s;}' +
+    '#ship-chat canvas:hover{filter:brightness(1.5) ' +
+    'drop-shadow(0 0 7px rgba(150,200,255,0.6)) drop-shadow(0 0 14px rgba(120,180,255,0.35));}' +
     '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) transparent;}' +
     '#ship-chat .sc-log::-webkit-scrollbar{width:4px;}' +
     '#ship-chat .sc-log::-webkit-scrollbar-track{background:transparent;}' +
@@ -179,25 +176,16 @@ export function initShipChat() {
   inputWrap.appendChild(measurer);
   row.appendChild(inputWrap);
 
-  // The voiceprint — Sol's only visible form, and only when it has a
-  // voice to show: a thin phosphor trace under the words that ripples
-  // as it thinks and speaks, and lies as empty glass the rest of the
-  // time. Drifting the cursor over it (or opening the line) makes the
-  // trace stir faintly — the instrument warming to be read. Rendering
-  // and state animation live in companion-mark.js.
+  // The voiceprint — Sol's visible form: a thin phosphor trace under
+  // the words, resting quietly with the prompt blinking at its head,
+  // rippling to life as the ship thinks and speaks. Rendering and
+  // state animation live in companion-mark.js. Opening the line hands
+  // the cursor down to the input; closing it hands the blink back.
   const mark = document.createElement('canvas');
   mark.style.cssText = 'width:100%;height:30px;margin:0 0 2px;';
   initCompanionMark(mark);
-  let markHover = false;
-  mark.addEventListener('mouseenter', () => { markHover = true; });
-  mark.addEventListener('mouseleave', () => { markHover = false; });
-  setInterval(() => {
-    const s = getCompanionState();
-    const present = s === 'thinking' || s === 'speaking' || s === 'pleased' ||
-      s === 'concerned' || s === 'sinister';
-    const attended = markHover || document.activeElement === input;
-    mark.className = present ? 'sc-present' : attended ? 'sc-stir' : '';
-  }, 240);
+  input.addEventListener('focus', () => setTraceCursor(false));
+  input.addEventListener('blur', () => setTraceCursor(true));
   // Addressing the ship: click the trace, the line opens.
   mark.addEventListener('click', () => input.focus());
 

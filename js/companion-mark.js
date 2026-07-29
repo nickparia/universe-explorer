@@ -46,6 +46,12 @@ export function setCompanionState(key) {
 
 export function getCompanionState() { return cur; }
 
+// The blinking block at the trace's head — MOTHER's prompt, standing
+// invitation to address the ship. Hidden while the traveler's own line
+// is open (the input carries its own cursor).
+let cursorOn = true;
+export function setTraceCursor(v) { cursorOn = !!v; }
+
 function ease(x) {
   return x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 }
@@ -183,4 +189,15 @@ export function updateCompanionMark(dt) {
   ctx.globalAlpha = 1;
   ctx.stroke(path);
   ctx.globalAlpha = 1;
+
+  // The prompt: a phosphor block blinking on the teletype beat at the
+  // head of the trace — the ship, visibly listening.
+  if (cursorOn && (t % 1.06) < 0.53) {
+    const ch = Math.min(11, cssH * 0.4), cw = ch * 0.48;
+    ctx.fillStyle = `rgba(${wr},${0.85 * alpha})`;
+    ctx.shadowColor = `rgba(${rgb},${0.6 * alpha})`;
+    ctx.shadowBlur = 7;
+    ctx.fillRect(cssW * 0.045, cy - ch / 2, cw, ch);
+    ctx.shadowBlur = 0;
+  }
 }
