@@ -2,6 +2,7 @@ import * as THREE from 'three';
 import { AU, MILKY_WAY_RADIUS } from './constants.js';
 import { getAltitude } from './altitude.js';
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
+import { getShot } from './planetconfig.js';
 import { emit, on } from './bus.js';
 import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GALACTIC_CENTER } from './engine.js';
 
@@ -109,6 +110,13 @@ const _upVec = new THREE.Vector3(0, 1, 0);
 let warpTarget = null;
 let warpT = 0;
 let warpDuration = 0;
+// Two ways to cross: 'warp' — the event, log-scaled seconds, the tunnel;
+// 'cruise' — the state, minutes-long, no tunnel FX, SOLACE's pace. Same
+// route/chase/arrival machinery, different temperament.
+let warpMode = 'warp';
+const cruiseLookP = new THREE.Vector3(); // the place being LEFT — the look-back
+let cruiseHasLookBack = false;
+let warpPassInfo = null; // { name, pos, frac, announced } — the sight the route bends past
 let warpU0 = -8, warpU1 = 8; // log-odds endpoints of the sigmoid travel profile
 const warpFromP = new THREE.Vector3();
 const warpFromQ = new THREE.Quaternion();
@@ -134,8 +142,9 @@ let warpCurved = false;                  // straight line when nothing worth pas
 const _bzA = new THREE.Vector3();
 const _bzB = new THREE.Vector3();
 const warpAimP = new THREE.Vector3();    // what the camera LOOKS at — the body itself, never the standoff point
-const warpApproachDir = new THREE.Vector3();
+const warpParkDir = new THREE.Vector3(); // body → standoff, unit
 let warpArrOffset = 0;
+let warpUpBias = 0;                      // extra raised-vantage lift (0 when the shot sets its own elevation)
 
 // Cinematic intro state — optional "begin from the stars" journey, skippable
 let introActive = false;
@@ -159,17 +168,44 @@ let orbitTransition = false;
 let _autoCinema = false;   // hands-free helm: composed orbit drifting
 let _orbitSettleTarget = 0; // ease orbitDistance here (0 = off) — framing glide
 
-// The distance at which an object FILLS the view well — per class.
-// Ringed things need room for their spans; landmark visuals are huge
+// The distance at which an object FILLS the view well. A per-object
+// `shot` config (planetconfig.js for bodies/craft, catalog.js for
+// deep-space locations) is the authority — each destination frames
+// differently. Objects without one fall back to class heuristics:
+// ringed things need room for their spans; landmark visuals are huge
 // and diffuse; plain bodies read best at ~4 radii.
 function niceOrbitDist(b) {
   if (!b || !b.r) return 0;
+  const shot = getShot(b.name);
+  if (shot && shot.dist) return b.r * shot.dist;
   const ringed = b.name === 'SATURN' || b.name === 'URANUS' || b.name === 'BLACK HOLE';
   if (ringed) return b.r * 7;
   if (b.isLandmark) return b.r * 2.3;
   // Spacecraft are metres across — planetary multiples leave them specks
-  if (b.r < 10) return b.r * 3;
+  if (b.r < 10) return Math.max(b.r * 3, 2.5);
   return b.r * 4.2;
+}
+
+// Direction from a body to the camera's parking spot for a configured
+// shot. `azim` swings the bearing around from the sunward side (sun at
+// origin), `elev` tilts it above the world plane; either falls back to
+// `baseDir` (the direction travel would naturally park from).
+function shotParkDir(out, bodyPos, baseDir, shot) {
+  if (shot && shot.azim != null) {
+    out.copy(bodyPos).negate().normalize();
+    out.applyAxisAngle(_upVec, shot.azim * (Math.PI / 180));
+  } else {
+    out.copy(baseDir);
+  }
+  if (shot && shot.elev != null) {
+    let hx = out.x, hz = out.z;
+    const h = Math.hypot(hx, hz);
+    // Parking directly overhead has no bearing — keep an arbitrary one
+    if (h < 1e-6) { hx = 1; hz = 0; } else { hx /= h; hz /= h; }
+    const e = shot.elev * (Math.PI / 180);
+    out.set(hx * Math.cos(e), Math.sin(e), hz * Math.cos(e));
+  }
+  return out.normalize();
 }
 let _cinemaT = 0;
 let _cinemaSeed = 0;
@@ -530,6 +566,20 @@ export function updateFlight(dt, allBodies, dtWall) {
             orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / orbitDistance)));
             orbitMode = true;
             orbitTransition = false;
+            // Whatever path delivered us, the orbit ENDS at the framing
+            // distance — glide in if the arrival left us out of frame,
+            // glide OUT if it dropped us inside something massive.
+            const niceCap = niceOrbitDist(body);
+            _orbitSettleTarget = (niceCap > 0 &&
+              (orbitDistance > niceCap * 1.35 || orbitDistance < niceCap * 0.75))
+              ? niceCap : 0;
+            if (typeof window !== 'undefined') {
+              window.__arrDebug = {
+                name: body.name, r: body.r,
+                capturedDist: Math.round(orbitDistance),
+                nice: Math.round(niceCap),
+              };
+            }
             arrival = null;
         }
         updateHUD();
@@ -567,7 +617,8 @@ export function updateFlight(dt, allBodies, dtWall) {
             // Four-phase easing: a charge beat (held while the drive spools
             // and the nose swings onto the target), then accelerate, cruise,
             // decelerate. The anticipation is what makes the leap feel big.
-            const HOLD = 0.06;
+            // Cruise barely holds at the start — a breath, not a charge
+            const HOLD = warpMode === 'cruise' ? 0.008 : 0.06;
             let eased;
             let speedFeeling;
             if (warpT < HOLD) {
@@ -576,22 +627,52 @@ export function updateFlight(dt, allBodies, dtWall) {
                 warpPhase = 'charging';
             } else {
                 const t2 = Math.min(1, (warpT - HOLD) / (1 - HOLD));
-                // Log-symmetric travel: the sigmoid in log-odds space makes
-                // BOTH ends exponential. Departure: distance from the start
-                // point doubles on a steady beat — the ship visibly backs
-                // out through every scale, like a car leaving a car park.
-                // Arrival: remaining distance halves on the same beat — the
-                // solar system is a multi-second traverse, worlds resolving
-                // in stages, never a blink. The middle is the grand sweep.
-                const u = warpU0 + (warpU1 - warpU0) * t2;
-                eased = 1 / (1 + Math.exp(-u));
-                // Perceived rush is steady through both exponential legs
-                // (scales stream past at a constant beat) — ramp in as the
-                // ship backs out, ease off through the final settle.
-                speedFeeling = t2 < 0.28 ? Math.pow(t2 / 0.28, 2)
-                    : t2 > 0.78 ? Math.max(0, 1 - Math.pow((t2 - 0.78) / 0.22, 2))
-                    : 1.0;
-                warpPhase = t2 < 0.33 ? 'accelerating' : t2 < 0.75 ? 'cruising' : 'decelerating';
+                if (warpMode === 'cruise') {
+                    // The warp profile's exponential tails scale with
+                    // duration: over four MINUTES they become whole
+                    // minutes of imperceptible drift — a cruise that
+                    // "doesn't move". Cruise clamps the log-odds range
+                    // (normalized so the endpoints still land exactly)
+                    // for short, visible departure/arrival legs and a
+                    // long steady middle.
+                    // Asymmetric: the departure clamp (-3.5) is much
+                    // gentler than the arrival clamp (+5.5), so takeoff
+                    // is felt within seconds — the burn actually MOVES
+                    // the ship — while the arrival still resolves slowly.
+                    const U0 = -3.5, U1 = 5.5;
+                    const s0 = 1 / (1 + Math.exp(-U0));
+                    const s1 = 1 / (1 + Math.exp(-U1));
+                    const u = U0 + (U1 - U0) * t2;
+                    eased = (1 / (1 + Math.exp(-u)) - s0) / (s1 - s0);
+                    // The burn arc — sensation follows the engines, not
+                    // the odometer. A hard throttle-up you can feel,
+                    // then CUTOFF: the drives fall silent and the coast
+                    // is carried by wisps and star parallax at a low
+                    // steady breath. On approach, the braking burn
+                    // swells once more, releasing into the arrival.
+                    const burn = Math.min(1, t2 / 0.03) * (1 - smoothstep(0.09, 0.16, t2));
+                    const brake = smoothstep(0.86, 0.93, t2) * (1 - smoothstep(0.965, 1.0, t2));
+                    const coast = 0.3 * Math.min(1, t2 / 0.03);
+                    speedFeeling = Math.max(burn * 0.85, brake * 0.6, coast);
+                    warpPhase = t2 < 0.16 ? 'accelerating' : t2 < 0.86 ? 'cruising' : 'decelerating';
+                } else {
+                    // Log-symmetric travel: the sigmoid in log-odds space makes
+                    // BOTH ends exponential. Departure: distance from the start
+                    // point doubles on a steady beat — the ship visibly backs
+                    // out through every scale, like a car leaving a car park.
+                    // Arrival: remaining distance halves on the same beat — the
+                    // solar system is a multi-second traverse, worlds resolving
+                    // in stages, never a blink. The middle is the grand sweep.
+                    const u = warpU0 + (warpU1 - warpU0) * t2;
+                    eased = 1 / (1 + Math.exp(-u));
+                    // Perceived rush is steady through both exponential legs
+                    // (scales stream past at a constant beat) — ramp in as the
+                    // ship backs out, ease off through the final settle.
+                    speedFeeling = t2 < 0.28 ? Math.pow(t2 / 0.28, 2)
+                        : t2 > 0.78 ? Math.max(0, 1 - Math.pow((t2 - 0.78) / 0.22, 2))
+                        : 1.0;
+                    warpPhase = t2 < 0.33 ? 'accelerating' : t2 < 0.75 ? 'cruising' : 'decelerating';
+                }
             }
             _feel.warp = speedFeeling;
             _feel.govDist = 150000; // dust shell at interstellar scale
@@ -603,8 +684,8 @@ export function updateFlight(dt, allBodies, dtWall) {
                 const bp = warpChaseBody.g.userData._worldPos || warpChaseBody.g.position;
                 warpAimP.copy(bp);
                 warpTargetP.copy(bp)
-                    .addScaledVector(warpApproachDir, -warpArrOffset)
-                    .addScaledVector(_upVec, warpArrOffset * 0.35);
+                    .addScaledVector(warpParkDir, warpArrOffset)
+                    .addScaledVector(_upVec, warpArrOffset * warpUpBias);
             }
 
             // Interpolate position — along the curved route when the
@@ -624,19 +705,44 @@ export function updateFlight(dt, allBodies, dtWall) {
             // the point while the glide aims at the body meant a ~19-degree
             // gaze snap at handoff. Aiming at the body keeps it fixed in
             // frame through deceleration and into the glide seamlessly.
-            _lookMat.lookAt(camPos, warpAimP, _upVec);
+            //
+            // Cruise opens differently: the gaze rests on the place being
+            // LEFT — watching it recede like a station platform — then
+            // sweeps slowly onto the road ahead.
+            if (warpMode === 'cruise' && cruiseHasLookBack) {
+              // A dozen seconds of platform-watching, not a full minute —
+              // the nose is on course well before the burn cuts off
+              const sweep = smoothstep(0.05, 0.16, warpT);
+              _dir.copy(cruiseLookP).lerp(warpAimP, sweep);
+            } else {
+              _dir.copy(warpAimP);
+            }
+            // The vista sweep: as the route skims its chosen sight, the
+            // gaze turns to hold it through the pass, then returns to
+            // the road. The journey acknowledges its own scenery.
+            if (warpMode === 'cruise' && warpPassInfo) {
+              const b = Math.exp(-Math.pow((_e - warpPassInfo.frac) / 0.09, 2)) * 0.85;
+              if (b > 0.02) _dir.lerp(warpPassInfo.pos, b);
+              if (!warpPassInfo.announced && _e > warpPassInfo.frac - 0.03) {
+                warpPassInfo.announced = true;
+                emit('cruise:pass', { name: warpPassInfo.name });
+              }
+            }
+            _lookMat.lookAt(camPos, _dir, _upVec);
             const targetQuat = new THREE.Quaternion().setFromRotationMatrix(_lookMat);
             camQuat.slerpQuaternions(warpFromQ, targetQuat, Math.min(warpT * 5, 1));
             cam.quaternion.copy(camQuat);
 
             // Speed feeling: gentle FOV push, a whisper of vignette, star
             // fade — the 3D dust stream carries the tunnel on its own.
-            cam.fov = BASE_FOV + speedFeeling * 18;
+            // Cruise: the lens leans in during the burns (you feel the
+            // thrust) and relaxes almost flat through the coast.
+            cam.fov = BASE_FOV + speedFeeling * (warpMode === 'cruise' ? 9 : 18);
             cam.updateProjectionMatrix();
             const streakEl = document.getElementById('warp-streaks');
             if (streakEl) streakEl.style.opacity = 0;
             const vignetteEl = document.getElementById('warp-vignette');
-            if (vignetteEl) vignetteEl.style.opacity = speedFeeling * 0.18;
+            if (vignetteEl) vignetteEl.style.opacity = warpMode === 'cruise' ? 0 : speedFeeling * 0.18;
 
             // Stars stay at full brightness through warp: the parallax
             // volumes ARE the sensation of travel now — dimming them was a
@@ -695,18 +801,22 @@ export function updateFlight(dt, allBodies, dtWall) {
         flyT += dtTravel / flyDuration;
         if (flyT >= 1) {
             flyT = 1;
-            // Auto-enter orbit mode on arrival
+            // Auto-enter orbit mode on arrival — capture the pose we
+            // actually arrived at (no snap), then settle to the framing
+            // distance if the body drifted during the glide.
             const arrivedBody = flyTarget.bodyRef;
             flyTarget = null;
             orbitBody = arrivedBody;
-            orbitDistance = arrivedBody.r * 4.5;
             orbitMode = true;
             const bodyPos = arrivedBody.g.userData._worldPos || arrivedBody.g.position;
             const offset = camPos.clone().sub(bodyPos);
-            const d = offset.length();
+            const d = Math.max(offset.length(), 1e-6);
+            orbitDistance = d;
             orbitTheta = Math.atan2(offset.z, offset.x);
             orbitPhi = Math.acos(Math.max(-1, Math.min(1, offset.y / d)));
             orbitTransition = false;
+            const nice = niceOrbitDist(arrivedBody);
+            _orbitSettleTarget = (nice > 0 && (d > nice * 1.35 || d < nice * 0.75)) ? nice : 0;
             velocity.set(0, 0, 0);
             angularVelocity.set(0, 0, 0);
             updateHUD();
@@ -772,10 +882,11 @@ export function updateFlight(dt, allBodies, dtWall) {
         // alive (a static opening reads as frozen) while keeping the
         // vista sunlit for the first minute.
         if (_orbitSettleTarget > 0) {
-            orbitDistance += (_orbitSettleTarget - orbitDistance) * (1 - Math.exp(-dt / 7));
-            if (Math.abs(orbitDistance - _orbitSettleTarget) < _orbitSettleTarget * 0.03) {
-                _orbitSettleTarget = 0;
-            }
+            // Log-space easing: equal seconds per distance decade, so any
+            // size of correction reads as a deliberate final approach
+            const ratio = _orbitSettleTarget / Math.max(orbitDistance, 1e-6);
+            orbitDistance *= Math.pow(ratio, 1 - Math.exp(-dt / 2.2));
+            if (Math.abs(Math.log(ratio)) < 0.03) _orbitSettleTarget = 0;
         }
         if (_autoCinema) {
             // Cinematography, not rotation: theta breathes, the camera
@@ -1131,14 +1242,17 @@ export function flyTo(bodyName) {
         return;
     }
 
-    // Approach from the sunward side (sun is at origin) so the lit face is visible
+    // Approach from the sunward side (sun is at origin) so the lit face
+    // is visible, offset slightly upward for a cinematic angle — unless
+    // the body's shot config chooses its own bearing/elevation.
+    const shot = getShot(bodyName);
     const sunDir = new THREE.Vector3().copy(bodyPos).negate().normalize();
-    // Offset slightly upward for a cinematic angle
     sunDir.y += 0.3;
     sunDir.normalize();
-    // Distance: further for large bodies so they frame nicely
-    const arrivalDist = body.r * 4.5;
-    flyTargetP.copy(bodyPos).addScaledVector(sunDir, arrivalDist);
+    const parkDir = shotParkDir(new THREE.Vector3(), bodyPos, sunDir, shot);
+    // Distance: the shot's framing distance, or ~4.5 radii
+    const arrivalDist = body.r * ((shot && shot.dist) || 4.5);
+    flyTargetP.copy(bodyPos).addScaledVector(parkDir, arrivalDist);
 
     flyFromP.copy(camPos);
     flyFromQ.copy(camQuat);
@@ -1317,7 +1431,8 @@ export function startAtVista(body, opts = {}) {
   orbitBody = body;
   orbitMode = true;
   orbitTransition = false;
-  orbitDistance = body.r * (opts.dist || 4.2);
+  const vistaShot = getShot(body.name);
+  orbitDistance = body.r * (opts.dist || (vistaShot && vistaShot.dist) || 4.2);
 
   const sunDir = bodyPos.clone().negate().normalize();
   orbitTheta = Math.atan2(sunDir.z, sunDir.x) + (opts.theta ?? 0.65);
@@ -1355,7 +1470,7 @@ function showArrivalNotification(name, desc) {
 
 // ── warpTo (interstellar travel) ────────────────────────────────────────
 
-export function warpTo(targetName) {
+export function warpTo(targetName, mode = 'warp') {
   const allLandmarks = getLandmarks();
   const landmark = allLandmarks.find(lm => lm.name === targetName);
 
@@ -1373,10 +1488,20 @@ export function warpTo(targetName) {
     warpChaseBody = body;
     targetPos = body.g.userData._worldPos || body.g.position;
     targetR = body.r;
-    if (camPos.distanceTo(targetPos) <= 40000) {
+    if (mode !== 'cruise' && camPos.distanceTo(targetPos) <= 40000) {
       flyTo(targetName); // short hop — the neighborhood glide is nicer
       return;
     }
+  }
+
+  warpMode = mode;
+  // The look-back: a cruise departs the way a train leaves a station —
+  // gazing at the place receding before the road ahead. Anchor on the
+  // body we were orbiting (snapshot; we're receding, drift is invisible).
+  cruiseHasLookBack = false;
+  if (mode === 'cruise' && orbitMode && orbitBody && orbitBody.g) {
+    cruiseLookP.copy(orbitBody.g.userData._worldPos || orbitBody.g.position);
+    cruiseHasLookBack = true;
   }
 
   // Cancel any active orbit/fly-to/return modes
@@ -1395,29 +1520,43 @@ export function warpTo(targetName) {
   // the visual's volume. For bodies, stop a few radii out — the arrival
   // glide then dollies in and captures orbit.
   const approachDir = new THREE.Vector3().copy(targetPos).sub(camPos).normalize();
-  // Whole galaxies must be FRAMED, never entered — from inside, their
-  // photo layers wash the screen to white. Stand off far enough that the
-  // full disc fills a majestic (not claustrophobic) share of the view
-  // after the arrival glide dollies in. Other landmarks reward proximity
-  // but were parking slightly inside their layer stacks.
-  const isGalaxy = landmark &&
-    (landmark.visual === 'spiral_galaxy' || landmark.visual === 'sombrero_galaxy');
-  // Ringed planets need room: the rings span 5.2 radii tip-to-tip, so a
-  // 6r standoff crops them out of frame entirely.
-  const isRinged = !landmark &&
-    (targetName === 'SATURN' || targetName === 'URANUS' || targetName === 'BLACK HOLE');
-  const arrivalOffset = landmark
-    ? (isVoid ? targetR * 0.45 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
-    : targetR < 10
-      ? Math.max(targetR * 5, 14)   // spacecraft: close enough to READ it
-      : Math.max(targetR * (isRinged ? 11 : 6), 55);
-  warpTargetP.copy(targetPos).addScaledVector(approachDir, -arrivalOffset);
-  if (!landmark) {
-    // Settle slightly above the ecliptic: rings, poles, and orbital
-    // geometry all read better from a raised vantage than from flat in
-    // the plane — where Saturn's rings vanish into an edge-on line.
-    warpTargetP.addScaledVector(_upVec, arrivalOffset * 0.35);
+  // A configured shot is the authority on how far to park: the arrival
+  // glide dollies to 0.65×, so the standoff compensates and the glide
+  // ENDS at the shot's framing distance. Without one, class heuristics:
+  // galaxies must be FRAMED, never entered (from inside, their photo
+  // layers wash the screen to white); voids are entered on purpose;
+  // ringed planets need room for their spans; spacecraft floors scale
+  // with the craft.
+  const shot = getShot(targetName);
+  let arrivalOffset;
+  if (shot && shot.dist) {
+    arrivalOffset = (targetR * shot.dist) / 0.65;
+  } else {
+    const isGalaxy = landmark &&
+      (landmark.visual === 'spiral_galaxy' || landmark.visual === 'sombrero_galaxy');
+    const isRinged = !landmark &&
+      (targetName === 'SATURN' || targetName === 'URANUS' || targetName === 'BLACK HOLE');
+    arrivalOffset = landmark
+      ? (isVoid ? targetR * 0.45 : isGalaxy ? targetR * 6.0 : targetR * 3.5)
+      : targetR < 10
+        ? Math.max(targetR * 5, 4)  // 14 units is 23 radii for Hubble (r=0.6)
+        : Math.max(targetR * (isRinged ? 11 : 6), 55);
   }
+  // Park direction: the shot's bearing/elevation when configured,
+  // otherwise the near side of wherever the journey came from. Bodies
+  // without a shot settle slightly above the ecliptic: rings, poles,
+  // and orbital geometry all read better from a raised vantage than
+  // from flat in the plane — where Saturn's rings vanish edge-on.
+  if (shot && (shot.azim != null || shot.elev != null)) {
+    shotParkDir(warpParkDir, targetPos, approachDir.clone().negate(), shot);
+    warpUpBias = 0;
+  } else {
+    warpParkDir.copy(approachDir).negate();
+    warpUpBias = landmark ? 0 : 0.35;
+  }
+  warpTargetP.copy(targetPos)
+    .addScaledVector(warpParkDir, arrivalOffset)
+    .addScaledVector(_upVec, arrivalOffset * warpUpBias);
   // ── Route planning: curve past something worth seeing ─────────────
   // A journey is content. If a landmark or planet sits near the corridor,
   // bend the route (quadratic bezier) to skim past it — with the gaze
@@ -1428,7 +1567,7 @@ export function warpTo(targetName) {
     const legLen = camPos.distanceTo(warpTargetP);
     const _dirLeg = new THREE.Vector3().copy(warpTargetP).sub(camPos).normalize();
     let best = null, bestScore = 0;
-    const consider = (pos, r, isLm) => {
+    const consider = (pos, r, isLm, name) => {
       const toC = new THREE.Vector3().copy(pos).sub(camPos);
       const s = toC.dot(_dirLeg);
       if (s < legLen * 0.18 || s > legLen * 0.82) return; // mid-route only
@@ -1438,16 +1577,16 @@ export function warpTo(targetName) {
       if (lat < flybyDist) return;              // already flying through it
       if (lat > Math.min(legLen * 0.22, r * 60)) return; // too far off-corridor
       const score = r / lat;
-      if (score > bestScore) { bestScore = score; best = { pos: pos.clone(), closest, lat, flybyDist }; }
+      if (score > bestScore) { bestScore = score; best = { pos: pos.clone(), closest, lat, flybyDist, name, frac: s / legLen }; }
     };
     for (const lm of allLandmarks) {
       if (lm.name === targetName) continue;
-      consider(lm.pos, lm.radius, true);
+      consider(lm.pos, lm.radius, true, lm.name);
     }
     if (_allBodies) {
       for (const b of _allBodies) {
         if (!b.g || !b.r || b.r < 5 || b.name === targetName) continue;
-        consider(b.g.userData._worldPos || b.g.position, b.r, false);
+        consider(b.g.userData._worldPos || b.g.position, b.r, false, b.name);
       }
     }
     if (best) {
@@ -1460,10 +1599,12 @@ export function warpTo(targetName) {
         .addScaledVector(camPos, -0.5)
         .addScaledVector(warpTargetP, -0.5);
       warpCurved = true;
+      warpPassInfo = { name: best.name, pos: best.pos.clone(), frac: best.frac, announced: false };
+    } else {
+      warpPassInfo = null;
     }
   }
 
-  warpApproachDir.copy(approachDir);
   warpArrOffset = arrivalOffset;
   {
     const journey = camPos.distanceTo(warpTargetP);
@@ -1478,7 +1619,14 @@ export function warpTo(targetName) {
   // proportional without long ones becoming tedious. Sensation of speed
   // comes from the tunnel, not the clock.
   const dist = camPos.distanceTo(targetPos);
-  warpDuration = Math.min(40, Math.max(9, 10 + 4.6 * Math.log10(Math.max(dist, 10000) / 10000)));
+  if (mode === 'cruise') {
+    // Minutes, not seconds — the journey IS the content. Still scales
+    // gently with distance so far crossings feel farther.
+    warpDuration = Math.min(300, Math.max(150,
+      150 + (Math.log10(Math.max(dist, 10000)) - 5) * 45));
+  } else {
+    warpDuration = Math.min(40, Math.max(9, 10 + 4.6 * Math.log10(Math.max(dist, 10000) / 10000)));
+  }
 
   // Set warp target
   warpTarget = { name: targetName, desc: landmark ? landmark.desc : '', pos: targetPos.clone ? targetPos.clone() : targetPos };
@@ -1487,7 +1635,7 @@ export function warpTo(targetName) {
   warpPhase = 'accelerating';
   _arrivalShown = false;
   emit('nav:target', targetName);
-  emit('warp:start', { name: targetName, duration: warpDuration });
+  emit('warp:start', { name: targetName, duration: warpDuration, mode });
 
   // Clear velocity
   velocity.set(0, 0, 0);
@@ -1495,6 +1643,16 @@ export function warpTo(targetName) {
 }
 
 export function isWarpTraveling() { return !!warpTarget; }
+export function isCruising() { return !!warpTarget && warpMode === 'cruise'; }
+
+/**
+ * The slow crossing — SOLACE's way of traveling. Same destination
+ * resolution, routing, and arrival as warp, at a temperament measured
+ * in minutes. Any deliberate input returns the helm instantly.
+ */
+export function cruiseTo(targetName) {
+  warpTo(targetName, 'cruise');
+}
 
 // ── toggleOrbit ──────────────────────────────────────────────────────────────
 

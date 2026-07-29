@@ -7,7 +7,7 @@
 import { on, emit } from './bus.js';
 import { getLandmarks } from './deepspace.js';
 import {
-  warpTo, isOrbiting, isWarpTraveling, getOrbitBodyName,
+  cruiseTo, isOrbiting, isWarpTraveling, isFlyingTo, getOrbitBodyName,
   setAutoCinema, isIntroPlaying,
 } from './flight.js';
 
@@ -79,9 +79,12 @@ function planNext() {
   const next = pool[Math.floor(Math.random() * pool.length)];
   history.push(next);
   if (history.length > 5) history.shift();
-  driftGrace = 15; // if the warp doesn't take, replan
+  driftGrace = 15; // if the cruise doesn't take, replan
   hlog(`DEPART -> ${next}`);
-  warpTo(next);
+  // Speed follows intent: when SOLACE has the helm, the ship CRUISES —
+  // the slow crossing is the passive experience. Deliberate chart
+  // navigation keeps the fast warp.
+  cruiseTo(next);
   hlog(`warp active=${isWarpTraveling()}`);
 }
 
@@ -143,6 +146,10 @@ export function updateAutopilot(dt) {
   if (isIntroPlaying() || chartOpen) { idle = Math.min(idle, IDLE_ENGAGE - 30); return; }
 
   if (!engaged) {
+    // A journey the traveler chose IS engagement. Watching a cruise
+    // hands-off for minutes must never summon the autopilot to reroute
+    // it — that was the "SOLACE took the helm mid-crossing" bug.
+    if (isWarpTraveling() || isFlyingTo()) { idle = 0; return; }
     idle += dt;
     if (idle > IDLE_ENGAGE) engage();
     return;

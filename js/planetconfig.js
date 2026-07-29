@@ -36,6 +36,22 @@ import { getLocation } from './catalog.js';
  * @property {string} desc — description for deep atmosphere phase
  */
 
+/**
+ * @typedef {Object} ShotConfig
+ * The arrival "camera shot": where travel parks the ship and where orbit
+ * settles. Tuned per object — spacecraft need to be close enough to read
+ * their structure, massive objects need room to be seen whole.
+ * @property {number} dist — framing distance in multiples of the object's
+ *   visual radius (body.r; for catalog landmarks r = size × 0.3)
+ * @property {number} [elev] — camera elevation in degrees above the
+ *   ecliptic/orbital plane (unset: class default — bodies get a slight
+ *   raised vantage, landmarks arrive level)
+ * @property {number} [azim] — bearing in degrees around from the sunward
+ *   side (0 = camera between Sun and object, fully lit face; 90 =
+ *   three-quarter light; 180 = backlit silhouette). Unset: arrive from
+ *   whichever side the journey came
+ */
+
 export const PLANET_CONFIGS = {
   SUN: {
     terrain: { type: 'none' },
@@ -265,6 +281,7 @@ export const PLANET_CONFIGS = {
       lightning: false,
       desc: 'Metallic hydrogen mantle. Ring shadows dance across the clouds.',
     },
+    shot: { dist: 7 }, // rings span 5.2 radii tip-to-tip — they need room
     info: {
       type: 'GAS GIANT',
       facts: ['Diameter: 116,460 km (9.5x Earth)', 'Ring system: 282,000 km wide, mostly ice', '146 known moons including Titan'],
@@ -295,6 +312,7 @@ export const PLANET_CONFIGS = {
       lightning: false,
       desc: 'Water-ammonia ocean. 98\u00b0 axial tilt creates extreme seasons.',
     },
+    shot: { dist: 7 }, // ringed \u2014 same standoff as Saturn
     info: {
       type: 'ICE GIANT',
       facts: ['Diameter: 50,724 km (4x Earth)', 'Axial tilt: 98\u00b0 (rolls on its side)', '28 known moons'],
@@ -381,39 +399,56 @@ export const PLANET_CONFIGS = {
     },
   },
 
+  'BLACK HOLE': {
+    terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    // The Gargantua approach: the raymarched disc spans ~10 horizon
+    // radii, and the film's preview eases to 19 — park there, barely
+    // above the disc plane.
+    shot: { dist: 19, elev: 3 },
+    info: { type: 'STELLAR-MASS BLACK HOLE',
+      facts: ['Mass: ~21 times the Sun', 'Event horizon: ~120 km across', 'Accretion disc heated to millions of degrees', 'Time dilation strongest at the innermost stable orbit'],
+      lore: 'A dead star folded into itself until not even light could climb back out. The glow is matter\'s last statement — a scream stretched into a smear of light at the edge of forever.' },
+  },
+
   // ── Spacecraft ──
   'VOYAGER 1': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 3 }, // close — the dish and boom should read
     info: { type: 'DEEP SPACE PROBE',
       facts: ['Launched: September 5, 1977', 'Distance: 163 AU (24.4 billion km)', 'Speed: 17 km/s relative to Sun'],
       lore: 'The farthest human-made object. Still transmitting from interstellar space. Carries the Golden Record — a message to the cosmos.' },
   },
   'VOYAGER 2': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 3 },
     info: { type: 'DEEP SPACE PROBE',
       facts: ['Launched: August 20, 1977', 'Distance: 137 AU (20.5 billion km)', 'Only craft to visit all 4 gas giants'],
       lore: 'Twin of Voyager 1. Its Grand Tour of Jupiter, Saturn, Uranus, and Neptune was a once-in-176-years alignment.' },
   },
   'NEW HORIZONS': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 3 },
     info: { type: 'DEEP SPACE PROBE',
       facts: ['Launched: January 19, 2006', 'Pluto flyby: July 14, 2015', 'Now exploring the Kuiper Belt'],
       lore: 'Carried a portion of Clyde Tombaugh\'s ashes — the man who discovered Pluto — to the world he found.' },
   },
   'JWST': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 2.6, azim: 40 }, // near the lit side — gold mirror catches the sun
     info: { type: 'SPACE TELESCOPE',
       facts: ['Launched: December 25, 2021', 'Location: Sun-Earth L2 (1.5 million km)', '6.5m gold-plated beryllium mirror'],
       lore: 'Seeing the universe in infrared light. Its first deep field image revealed galaxies formed just 600 million years after the Big Bang.' },
   },
   'ISS': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 3 },
     info: { type: 'SPACE STATION',
       facts: ['Altitude: 420 km above Earth', 'Speed: 7.66 km/s (orbits every 90 min)', 'Continuously crewed since Nov 2, 2000'],
       lore: 'A collaboration of 15 nations. The third brightest object in the night sky. Humanity\'s home in orbit.' },
   },
   'HUBBLE': {
     terrain: { type: 'none' }, atmosphere: { hasAtmosphere: false },
+    shot: { dist: 3.5 }, // r=0.6 — even 3.5 radii is barely 2 units out
     info: { type: 'SPACE TELESCOPE',
       facts: ['Launched: April 24, 1990', 'Altitude: 540 km above Earth', '2.4m primary mirror, observes UV/visible/near-IR'],
       lore: 'Changed our understanding of the universe. The Hubble Deep Field revealed thousands of galaxies in a patch of sky the size of a grain of sand.' },
@@ -468,4 +503,17 @@ export function getPlanetConfig(name) {
     };
   }
   return null;
+}
+
+/**
+ * The arrival camera shot for any navigable object — solar-system bodies
+ * and spacecraft carry it here, deep-space locations in the catalog.
+ * @param {string} name — runtime lookup name (uppercase)
+ * @returns {ShotConfig|null}
+ */
+export function getShot(name) {
+  const cfg = PLANET_CONFIGS[name];
+  if (cfg && cfg.shot) return cfg.shot;
+  const loc = getLocation(name);
+  return (loc && loc.shot) || null;
 }
