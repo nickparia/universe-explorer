@@ -1,0 +1,117 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+html,body{margin:0;padding:0;background:#02040a;overflow:hidden;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif}
+a{color:rgba(140,190,255,0.8);text-decoration:none}a:hover{color:#cfe6ff}
+@keyframes fadeUp{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+@keyframes hintPulse{0%,100%{opacity:0.3}50%{opacity:0.6}}
+</style>
+</helmet>
+<div style="position:relative;width:100vw;height:100vh;overflow:hidden;background:radial-gradient(ellipse at 50% 45%, #060a16 0%, #03050c 55%, #010208 100%)">
+  <div style="position:absolute;inset:0">
+    <canvas ref="{{ canvasRef }}" style="display:block"></canvas>
+  </div>
+  <div style="position:absolute;inset:0;pointer-events:none;background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%)"></div>
+  <div style="position:absolute;top:30px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none">
+    <div style="font-size:12px;letter-spacing:9px;color:rgba(220,235,255,0.85);text-shadow:0 0 24px rgba(120,180,255,0.4),0 1px 8px rgba(0,0,0,0.9)">star map</div>
+    <div style="font-size:8px;letter-spacing:4px;margin-top:8px;color:rgba(255,255,255,0.3)">press esc to close</div>
+  </div>
+  <div style="position:absolute;bottom:28px;left:50%;transform:translateX(-50%);display:flex;gap:30px;align-items:center">
+    <div onClick="{{ zoomSolar }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+      <div style="width:5px;height:5px;border-radius:50%;background:{{ tierSolarDot }};box-shadow:0 0 8px {{ tierSolarDot }};transition:background 0.3s"></div>
+      <span style="font-size:9px;letter-spacing:4px;color:{{ tierSolarColor }};transition:color 0.3s">solar system</span>
+    </div>
+    <div style="width:26px;height:1px;background:rgba(160,200,255,0.15)"></div>
+    <div onClick="{{ zoomInterstellar }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+      <div style="width:5px;height:5px;border-radius:50%;background:{{ tierInterDot }};box-shadow:0 0 8px {{ tierInterDot }};transition:background 0.3s"></div>
+      <span style="font-size:9px;letter-spacing:4px;color:{{ tierInterColor }};transition:color 0.3s">interstellar</span>
+    </div>
+    <div style="width:26px;height:1px;background:rgba(160,200,255,0.15)"></div>
+    <div onClick="{{ zoomGalactic }}" style="display:flex;align-items:center;gap:9px;cursor:pointer">
+      <div style="width:5px;height:5px;border-radius:50%;background:{{ tierGalDot }};box-shadow:0 0 8px {{ tierGalDot }};transition:background 0.3s"></div>
+      <span style="font-size:9px;letter-spacing:4px;color:{{ tierGalColor }};transition:color 0.3s">galactic</span>
+    </div>
+  </div>
+  <div style="position:absolute;bottom:64px;right:28px;font-size:9px;letter-spacing:3px;color:rgba(255,255,255,0.3);text-align:right;line-height:2.1;animation:hintPulse 4s ease-in-out infinite;pointer-events:none">drag to rotate · scroll to zoom<br>click a light to learn more</div>
+  <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;bottom:70px;left:32px;max-width:400px;padding:22px 26px;pointer-events:none;animation:fadeUp 0.4s ease-out;background:linear-gradient(to right, rgba(5,8,16,0.55), transparent);backdrop-filter:blur(4px)">
+      <div style="font-size:22px;letter-spacing:10px;color:rgba(255,255,255,0.95);font-weight:300;text-shadow:0 0 20px {{ selGlow }},0 1px 6px rgba(0,0,0,0.9)">{{ selName }}</div>
+      <div style="font-size:10px;letter-spacing:6px;color:rgba(120,180,255,0.8);margin-top:6px;text-shadow:0 1px 4px rgba(0,0,0,0.8)">{{ selKind }} · {{ selDist }}</div>
+      <div style="width:40px;height:1px;background:rgba(120,180,255,0.25);margin:12px 0"></div>
+      <div style="font-size:12px;letter-spacing:1.5px;color:rgba(255,255,255,0.68);line-height:2;text-shadow:0 1px 6px rgba(0,0,0,0.9)">{{ selDesc }}</div>
+      <div onClick="{{ engageWarp }}" style="display:inline-block;margin-top:16px;padding:9px 26px;pointer-events:all;font-size:10px;letter-spacing:5px;cursor:pointer;color:rgba(120,180,255,0.9);background:rgba(120,180,255,0.06);border:1px solid rgba(120,180,255,0.4);transition:all 0.3s" style-hover="background:rgba(120,180,255,0.12);box-shadow:0 0 24px rgba(120,180,255,0.3)">{{ warpLabel }}</div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ warping }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;top:44%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;animation:fadeUp 0.4s ease-out">
+      <div style="font-size:14px;letter-spacing:8px;color:rgba(255,180,80,0.9);text-shadow:0 0 20px rgba(255,150,50,0.5)">course laid in</div>
+    </div>
+  </sc-if>
+  <a href="starmap-options.dc.html" style="position:absolute;top:26px;left:28px;font-size:9px;letter-spacing:3px;color:rgba(140,190,255,0.4)">← all options</a>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;showRings&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Map&quot;},&quot;autoRotate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;}}">
+class Component extends DCLogic {
+  canvasRef = React.createRef();
+  state = { sel: null, selDist: '', tier: 'solar system', warping: false };
+  async componentDidMount(){
+    const eng = await import('./starmap-engine.js');
+    const data = await import('./starmap-data.js');
+    this.view = new eng.StarMapView(this.canvasRef.current, {
+      theme: 'natural',
+      autoRotate: this.props.autoRotate ?? true,
+      background: true,
+      rings: this.props.showRings ?? true,
+      onSelect: d => this.setState({ sel: d, selDist: d ? this.view.distLabel(d) : '', warping: false }),
+      onTier: t => this.setState({ tier: t }),
+    });
+    this.view.setData(data.DESTINATIONS);
+  }
+  componentDidUpdate(){
+    if (this.view){
+      this.view.o.autoRotate = this.props.autoRotate ?? true;
+      this.view.o.rings = this.props.showRings ?? true;
+    }
+  }
+  componentWillUnmount(){ if (this.view) this.view.destroy(); }
+  renderVals(){
+    const s = this.state, sel = s.sel;
+    const on = t => s.tier === t;
+    return {
+      canvasRef: this.canvasRef,
+      tierSolarColor: on('solar system') ? 'rgba(220,235,255,0.9)' : 'rgba(180,210,255,0.35)',
+      tierInterColor: on('interstellar') ? 'rgba(220,235,255,0.9)' : 'rgba(180,210,255,0.35)',
+      tierGalColor: on('galactic') ? 'rgba(220,235,255,0.9)' : 'rgba(180,210,255,0.35)',
+      tierSolarDot: on('solar system') ? '#8fd8ff' : 'rgba(140,180,255,0.25)',
+      tierInterDot: on('interstellar') ? '#8fd8ff' : 'rgba(140,180,255,0.25)',
+      tierGalDot: on('galactic') ? '#8fd8ff' : 'rgba(140,180,255,0.25)',
+      zoomSolar: () => this.view && this.view.zoomTier('solar system'),
+      zoomInterstellar: () => this.view && this.view.zoomTier('interstellar'),
+      zoomGalactic: () => this.view && this.view.zoomTier('galactic'),
+      hasSel: !!sel,
+      selName: sel ? sel.name.toLowerCase() : '',
+      selKind: sel ? sel.kind : '',
+      selDesc: sel ? sel.desc : '',
+      selDist: s.selDist,
+      selGlow: sel ? sel.color : '#8fd8ff',
+      warpLabel: sel && sel.type === 'landmark' ? 'engage warp' : 'fly there',
+      engageWarp: () => {
+        this.setState({ warping: true });
+        clearTimeout(this._wt);
+        this._wt = setTimeout(() => this.setState({ warping: false }), 2200);
+      },
+      warping: s.warping,
+    };
+  }
+}
+</script>
+</body>
+</html>

@@ -1,0 +1,133 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<style>
+html,body{margin:0;padding:0;background:#04060c;overflow:hidden;font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif}
+a{color:rgba(140,190,255,0.8);text-decoration:none}a:hover{color:#cfe6ff}
+@keyframes scan{0%{background-position:0 0}100%{background-position:0 6px}}
+@keyframes emitterPulse{0%,100%{opacity:0.7}50%{opacity:1}}
+@keyframes fadeUp{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:translateY(0)}}
+</style>
+</helmet>
+<div style="position:relative;width:100vw;height:100vh;overflow:hidden;background:linear-gradient(to bottom, #03050a 0%, #05080f 55%, #070b14 100%)">
+  <div style="position:absolute;inset:0;background-image:radial-gradient(1px 1px at 12% 18%, rgba(255,255,255,0.35) 0, transparent 100%),radial-gradient(1px 1px at 88% 12%, rgba(255,255,255,0.3) 0, transparent 100%),radial-gradient(1.5px 1.5px at 74% 26%, rgba(200,220,255,0.3) 0, transparent 100%),radial-gradient(1px 1px at 30% 8%, rgba(255,255,255,0.25) 0, transparent 100%),radial-gradient(1px 1px at 52% 14%, rgba(255,255,255,0.2) 0, transparent 100%)"></div>
+  <div style="position:absolute;left:50%;bottom:15vh;transform:translateX(-50%);width:64vw;height:62vh;pointer-events:none;background:linear-gradient(to top, {{ accentA14 }} 0%, transparent 75%);clip-path:polygon(40% 100%, 60% 100%, 97% 0, 3% 0)"></div>
+  <div style="position:absolute;inset:0 0 15vh 0">
+    <canvas ref="{{ canvasRef }}" style="display:block"></canvas>
+  </div>
+  <div style="position:absolute;inset:0 0 15vh 0;pointer-events:none;mix-blend-mode:screen;background:repeating-linear-gradient(to bottom, rgba(140,220,255,0.025) 0 1px, transparent 1px 3px);animation:scan 0.5s linear infinite"></div>
+  <div style="position:absolute;left:0;right:0;bottom:0;height:15vh;background:linear-gradient(to bottom, #0b1220 0%, #060a12 100%);border-top:1px solid rgba(140,200,255,0.22);box-shadow:0 -20px 60px rgba(0,0,0,0.6)">
+    <div style="position:absolute;top:-2px;left:50%;transform:translateX(-50%);width:38%;height:3px;border-radius:2px;background:{{ accent }};box-shadow:0 0 26px {{ accent }}, 0 0 60px {{ accentA40 }};animation:emitterPulse 3.4s ease-in-out infinite"></div>
+    <div style="display:flex;justify-content:space-between;align-items:flex-start;padding:22px 32px 0 32px">
+      <div style="font-size:9px;letter-spacing:4px;color:rgba(180,210,255,0.35);line-height:2.2">NAV CONSOLE 03<br>HOLOGRAPHIC PROJECTION · ACTIVE</div>
+      <div style="font-size:9px;letter-spacing:3px;color:rgba(180,210,255,0.28);text-align:center;line-height:2.2;padding-top:4px">drag to rotate · scroll to zoom · click to target</div>
+      <div style="font-size:9px;letter-spacing:4px;color:rgba(180,210,255,0.35);text-align:right;line-height:2.2">REF FRAME · HELIOCENTRIC<br>SHIP POSITION · EARTH ORBIT</div>
+    </div>
+  </div>
+  <div style="position:absolute;top:26px;left:32px">
+    <div style="font-size:13px;letter-spacing:8px;color:rgba(220,235,255,0.9);text-shadow:0 0 20px {{ accentA40 }}">star map</div>
+    <div style="font-size:9px;letter-spacing:4px;margin-top:8px;color:rgba(180,210,255,0.35)">navigation console</div>
+  </div>
+  <div style="position:absolute;top:26px;right:32px;display:flex;gap:26px;align-items:center">
+    <div onClick="{{ zoomSolar }}" style="font-size:10px;letter-spacing:4px;cursor:pointer;color:{{ tierSolarColor }};transition:color 0.3s">solar system</div>
+    <div style="width:1px;height:10px;background:rgba(160,200,255,0.2)"></div>
+    <div onClick="{{ zoomInterstellar }}" style="font-size:10px;letter-spacing:4px;cursor:pointer;color:{{ tierInterColor }};transition:color 0.3s">interstellar</div>
+    <div style="width:1px;height:10px;background:rgba(160,200,255,0.2)"></div>
+    <div onClick="{{ zoomGalactic }}" style="font-size:10px;letter-spacing:4px;cursor:pointer;color:{{ tierGalColor }};transition:color 0.3s">galactic</div>
+  </div>
+  <sc-if value="{{ hasSel }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;top:90px;right:32px;width:300px;padding:24px 26px;background:rgba(8,12,20,0.72);backdrop-filter:blur(12px);border:1px solid {{ accentA25 }};box-shadow:0 0 40px rgba(0,0,0,0.5), inset 0 0 30px {{ accentA06 }};animation:fadeUp 0.35s ease-out">
+      <div onClick="{{ closeSel }}" style="position:absolute;top:12px;right:14px;font-size:18px;color:rgba(255,255,255,0.4);cursor:pointer;line-height:1" style-hover="color:rgba(255,255,255,0.9)">×</div>
+      <div style="font-size:19px;letter-spacing:7px;color:rgba(255,255,255,0.95);font-weight:300;text-shadow:0 0 18px {{ accentA40 }}">{{ selName }}</div>
+      <div style="font-size:9px;letter-spacing:5px;margin-top:7px;color:{{ accentA80 }}">{{ selKind }}</div>
+      <div style="width:40px;height:1px;margin:14px 0;background:{{ accentA25 }}"></div>
+      <div style="font-size:11px;letter-spacing:1.5px;line-height:1.9;color:rgba(255,255,255,0.62);font-style:italic">{{ selShort }}</div>
+      <div style="display:flex;justify-content:space-between;margin-top:16px;font-size:10px;letter-spacing:2px">
+        <span style="color:rgba(255,255,255,0.35)">DISTANCE</span>
+        <span style="color:{{ accentA80 }}">{{ selDist }}</span>
+      </div>
+      <div onClick="{{ engageWarp }}" style="margin-top:20px;padding:11px 0;text-align:center;font-size:11px;letter-spacing:6px;cursor:pointer;color:{{ accentA90 }};background:{{ accentA06 }};border:1px solid {{ accentA40 }};transition:all 0.3s" style-hover="background:{{ accentA14 }};box-shadow:0 0 24px {{ accentA25 }}">{{ warpLabel }}</div>
+    </div>
+  </sc-if>
+  <sc-if value="{{ warping }}" hint-placeholder-val="{{ false }}">
+    <div style="position:absolute;left:50%;top:42%;transform:translate(-50%,-50%);text-align:center;pointer-events:none;animation:fadeUp 0.4s ease-out">
+      <div style="font-size:13px;letter-spacing:8px;color:{{ accentA90 }};text-shadow:0 0 30px {{ accent }}">warp course plotted</div>
+      <div style="font-size:9px;letter-spacing:4px;margin-top:10px;color:rgba(255,255,255,0.4)">{{ warpDest }}</div>
+    </div>
+  </sc-if>
+  <a href="starmap-options.dc.html" style="position:absolute;bottom:calc(15vh + 14px);left:32px;font-size:9px;letter-spacing:3px;color:rgba(140,190,255,0.4)">← all options</a>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{&quot;$preview&quot;:{&quot;width&quot;:&quot;100%&quot;,&quot;height&quot;:&quot;100%&quot;},&quot;accent&quot;:{&quot;editor&quot;:&quot;color&quot;,&quot;default&quot;:&quot;#7fd4ff&quot;,&quot;tsType&quot;:&quot;string&quot;,&quot;options&quot;:[&quot;#7fd4ff&quot;,&quot;#8affc9&quot;,&quot;#ffd27f&quot;,&quot;#d0a6ff&quot;],&quot;section&quot;:&quot;Hologram&quot;},&quot;grid&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Hologram&quot;},&quot;autoRotate&quot;:{&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;,&quot;section&quot;:&quot;Behavior&quot;}}">
+class Component extends DCLogic {
+  canvasRef = React.createRef();
+  state = { sel: null, selDist: '', tier: 'solar system', warping: false, warpDest: '' };
+  accent(){ return this.props.accent ?? '#7fd4ff'; }
+  a(alpha){
+    const n = parseInt(this.accent().slice(1), 16);
+    return 'rgba(' + (n >> 16) + ',' + ((n >> 8) & 255) + ',' + (n & 255) + ',' + alpha + ')';
+  }
+  async componentDidMount(){
+    const eng = await import('./starmap-engine.js');
+    const data = await import('./starmap-data.js');
+    this.view = new eng.StarMapView(this.canvasRef.current, {
+      theme: 'holo',
+      accent: this.accent(),
+      autoRotate: this.props.autoRotate ?? true,
+      background: false,
+      grid: this.props.grid ?? true,
+      dropLines: true,
+      centerY: 0.52,
+      onSelect: d => this.setState({ sel: d, selDist: d ? this.view.distLabel(d) : '', warping: false }),
+      onTier: t => this.setState({ tier: t }),
+    });
+    this.view.setData(data.DESTINATIONS);
+  }
+  componentDidUpdate(){
+    if (this.view){
+      this.view.o.accent = this.accent();
+      this.view.o.autoRotate = this.props.autoRotate ?? true;
+      this.view.o.grid = this.props.grid ?? true;
+    }
+  }
+  componentWillUnmount(){ if (this.view) this.view.destroy(); }
+  renderVals(){
+    const s = this.state, sel = s.sel;
+    const tc = t => s.tier === t ? this.a(0.95) : 'rgba(180,210,255,0.35)';
+    return {
+      canvasRef: this.canvasRef,
+      accent: this.accent(),
+      accentA06: this.a(0.06), accentA14: this.a(0.14), accentA25: this.a(0.25),
+      accentA40: this.a(0.4), accentA80: this.a(0.8), accentA90: this.a(0.9),
+      tierSolarColor: tc('solar system'), tierInterColor: tc('interstellar'), tierGalColor: tc('galactic'),
+      zoomSolar: () => this.view && this.view.zoomTier('solar system'),
+      zoomInterstellar: () => this.view && this.view.zoomTier('interstellar'),
+      zoomGalactic: () => this.view && this.view.zoomTier('galactic'),
+      hasSel: !!sel,
+      selName: sel ? sel.name.toLowerCase() : '',
+      selKind: sel ? sel.kind : '',
+      selShort: sel ? sel.short : '',
+      selDist: s.selDist,
+      warpLabel: sel && sel.type === 'landmark' ? 'engage warp' : 'plot course',
+      closeSel: () => { this.setState({ sel: null }); if (this.view) this.view.selected = null; },
+      engageWarp: () => {
+        if (!sel) return;
+        this.setState({ warping: true, warpDest: 'destination · ' + sel.name.toLowerCase() });
+        clearTimeout(this._wt);
+        this._wt = setTimeout(() => this.setState({ warping: false }), 2400);
+      },
+      warping: s.warping,
+      warpDest: s.warpDest,
+    };
+  }
+}
+</script>
+</body>
+</html>

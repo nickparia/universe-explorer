@@ -1,97 +1,37 @@
-// js/starmap.js — the star chart.
+// js/starmap.js — the star map. "Deep Field" design.
 //
-// A zoomable, pannable radial chart — a ship instrument, not a menu. The
-// world stays visible behind light glass; scroll zooms toward the cursor,
-// drag pans, click travels. The chart is semantic: zoomed out you see the
-// solar system as a cluster inside the landmark shells; zoom in and the
-// planets spread, then each planet's moons fade in around it. Built to
-// absorb growth — new tiers (galaxies, exoplanet systems) become new
-// layers with their own zoom bands.
+// A full-screen 3D spatial chart: every destination rendered as a
+// procedural object (shaded planet, ringed Saturn, wispy nebula, spiral
+// galaxy…) floating in a drifting star field. Drag to rotate, scroll to
+// zoom through three scale tiers (solar system → interstellar →
+// galactic), click an object to see its card, then choose the crossing:
+// engage the warp yourself, or hand SOLACE the helm for the slow way.
 //
-// Layout is schematic (rings by rank, not scale) but angles are TRUE:
-// planets sit at their live orbital azimuths, landmarks at their real
-// catalog azimuths. Search covers everything; Enter travels to the top
-// match. M toggles, Esc closes.
+// The renderer lives in starmap-engine.js (Canvas-2D, ported from the
+// design handoff); the poetic per-destination metadata (kind, one-liner,
+// real light-year distances) in starmap-data.js. Live positions, live
+// descriptions, and travel itself come from the running sim.
 
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getBodies } from './bodies.js';
-import { warpTo, flyTo, getCamPos } from './flight.js';
+import { warpTo, flyTo, cruiseTo, getCamPos } from './flight.js';
 import { emit } from './bus.js';
 import { AU } from './constants.js';
-import { getVisited } from './session.js';
-
-const SVGNS = 'http://www.w3.org/2000/svg';
-
-// ── Destination metadata (colors + one-liners) ────────────────────────
-const BODY_META = {
-  SUN:      { color: '#ffdd66', desc: 'our star — where all this begins' },
-  MERCURY:  { color: '#b0a090', desc: 'the smallest planet, scarred by craters' },
-  VENUS:    { color: '#d9b56a', desc: 'shrouded in permanent clouds' },
-  EARTH:    { color: '#4a9cff', desc: 'our pale blue dot' },
-  MOON:     { color: '#cccccc', desc: 'earth’s tidally-locked companion' },
-  MARS:     { color: '#c15a3b', desc: 'the red planet' },
-  JUPITER:  { color: '#d9a566', desc: 'gas giant king of the solar system' },
-  SATURN:   { color: '#e8cc88', desc: 'crowned by an icy ring system' },
-  URANUS:   { color: '#88cce0', desc: 'tilted on its side — an ice giant' },
-  NEPTUNE:  { color: '#4466d0', desc: 'the farthest ice giant, wind-torn' },
-  PLUTO:    { color: '#b0a090', desc: 'distant dwarf, heart of ice' },
-  CERES:    { color: '#888888', desc: 'largest body in the asteroid belt' },
-  ERIS:     { color: '#ccddee', desc: 'icy dwarf planet at the edge' },
-};
-
-const CRAFT_META = {
-  'VOYAGER 1':    { color: '#ffeedd', desc: 'humanity’s furthest emissary, 1977' },
-  'VOYAGER 2':    { color: '#ffeedd', desc: 'only spacecraft to visit all four gas giants' },
-  'NEW HORIZONS': { color: '#ddddff', desc: 'first visit to pluto, 2015' },
-  'JWST':         { color: '#ffdd66', desc: 'infrared eye on the early universe' },
-  'HUBBLE':       { color: '#ccddff', desc: 'deep-field pioneer, since 1990' },
-  'ISS':          { color: '#ffffff', desc: 'our home in low earth orbit' },
-};
-
-const PLANETISH = ['MERCURY','VENUS','EARTH','MARS','CERES','JUPITER','SATURN','URANUS','NEPTUNE','PLUTO','ERIS'];
-const CRAFT_NAMES = new Set(Object.keys(CRAFT_META));
-
-// Which planet each moon belongs to — moons orbit their planet's chart dot
-const MOON_HOST = {
-  MOON: 'EARTH',
-  PHOBOS: 'MARS', DEIMOS: 'MARS',
-  IO: 'JUPITER', EUROPA: 'JUPITER', GANYMEDE: 'JUPITER', CALLISTO: 'JUPITER',
-  TITAN: 'SATURN', ENCELADUS: 'SATURN', MIMAS: 'SATURN',
-  TITANIA: 'URANUS', OBERON: 'URANUS',
-  TRITON: 'NEPTUNE',
-};
-
-// Chart layout (base viewBox units)
-const VIEW = 565;
-const BASE_W = VIEW * 2;
-const RING_MIN = 68;
-const RING_MAX = 300;
-const R_INTERSTELLAR = 375;
-const R_INTERGALACTIC = 462;
-const MOON_RING = 22;          // moons orbit this far from their planet dot
-const MOON_MIN_SCALE = 2.1;    // zoom-in factor at which moons appear
-const ZOOM_MIN = 0.55;         // can zoom out well past the full chart
-const ZOOM_MAX = 9;            // deep enough that a planet + moons fill view
+import { StarMapView, KM_PER_AU } from './starmap-engine.js';
+import { DESTINATIONS } from './starmap-data.js';
 
 // ── State ─────────────────────────────────────────────────────────────
 let overlayEl = null;
-let svgEl = null;
-let searchEl = null;
-let resultsEl = null;
-let tooltipEl = null;
+let canvasWrap = null;
+let cardEl = null;
 let pillEl = null;
+let tierEls = null;       // { 'solar system': {dot, label}, ... }
+let view = null;          // StarMapView, alive only while the map is open
 let active = false;
 let pendingOpen = false;  // M pressed before boot finished building the map
-let nodes = [];           // chart nodes with base metrics for counter-scaling
-let allDest = [];         // every travelable destination (search index)
+let selected = null;      // merged destination shown on the card
 
-// Camera over the chart
-const view = { cx: 0, cy: 0, w: BASE_W };
-let panning = false;
-let panMoved = false;
-let panStart = null;
-
-// ── Helpers ───────────────────────────────────────────────────────────
+// ── Live-world helpers ────────────────────────────────────────────────
 function worldPos(item) {
   if (item.g) return item.g.userData?._worldPos || item.g.position;
   return item.pos || null;
@@ -101,329 +41,262 @@ function nice(name) {
   return name.toLowerCase();
 }
 
-function travelSeconds(item) {
-  const pos = worldPos(item);
+function travelSeconds(d) {
+  const pos = d.live && worldPos(d.live);
   if (!pos) return 0;
   const dist = getCamPos().distanceTo(pos);
-  return item.isLandmark
+  return d.warps
     ? Math.max(15, Math.min(30, dist / 2000))
     : Math.max(2, Math.min(6, dist / 6000));
 }
 
-function descFor(item) {
-  if (BODY_META[item.name]) return BODY_META[item.name].desc;
-  if (CRAFT_META[item.name]) return CRAFT_META[item.name].desc;
-  return (item.desc || '').toLowerCase();
+// Cruise duration mirror of flight.js — minutes, gently distance-scaled
+function cruiseMinutes(d) {
+  const pos = d.live && worldPos(d.live);
+  if (!pos) return 3;
+  const dist = getCamPos().distanceTo(pos);
+  const dur = Math.min(300, Math.max(150,
+    150 + (Math.log10(Math.max(dist, 10000)) - 5) * 45));
+  return Math.max(2, Math.round(dur / 60));
 }
 
-
-// ── Glyphs — every destination drawn as what it is ───────────────────
-// Each glyph lives in unit space (radius ~1) inside a transform group,
-// so the existing counter-scaling drives it exactly like a circle.
-// Instrument aesthetic: few shapes, muted fills, no decoration.
-
-function gEl(tag, attrs) { return svg(tag, attrs); }
-
-function glyphInto(root, item, opts) {
-  const n = (item.name || '').toUpperCase();
-  const A = (el) => root.appendChild(el);
-  const C = (cx, cy, r, fill, o) => A(gEl('circle', { cx, cy, r, fill, opacity: o ?? 1 }));
-  const E = (cx, cy, rx, ry, rot, stroke, w, o, fill) => A(gEl('ellipse', {
-    cx, cy, rx, ry, fill: fill || 'none', stroke: stroke || 'none',
-    'stroke-width': w || 0, opacity: o ?? 1,
-    transform: rot ? `rotate(${rot} ${cx} ${cy})` : null,
-  }));
-  const P = (d, fill, stroke, w, o) => A(gEl('path', {
-    d, fill: fill || 'none', stroke: stroke || 'none',
-    'stroke-width': w || 0, 'stroke-linecap': 'round', opacity: o ?? 1,
-  }));
-
-  // Moons: a small lit crescent
-  if (opts.minScale) {
-    C(0, 0, 1, '#9aa4b2');
-    C(0.34, -0.18, 0.92, '#2a3140', 0.85);
-    return true;
+// Real light-years for landmarks; live camera distance in AU otherwise —
+// the ship is wherever the camera is, not pinned to Earth
+function distLabelFor(d) {
+  if (d.ship) return 'you are here';
+  if (d.ly != null) {
+    return d.ly >= 1e6 ? (d.ly / 1e6).toFixed(1) + ' MLY'
+      : d.ly >= 1000 ? (d.ly / 1000).toFixed(1) + 'K LY'
+      : d.ly.toFixed(0) + ' LY';
   }
-
-  if (n === 'SUN') {
-    for (let i = 0; i < 8; i++) {
-      const a = (i / 8) * Math.PI * 2;
-      P(`M ${Math.cos(a) * 1.25} ${Math.sin(a) * 1.25} L ${Math.cos(a) * 1.75} ${Math.sin(a) * 1.75}`,
-        null, '#ffd98a', 0.22, 0.9);
-    }
-    C(0, 0, 1, '#ffcf6e'); C(0, 0, 0.55, '#fff3d0');
-    return true;
-  }
-  if (n === 'MERCURY') { C(0, 0, 1, '#a9a29a'); C(-0.3, -0.1, 0.22, '#7d766e'); C(0.35, 0.3, 0.16, '#7d766e'); return true; }
-  if (n === 'VENUS') { C(0, 0, 1, '#e8d3a8'); P('M -0.9 -0.25 Q 0 0.15 0.9 -0.2', null, '#cdb488', 0.3, 0.8); return true; }
-  if (n === 'EARTH') {
-    C(0, 0, 1, '#3d6fb8');
-    P('M -0.55 -0.35 Q -0.1 -0.6 0.2 -0.3 Q 0.05 -0.05 -0.35 0 Z', '#4e9a5c', null, 0, 0.95);
-    P('M 0.15 0.3 Q 0.5 0.15 0.65 0.45 Q 0.35 0.6 0.1 0.55 Z', '#4e9a5c', null, 0, 0.9);
-    C(0, -0.82, 0.28, '#e8f2f8', 0.85);
-    return true;
-  }
-  if (n === 'MARS') { C(0, 0, 1, '#c96a45'); P('M -0.5 0.15 Q 0 0.45 0.55 0.2 L 0.4 0.55 Q 0 0.75 -0.35 0.5 Z', '#9d4c30', null, 0, 0.8); C(0, -0.85, 0.22, '#f2e8e0', 0.9); return true; }
-  if (n === 'JUPITER') {
-    C(0, 0, 1, '#d9b98c');
-    P('M -0.92 -0.35 Q 0 -0.5 0.92 -0.35', null, '#b3906a', 0.2, 0.85);
-    P('M -1 0.05 Q 0 -0.1 1 0.05', null, '#c49a6c', 0.26, 0.85);
-    P('M -0.85 0.5 Q 0 0.35 0.85 0.5', null, '#b3906a', 0.2, 0.85);
-    C(0.38, 0.24, 0.16, '#c3603e', 0.95);
-    return true;
-  }
-  if (n === 'SATURN') {
-    E(0, 0, 1.95, 0.6, -18, '#d9c49a', 0.16, 0.9);
-    C(0, 0, 0.92, '#e2c795');
-    E(0, 0, 1.95, 0.6, -18, '#f0e0b8', 0.09, 0.9);
-    return true;
-  }
-  if (n === 'URANUS') { C(0, 0, 1, '#9fd8d4'); E(0, 0, 0.55, 1.75, 12, '#c0e8e4', 0.12, 0.8); return true; }
-  if (n === 'NEPTUNE') { C(0, 0, 1, '#4a6fd4'); P('M -0.85 -0.2 Q 0 0 0.85 -0.2', null, '#7c9be8', 0.22, 0.85); return true; }
-  if (n === 'PLUTO' || n === 'ERIS' || n === 'CERES' || n === 'MAKEMAKE' || n === 'HAUMEA') {
-    C(0, 0, 1, '#cbb8a4'); P('M -0.35 0.15 Q 0 -0.35 0.45 0.1 Q 0.1 0.4 -0.35 0.15 Z', '#e0d4c4', null, 0, 0.9);
-    return true;
-  }
-  if (n === 'BLACK HOLE') {
-    E(0, 0, 1.7, 0.5, -22, '#e8a55a', 0.18, 0.95);
-    C(0, 0, 0.85, '#05070c');
-    A(gEl('circle', { cx: 0, cy: 0, r: 0.95, fill: 'none', stroke: '#ffd9a8', 'stroke-width': 0.14, opacity: 0.95 }));
-    return true;
-  }
-  if (n.includes('SAGITTARIUS')) {
-    A(gEl('circle', { cx: 0, cy: 0, r: 0.75, fill: 'none', stroke: '#f0a545', 'stroke-width': 0.5, opacity: 0.95 }));
-    C(0, 0, 0.45, '#0a0604');
-    return true;
-  }
-  if (n.includes('ANDROMEDA')) {
-    E(0, 0, 1.7, 0.75, -28, '#8fa8dd', 0.1, 0.5);
-    P('M 0 0 Q 0.9 -0.2 1.4 -0.75', null, '#b8c8ee', 0.2, 0.85);
-    P('M 0 0 Q -0.9 0.2 -1.4 0.75', null, '#b8c8ee', 0.2, 0.85);
-    C(0, 0, 0.34, '#f2e8cf');
-    return true;
-  }
-  if (n.includes('SOMBRERO')) {
-    E(0, 0.1, 1.8, 0.42, 0, null, 0, 0.95, '#d9c0a0');
-    P('M -0.85 0 A 0.85 0.62 0 0 1 0.85 0 Z', '#e8d4b0', null, 0, 0.95);
-    P('M -1.8 0.14 L 1.8 0.14', null, '#4a3626', 0.16, 0.9);
-    return true;
-  }
-  if (n.includes('PILLARS')) {
-    P('M -0.75 1 L -0.75 -0.1 Q -0.75 -0.45 -0.5 -0.4 L -0.35 1 Z', '#b98a5a', null, 0, 0.95);
-    P('M -0.1 1 L -0.12 -0.7 Q -0.1 -1.05 0.14 -0.95 L 0.22 1 Z', '#cf9a62', null, 0, 0.95);
-    P('M 0.5 1 L 0.5 -0.2 Q 0.52 -0.5 0.72 -0.42 L 0.85 1 Z', '#b9854f', null, 0, 0.95);
-    return true;
-  }
-  if (n.includes('CRAB')) {
-    const pts = [];
-    for (let i = 0; i < 10; i++) {
-      const a = (i / 10) * Math.PI * 2;
-      const rr = i % 2 ? 1.15 : 0.55;
-      pts.push(`${Math.cos(a) * rr},${Math.sin(a) * rr * 0.85}`);
-    }
-    P('M ' + pts.join(' L ') + ' Z', '#d97a4a', null, 0, 0.85);
-    C(0, 0, 0.2, '#cfe8f2');
-    return true;
-  }
-  if (n.includes('UY SCUTI')) { C(0, 0, 1.25, '#8a1f0a'); C(-0.15, -0.15, 0.85, '#c3401a'); C(-0.3, -0.3, 0.4, '#e86a30'); return true; }
-  if (n.includes('CARINA')) {
-    P('M -1.2 0.75 L -0.7 -0.1 L -0.35 0.2 L 0.1 -0.75 L 0.5 -0.05 L 0.85 -0.35 L 1.2 0.75 Z', '#c98a52', null, 0, 0.95);
-    C(0.45, -0.75, 0.1, '#cfe4f2', 0.9);
-    return true;
-  }
-  if (n.includes('RING NEBULA')) {
-    A(gEl('circle', { cx: 0, cy: 0, r: 0.72, fill: 'none', stroke: '#5fb8a8', 'stroke-width': 0.42, opacity: 0.9 }));
-    A(gEl('circle', { cx: 0, cy: 0, r: 0.9, fill: 'none', stroke: '#c96a3a', 'stroke-width': 0.14, opacity: 0.8 }));
-    C(0, 0, 0.12, '#e8f2ff');
-    return true;
-  }
-  if (n.includes('HORSEHEAD')) {
-    C(0, -0.1, 1.05, '#7a4050', 0.35);
-    P('M -0.45 1 L -0.45 0.1 Q -0.45 -0.35 -0.05 -0.55 L 0.4 -0.9 L 0.55 -0.6 L 0.3 -0.45 Q 0.6 -0.2 0.5 0.2 L 0.42 1 Z', '#241016', null, 0, 0.98);
-    return true;
-  }
-  if (n.includes('ETA')) {
-    E(-0.45, -0.45, 0.62, 0.45, -45, null, 0, 0.9, '#e8c05a');
-    E(0.45, 0.45, 0.62, 0.45, -45, null, 0, 0.9, '#d9a83e');
-    C(0, 0, 0.16, '#fff2cc');
-    return true;
-  }
-  if (n.includes('MAGNETAR')) {
-    P('M -1.05 -0.55 Q 0 -1.35 1.05 -0.55', null, '#8f6bff', 0.14, 0.9);
-    P('M -1.05 0.55 Q 0 1.35 1.05 0.55', null, '#5fc8ff', 0.14, 0.9);
-    C(0, 0, 0.3, '#dfeeff'); C(0, 0, 0.14, '#ffffff');
-    return true;
-  }
-  if (n.includes('VOID')) {
-    A(gEl('circle', { cx: 0, cy: 0, r: 1.05, fill: 'none', stroke: 'rgba(140,170,220,0.55)',
-      'stroke-width': 0.1, 'stroke-dasharray': '0.28 0.22' }));
-    return true;
-  }
-  return false;
+  const pos = d.live && worldPos(d.live);
+  if (!pos) return '';
+  const au = getCamPos().distanceTo(pos) / AU;
+  if (au < 0.01) return Math.round(au * KM_PER_AU / 1000) + 'K KM';
+  return au < 10 ? au.toFixed(2) + ' AU' : au < 100 ? au.toFixed(1) + ' AU' : au.toFixed(0) + ' AU';
 }
 
-function colorFor(item) {
-  if (BODY_META[item.name]) return BODY_META[item.name].color;
-  if (CRAFT_META[item.name]) return CRAFT_META[item.name].color;
-  if (item.isBlackHole) return '#ff8850';
-  if (item.tier === 'intergalactic') return '#b0d4ff';
-  return '#7a9fc8';
+// ── Destination data: snapshot layout + live sim merged ──────────────
+// The snapshot supplies the designed composition (au/angle/phi layout,
+// kind, one-liner, real ly distances); the live sim supplies existence,
+// descriptions, positions, and travel.
+function buildDestinations() {
+  const live = {};
+  for (const b of getBodies()) live[b.name] = b;
+  for (const lm of getLandmarks()) live[lm.name] = lm;
+
+  const out = [];
+  for (const meta of DESTINATIONS) {
+    const item = live[meta.name];
+    if (!item) continue;
+    out.push({
+      ...meta,
+      ship: false,
+      desc: item.desc || meta.desc,
+      live: item,
+      warps: !!item.tier || !!item.visual, // landmarks warp; bodies fly
+    });
+  }
+
+  // The black hole is its own deep-space object, not in the snapshot
+  const bh = getDeepSpaceObjects().find(o => o.isBlackHole);
+  if (bh) {
+    out.push({
+      name: 'BLACK HOLE', type: 'landmark', kind: 'supermassive black hole',
+      color: '#ff8800', au: 16000, angle: 2.8, phi: -0.12,
+      short: 'a singularity wrapped in burning light',
+      desc: bh.desc, live: bh, ship: false, warps: false,
+    });
+  }
+
+  // "you are here": the destination nearest the ship right now
+  let nearest = null, best = Infinity;
+  const cam = getCamPos();
+  for (const d of out) {
+    const pos = d.live && worldPos(d.live);
+    if (!pos) continue;
+    const dist = cam.distanceTo(pos);
+    if (dist < best) { best = dist; nearest = d; }
+  }
+  if (nearest) nearest.ship = true;
+
+  return out;
 }
 
-function goTo(item) {
+// ── Travel ────────────────────────────────────────────────────────────
+function goWarp(d) {
   toggleStarMap();
-  if (item.isLandmark) warpTo(item.name);
-  else flyTo(item.name);
+  if (d.warps) warpTo(d.name);
+  else flyTo(d.name);
 }
 
-function svg(tag, attrs) {
-  const el = document.createElementNS(SVGNS, tag);
-  for (const k in attrs) el.setAttribute(k, attrs[k]);
-  return el;
+function goCruise(d) {
+  toggleStarMap();
+  cruiseTo(d.name);
+}
+
+// ── DOM helpers ───────────────────────────────────────────────────────
+function el(tag, css, text) {
+  const e = document.createElement(tag);
+  if (css) e.style.cssText = css;
+  if (text != null) e.textContent = text;
+  return e;
+}
+
+const BTN_CSS =
+  'display:inline-block;margin-top:16px;padding:9px 22px;pointer-events:all;' +
+  'font-size:10px;letter-spacing:5px;cursor:pointer;color:rgba(120,180,255,0.9);' +
+  'background:rgba(120,180,255,0.06);border:1px solid rgba(120,180,255,0.4);' +
+  'transition:all 0.3s;white-space:nowrap;';
+
+function makeButton(label) {
+  const b = el('div', BTN_CSS, label);
+  b.addEventListener('mouseenter', () => {
+    b.style.background = 'rgba(120,180,255,0.12)';
+    b.style.boxShadow = '0 0 24px rgba(120,180,255,0.3)';
+  });
+  b.addEventListener('mouseleave', () => {
+    b.style.background = 'rgba(120,180,255,0.06)';
+    b.style.boxShadow = 'none';
+  });
+  return b;
+}
+
+// ── Info card ─────────────────────────────────────────────────────────
+function showCard(d) {
+  selected = d;
+  if (!d) { cardEl.style.display = 'none'; return; }
+
+  cardEl.innerHTML = '';
+  const name = el('div',
+    'font-size:22px;letter-spacing:10px;color:rgba(255,255,255,0.95);font-weight:300;' +
+    `text-shadow:0 0 20px ${d.color || '#8fd8ff'},0 1px 6px rgba(0,0,0,0.9);`,
+    nice(d.name));
+  const meta = el('div',
+    'font-size:10px;letter-spacing:6px;color:rgba(120,180,255,0.8);margin-top:6px;' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.8);',
+    `${d.kind} · ${distLabelFor(d)}`);
+  const divider = el('div',
+    'width:40px;height:1px;background:rgba(120,180,255,0.25);margin:12px 0;');
+  const desc = el('div',
+    'font-size:12px;letter-spacing:1.5px;color:rgba(255,255,255,0.68);line-height:2;' +
+    'text-shadow:0 1px 6px rgba(0,0,0,0.9);',
+    d.desc);
+
+  cardEl.appendChild(name);
+  cardEl.appendChild(meta);
+  cardEl.appendChild(divider);
+  cardEl.appendChild(desc);
+
+  // The crossing chooser — two verbs, a per-journey choice, never a setting
+  if (!d.ship) {
+    const row = el('div', 'display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;');
+    const warpBtn = makeButton(
+      (d.warps ? 'engage warp' : 'fly there') + '  ≈ ' + Math.round(travelSeconds(d)) + 's');
+    warpBtn.addEventListener('click', () => goWarp(d));
+    const cruiseBtn = makeButton('let solace take you  ≈ ' + cruiseMinutes(d) + ' min');
+    cruiseBtn.addEventListener('click', () => goCruise(d));
+    row.appendChild(warpBtn);
+    row.appendChild(cruiseBtn);
+    cardEl.appendChild(row);
+  }
+
+  cardEl.style.display = 'block';
+  // restart the enter animation
+  cardEl.style.animation = 'none';
+  void cardEl.offsetWidth;
+  cardEl.style.animation = 'sm-fadeUp 0.4s ease-out';
+}
+
+// ── Tier ribbon ───────────────────────────────────────────────────────
+const TIERS = ['solar system', 'interstellar', 'galactic'];
+
+function setTier(t) {
+  for (const name of TIERS) {
+    const on = name === t;
+    tierEls[name].dot.style.background = on ? '#8fd8ff' : 'rgba(140,180,255,0.25)';
+    tierEls[name].dot.style.boxShadow = on ? '0 0 8px #8fd8ff' : 'none';
+    tierEls[name].label.style.color = on ? 'rgba(220,235,255,0.9)' : 'rgba(180,210,255,0.35)';
+  }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────
 export function initStarMap() {
-  overlayEl = document.createElement('div');
+  // keyframes for the card + hint animations
+  const style = document.createElement('style');
+  style.textContent = `
+    @keyframes sm-fadeUp{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
+    @keyframes sm-hintPulse{0%,100%{opacity:0.3}50%{opacity:0.6}}
+  `;
+  document.head.appendChild(style);
+
+  overlayEl = el('div',
+    'position:fixed;inset:0;z-index:68;overflow:hidden;' +
+    'background:radial-gradient(ellipse at 50% 45%, #060a16 0%, #03050c 55%, #010208 100%);' +
+    "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;" +
+    'color:rgba(255,255,255,0.94);' +
+    'opacity:0;pointer-events:none;transition:opacity 0.45s ease;');
   overlayEl.id = 'starchart';
-  // Light glass — the world stays visible behind the instrument
-  overlayEl.style.cssText = `
-    position: fixed; inset: 0; z-index: 68;
-    background: radial-gradient(ellipse at center, rgba(3,5,11,0.62) 0%, rgba(1,3,7,0.9) 100%);
-    backdrop-filter: blur(5px); -webkit-backdrop-filter: blur(5px);
-    font-family: 'Segoe UI','Helvetica Neue',Arial,sans-serif; font-weight: 300;
-    color: rgba(255,255,255,0.94);
-    opacity: 0; pointer-events: none;
-    transition: opacity 0.45s ease;
-    overflow: hidden;
-  `;
 
-  // ── The chart fills the overlay; UI floats over it ──
-  svgEl = svg('svg', { viewBox: `${-VIEW} ${-VIEW} ${BASE_W} ${BASE_W}` });
-  svgEl.style.cssText = 'position:absolute;inset:0;width:100%;height:100%;display:block;cursor:grab;';
-  overlayEl.appendChild(svgEl);
+  // The map canvas fills the viewport (canvas itself is created fresh on
+  // each open — the engine binds input listeners it never unbinds)
+  canvasWrap = el('div', 'position:absolute;inset:0;');
+  overlayEl.appendChild(canvasWrap);
 
-  // ── Search, floating top-center ──
-  const header = document.createElement('div');
-  header.style.cssText = `
-    position: absolute; top: 26px; left: 50%; transform: translateX(-50%);
-    width: 320px; max-width: 84vw; z-index: 2;
-  `;
-  searchEl = document.createElement('input');
-  searchEl.type = 'text';
-  searchEl.placeholder = 'where to?';
-  searchEl.style.cssText = `
-    width: 100%; box-sizing: border-box;
-    padding: 9px 16px;
-    background: rgba(8,12,22,0.55);
-    border: 1px solid rgba(140,180,255,0.22);
-    border-radius: 999px; outline: none;
-    color: rgba(255,255,255,0.9);
-    text-align: center;
-    font-size: 12px; letter-spacing: 3px;
-    font-family: inherit; font-weight: 300;
-    backdrop-filter: blur(8px); -webkit-backdrop-filter: blur(8px);
-    transition: border-color 0.2s;
-  `;
-  searchEl.addEventListener('focus', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.55)'; });
-  searchEl.addEventListener('blur', () => { searchEl.style.borderColor = 'rgba(140,180,255,0.22)'; });
-  searchEl.addEventListener('input', () => applyFilter(searchEl.value));
-  searchEl.addEventListener('keydown', (e) => {
-    e.stopPropagation();
-    if (e.key === 'Enter') {
-      const first = resultsEl.querySelector('[data-result]');
-      if (first) first.click();
-    } else if (e.key === 'Escape' && searchEl.value) {
-      searchEl.value = '';
-      applyFilter('');
-      e.stopPropagation();
-    }
+  // Vignette
+  overlayEl.appendChild(el('div',
+    'position:absolute;inset:0;pointer-events:none;' +
+    'background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);'));
+
+  // Wordmark
+  const wordmark = el('div',
+    'position:absolute;top:30px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;');
+  wordmark.appendChild(el('div',
+    'font-size:12px;letter-spacing:9px;color:rgba(220,235,255,0.85);' +
+    'text-shadow:0 0 24px rgba(120,180,255,0.4),0 1px 8px rgba(0,0,0,0.9);',
+    'star map'));
+  wordmark.appendChild(el('div',
+    'font-size:8px;letter-spacing:4px;margin-top:8px;color:rgba(255,255,255,0.3);',
+    'press esc to close'));
+  overlayEl.appendChild(wordmark);
+
+  // Tier ribbon
+  const ribbon = el('div',
+    'position:absolute;bottom:28px;left:50%;transform:translateX(-50%);' +
+    'display:flex;gap:30px;align-items:center;');
+  tierEls = {};
+  TIERS.forEach((name, i) => {
+    if (i > 0) ribbon.appendChild(el('div', 'width:26px;height:1px;background:rgba(160,200,255,0.15);'));
+    const item = el('div', 'display:flex;align-items:center;gap:9px;cursor:pointer;');
+    const dot = el('div',
+      'width:5px;height:5px;border-radius:50%;background:rgba(140,180,255,0.25);transition:background 0.3s;');
+    const label = el('span',
+      'font-size:9px;letter-spacing:4px;color:rgba(180,210,255,0.35);transition:color 0.3s;', name);
+    item.appendChild(dot);
+    item.appendChild(label);
+    item.addEventListener('click', () => { if (view) view.zoomTier(name); });
+    ribbon.appendChild(item);
+    tierEls[name] = { dot, label };
   });
-  header.appendChild(searchEl);
+  overlayEl.appendChild(ribbon);
 
-  resultsEl = document.createElement('div');
-  resultsEl.style.cssText = `
-    margin-top: 8px; border-radius: 4px; overflow: hidden;
-    background: rgba(8,12,22,0.88);
-    border: 1px solid rgba(140,180,255,0.15);
-    backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px);
-    display: none;
-  `;
-  header.appendChild(resultsEl);
-  overlayEl.appendChild(header);
+  // Controls hint
+  const hint = el('div',
+    'position:absolute;bottom:64px;right:28px;font-size:9px;letter-spacing:3px;' +
+    'color:rgba(255,255,255,0.3);text-align:right;line-height:2.1;' +
+    'animation:sm-hintPulse 4s ease-in-out infinite;pointer-events:none;');
+  hint.innerHTML = 'drag to rotate · scroll to zoom<br>click a light to learn more';
+  overlayEl.appendChild(hint);
 
-  // ── Footer hint ──
-  const foot = document.createElement('div');
-  foot.style.cssText = `
-    position: absolute; bottom: 18px; left: 50%; transform: translateX(-50%);
-    font-size: 9px; letter-spacing: 3px; color: rgba(255,255,255,0.32);
-    pointer-events: none; white-space: nowrap;
-  `;
-  foot.textContent = 'scroll to zoom · drag to pan · click a destination to travel · esc closes';
-  overlayEl.appendChild(foot);
+  // Info card
+  cardEl = el('div',
+    'position:absolute;bottom:70px;left:32px;max-width:400px;padding:22px 26px;' +
+    'pointer-events:none;display:none;' +
+    'background:linear-gradient(to right, rgba(5,8,16,0.55), transparent);' +
+    'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);');
+  overlayEl.appendChild(cardEl);
 
   document.body.appendChild(overlayEl);
-
-  // Tooltip (follows cursor)
-  tooltipEl = document.createElement('div');
-  tooltipEl.style.cssText = `
-    position: fixed; z-index: 70; pointer-events: none;
-    padding: 8px 14px; border-radius: 3px;
-    background: rgba(8,12,22,0.92);
-    border: 1px solid rgba(140,180,255,0.25);
-    font-family: 'Segoe UI',sans-serif; font-weight: 300;
-    font-size: 12px; letter-spacing: 2px; color: rgba(255,255,255,0.92);
-    opacity: 0; transition: opacity 0.15s; white-space: nowrap;
-  `;
-  document.body.appendChild(tooltipEl);
-
-  // ── Zoom & pan ──
-  svgEl.addEventListener('wheel', (e) => {
-    e.preventDefault();
-    const rect = svgEl.getBoundingClientRect();
-    // xMidYMid meet: the square viewBox maps onto the centered square of
-    // side min(width, height)
-    const side = Math.min(rect.width, rect.height);
-    const px = (e.clientX - rect.left - rect.width / 2) / side;   // -0.5..0.5
-    const py = (e.clientY - rect.top - rect.height / 2) / side;
-    const mx = view.cx + px * view.w;
-    const my = view.cy + py * view.w;
-    const factor = Math.exp(e.deltaY * 0.0016);
-    const newW = Math.max(BASE_W / ZOOM_MAX, Math.min(BASE_W / ZOOM_MIN, view.w * factor));
-    view.cx = mx - (mx - view.cx) * (newW / view.w);
-    view.cy = my - (my - view.cy) * (newW / view.w);
-    view.w = newW;
-    applyViewTransform();
-  }, { passive: false });
-
-  svgEl.addEventListener('pointerdown', (e) => {
-    if (e.button !== 0) return;
-    panning = true;
-    panMoved = false;
-    panStart = { x: e.clientX, y: e.clientY, cx: view.cx, cy: view.cy };
-    // NOTE: no setPointerCapture — capture redirects the click event to the
-    // svg itself and destination dots never receive it.
-  });
-  svgEl.addEventListener('pointermove', (e) => {
-    if (!panning) return;
-    const dx = e.clientX - panStart.x;
-    const dy = e.clientY - panStart.y;
-    if (Math.abs(dx) + Math.abs(dy) > 5) panMoved = true;
-    if (panMoved) {
-      const rect = svgEl.getBoundingClientRect();
-      const side = Math.min(rect.width, rect.height);
-      view.cx = panStart.cx - (dx / side) * view.w;
-      view.cy = panStart.cy - (dy / side) * view.w;
-      applyViewTransform();
-      svgEl.style.cursor = 'grabbing';
-    }
-  });
-  svgEl.addEventListener('pointerup', () => {
-    panning = false;
-    svgEl.style.cursor = 'grab';
-    // panMoved is read by click handlers this tick; clear it just after
-    setTimeout(() => { panMoved = false; }, 0);
-  });
 
   // Keyboard: M toggles (not while typing), Escape closes
   window.addEventListener('keydown', (e) => {
@@ -443,7 +316,7 @@ export function initStarMap() {
   if (railTab) railTab.style.display = 'none';
 
   // ── Star chart pill — bottom-left, clear of the speed readout ──
-  pillEl = document.createElement('div');
+  pillEl = el('div');
   pillEl.id = 'dest-pill';
   pillEl.innerHTML = '&#10022;&nbsp;&nbsp;star chart&nbsp;&nbsp;<span style="color:rgba(140,180,255,0.55)">m</span>';
   pillEl.style.cssText = `
@@ -486,352 +359,37 @@ window.addEventListener('keydown', (e) => {
   }
 });
 
-// ── View transform: zoom/pan + semantic scaling ───────────────────────
-function applyViewTransform() {
-  svgEl.setAttribute('viewBox', `${view.cx - view.w / 2} ${view.cy - view.w / 2} ${view.w} ${view.w}`);
-  const scale = BASE_W / view.w; // 1 = default, >1 zoomed in
-
-  // Counter-scale: keep dots/labels near-constant screen size, with a
-  // gentle growth as you dive so zooming still feels like approaching
-  const geom = 1 / Math.pow(scale, 0.72);
-
-  for (const n of nodes) {
-    if (n.coreG) {
-      n.coreG.setAttribute('transform', `translate(${n.x} ${n.y}) scale(${n.baseR * geom})`);
-    }
-    if (n.core) {
-      if (n.core.tagName === 'circle') n.core.setAttribute('r', n.baseR * geom);
-      else {
-        const r = n.baseR * geom;
-        n.core.setAttribute('x', n.x - r);
-        n.core.setAttribute('y', n.y - r);
-        n.core.setAttribute('width', r * 2);
-        n.core.setAttribute('height', r * 2);
-      }
-    }
-    if (n.halo) n.halo.setAttribute('r', n.baseR * 2.1 * geom);
-    if (n.hit) n.hit.setAttribute('r', Math.max(n.baseR * 2.6, 15) * geom);
-    if (n.label) n.label.setAttribute('font-size', n.baseFont * geom);
-
-    // Semantic visibility: moons fade in past their zoom band
-    if (n.minScale) {
-      const vis = Math.max(0, Math.min(1, (scale - n.minScale) / 0.6));
-      n.el.style.opacity = n.filtered ? Math.min(vis, 0.12) : vis;
-      n.el.style.pointerEvents = vis > 0.3 ? 'auto' : 'none';
-    }
-  }
-}
-
-// ── Chart construction ────────────────────────────────────────────────
-function buildChart() {
-  svgEl.innerHTML = '';
-  nodes = [];
-  allDest = [];
-  view.cx = 0; view.cy = 0; view.w = BASE_W;
-
-  const bodies = getBodies();
-  const landmarks = getLandmarks().map(l => ({ ...l, isLandmark: true }));
-  const deep = getDeepSpaceObjects();
-  const byName = {};
-  for (const b of bodies) byName[b.name] = b;
-
-  allDest = bodies.concat(landmarks);
-  const bh = deep.find(o => o.isBlackHole);
-  if (bh) allDest.push({ ...bh, isLandmark: false });
-
-  const defs = svg('defs', {});
-  defs.innerHTML = `<filter id="glow" x="-200%" y="-200%" width="500%" height="500%">
-    <feGaussianBlur stdDeviation="4" result="b"/>
-    <feMerge><feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge>
-  </filter>`;
-  svgEl.appendChild(defs);
-
-  // ── System regions: bordered + tinted, drawn under everything ──
-  addShell(RING_MAX + 28, 'solar system', {
-    solid: true,
-    fill: 'rgba(120,170,255,0.035)',
-  });
-  addShell(R_INTERSTELLAR, 'the milky way', {
-    band: 'rgba(140,180,255,0.05)',
-    bandWidth: 64,
-  });
-  addShell(R_INTERGALACTIC, 'deep space', {});
-
-  // ── Rings + planets: schematic radii, true angles ──
-  const planets = PLANETISH.map(n => byName[n]).filter(Boolean)
-    .map(b => ({ b, au: worldPos(b).length() / AU }))
-    .sort((p, q) => p.au - q.au);
-
-  const ringOf = [];
-  const planetChartPos = {};   // name -> {x, y} for moon placement
-  planets.forEach((p, i) => {
-    const R = planets.length === 1 ? RING_MIN
-      : RING_MIN + (i * (RING_MAX - RING_MIN)) / (planets.length - 1);
-    ringOf.push({ au: p.au, R });
-
-    svgEl.appendChild(svg('circle', {
-      cx: 0, cy: 0, r: R, fill: 'none',
-      stroke: 'rgba(140,180,255,0.09)', 'stroke-width': 1,
-      'vector-effect': 'non-scaling-stroke',
-    }));
-    const pos = worldPos(p.b);
-    const a = Math.atan2(pos.z, pos.x);
-    const x = Math.cos(a) * R, y = Math.sin(a) * R;
-    planetChartPos[p.b.name] = { x, y };
-    addDot(p.b, x, y, 7, { label: true });
-  });
-
-  // ── Sun at center ──
-  const sun = byName['SUN'];
-  if (sun) {
-    const n = addDot(sun, 0, 0, 11, { label: false });
-    if (n.core) n.core.setAttribute('filter', 'url(#glow)');
-  }
-
-  // ── Moons: orbit their planet's dot, visible once zoomed in ──
-  for (const moonName in MOON_HOST) {
-    const moon = byName[moonName];
-    const host = planetChartPos[MOON_HOST[moonName]];
-    if (!moon || !host) continue;
-    const siblings = Object.keys(MOON_HOST).filter(m => MOON_HOST[m] === MOON_HOST[moonName] && byName[m]);
-    const idx = siblings.indexOf(moonName);
-    const a = (idx / Math.max(siblings.length, 1)) * Math.PI * 2 - Math.PI / 2;
-    const x = host.x + Math.cos(a) * MOON_RING;
-    const y = host.y + Math.sin(a) * MOON_RING;
-    addDot(moon, x, y, 3, { label: true, minScale: MOON_MIN_SCALE, font: 7 });
-  }
-
-  // ── Craft: diamonds; labels suppressed when parked at a planet ──
-  const placed = Object.values(planetChartPos).slice();
-  let fan = 0;
-  for (const name of CRAFT_NAMES) {
-    const b = byName[name];
-    if (!b) continue;
-    const pos = worldPos(b);
-    const au = Math.max(pos.length() / AU, 0.02);
-    const R = craftRadius(au, ringOf);
-    const a = Math.atan2(pos.z, pos.x);
-    let x = Math.cos(a) * R, y = Math.sin(a) * R;
-    const crowded = placed.some(pt => Math.hypot(pt.x - x, pt.y - y) < 34);
-    if (crowded) {
-      fan++;
-      x += Math.cos(a + fan * 2.1) * 14;
-      y += Math.sin(a + fan * 2.1) * 14;
-    }
-    addDot(b, x, y, 4.5, { label: !crowded, diamond: true });
-    placed.push({ x, y });
-  }
-
-  const outerPlaced = [];
-  function addOuter(item, ring) {
-    const pos = worldPos(item);
-    const a = Math.atan2(pos.z, pos.x);
-    let R = ring;
-    while (outerPlaced.some(pt => Math.hypot(pt.x - Math.cos(a) * R, pt.y - Math.sin(a) * R) < 46)) {
-      R += 30;
-    }
-    const x = Math.cos(a) * R, y = Math.sin(a) * R;
-    outerPlaced.push({ x, y });
-    addDot(item, x, y, 5.5, { label: true, outer: true });
-  }
-  for (const lm of landmarks) {
-    addOuter(lm, lm.tier === 'intergalactic' ? R_INTERGALACTIC : R_INTERSTELLAR);
-  }
-  if (bh) addOuter(bh, R_INTERGALACTIC);
-
-  applyViewTransform();
-}
-
-function craftRadius(au, rings) {
-  if (rings.length === 0) return RING_MIN;
-  if (au <= rings[0].au) return Math.max(40, rings[0].R - 14);
-  for (let i = 0; i < rings.length - 1; i++) {
-    if (au <= rings[i + 1].au) {
-      const t = (Math.log(au) - Math.log(rings[i].au)) /
-                (Math.log(rings[i + 1].au) - Math.log(rings[i].au));
-      return rings[i].R + t * (rings[i + 1].R - rings[i].R);
-    }
-  }
-  return Math.min(RING_MAX + 34, rings[rings.length - 1].R + 22);
-}
-
-function addShell(R, label, opts = {}) {
-  // Region tint: a filled disc (solar system) or a wide band (milky way)
-  if (opts.fill) {
-    svgEl.appendChild(svg('circle', { cx: 0, cy: 0, r: R, fill: opts.fill }));
-  }
-  if (opts.band) {
-    svgEl.appendChild(svg('circle', {
-      cx: 0, cy: 0, r: R, fill: 'none',
-      stroke: opts.band, 'stroke-width': opts.bandWidth || 60,
-    }));
-  }
-  svgEl.appendChild(svg('circle', {
-    cx: 0, cy: 0, r: R, fill: 'none',
-    stroke: opts.solid ? 'rgba(150,195,255,0.28)' : 'rgba(140,180,255,0.16)',
-    'stroke-width': 1,
-    'stroke-dasharray': opts.solid ? 'none' : '2 7',
-    'vector-effect': 'non-scaling-stroke',
-  }));
-  const lx = -R * 0.7071, ly = -R * 0.7071;
-  const t = svg('text', {
-    x: lx - 10, y: ly - 10, 'text-anchor': 'end',
-    fill: 'rgba(160,200,255,0.4)',
-    'font-size': 11,
-    style: 'letter-spacing:6px;',
-  });
-  t.textContent = label;
-  svgEl.appendChild(t);
-  nodes.push({ el: t, label: t, baseFont: 11, baseR: 0, x: lx, y: ly, search: ' ' });
-}
-
-function addDot(item, x, y, r, opts = {}) {
-  const color = colorFor(item);
-  const visited = getVisited().has(item.name);
-  const g = svg('g', { style: 'cursor:pointer;' });
-
-  // The voyage log, drawn: places you've orbited carry a warm ring —
-  // the chart slowly becomes yours.
-  if (visited) {
-    g.appendChild(svg('circle', {
-      cx: x, cy: y, r: r * 1.9, fill: 'none',
-      stroke: 'rgba(255,215,160,0.35)', 'stroke-width': 1,
-      'vector-effect': 'non-scaling-stroke',
-    }));
-  }
-
-  const hit = svg('circle', { cx: x, cy: y, r: Math.max(r * 2.6, 15), fill: 'transparent' });
-  g.appendChild(hit);
-
-  const halo = svg('circle', { cx: x, cy: y, r: r * 2.1, fill: color, opacity: visited ? 0.24 : 0.14 });
-  g.appendChild(halo);
-
-  let core = null;
-  let coreG = null;
-  const glyphRoot = svg('g', {});
-  if (glyphInto(glyphRoot, item, opts)) {
-    coreG = glyphRoot;
-    coreG.setAttribute('transform', `translate(${x} ${y}) scale(${r})`);
-    g.appendChild(coreG);
-  } else if (opts.diamond) {
-    core = svg('rect', {
-      x: x - r, y: y - r, width: r * 2, height: r * 2,
-      fill: color, transform: `rotate(45 ${x} ${y})`,
-    });
-    g.appendChild(core);
-  } else {
-    core = svg('circle', { cx: x, cy: y, r, fill: color });
-    g.appendChild(core);
-  }
-
-  const baseFont = opts.font || (opts.outer ? 10 : 9.5);
-  let labelEl = null;
-  if (opts.label) {
-    const len = Math.hypot(x, y) || 1;
-    const lx = opts.outer ? x + (x / len) * 16 : x;
-    const ly = opts.outer ? y + (y / len) * 16 + 3 : y + r + 13;
-    labelEl = svg('text', {
-      x: lx, y: ly,
-      'text-anchor': opts.outer ? (lx > 6 ? 'start' : lx < -6 ? 'end' : 'middle') : 'middle',
-      fill: 'rgba(220,232,255,0.6)',
-      'font-size': baseFont,
-      style: 'letter-spacing:2px;pointer-events:none;',
-    });
-    labelEl.textContent = nice(item.name);
-    g.appendChild(labelEl);
-  }
-
-  g.addEventListener('mouseenter', () => {
-    halo.setAttribute('opacity', '0.35');
-    if (labelEl) labelEl.setAttribute('fill', 'rgba(255,255,255,0.95)');
-    tooltipEl.innerHTML = `${nice(item.name)}<span style="color:rgba(140,180,255,0.6);margin-left:12px">&asymp; ${Math.round(travelSeconds(item))}s journey</span>`;
-    tooltipEl.style.opacity = '1';
-  });
-  g.addEventListener('mousemove', (e) => {
-    tooltipEl.style.left = (e.clientX + 16) + 'px';
-    tooltipEl.style.top = (e.clientY - 10) + 'px';
-  });
-  g.addEventListener('mouseleave', () => {
-    halo.setAttribute('opacity', '0.14');
-    if (labelEl) labelEl.setAttribute('fill', 'rgba(220,232,255,0.6)');
-    tooltipEl.style.opacity = '0';
-  });
-  g.addEventListener('click', () => {
-    if (panMoved) return; // that was a drag, not a selection
-    goTo(item);
-  });
-
-  svgEl.appendChild(g);
-  const node = {
-    el: g, core, coreG, halo, hit, label: labelEl,
-    x, y, baseR: r, baseFont,
-    minScale: opts.minScale || 0,
-    filtered: false,
-    name: item.name,
-    search: (item.name + ' ' + descFor(item)).toLowerCase(),
-  };
-  nodes.push(node);
-  if (node.minScale) { g.style.opacity = 0; g.style.pointerEvents = 'none'; }
-  return node;
-}
-
-// ── Search ────────────────────────────────────────────────────────────
-function applyFilter(q) {
-  const query = q.trim().toLowerCase();
-
-  for (const n of nodes) {
-    if (!n.core) continue; // shell labels ignore filtering
-    n.filtered = !!query && !n.search.includes(query);
-    if (!n.minScale) {
-      n.el.style.transition = 'opacity 0.25s';
-      n.el.style.opacity = n.filtered ? '0.12' : '1';
-    }
-  }
-  applyViewTransform(); // re-resolve zoom-gated visibility under the filter
-
-  resultsEl.innerHTML = '';
-  if (!query) { resultsEl.style.display = 'none'; return; }
-
-  const matches = allDest
-    .filter(d => (d.name + ' ' + descFor(d)).toLowerCase().includes(query))
-    .slice(0, 6);
-  if (matches.length === 0) { resultsEl.style.display = 'none'; return; }
-
-  for (const m of matches) {
-    const row = document.createElement('div');
-    row.dataset.result = '1';
-    row.style.cssText = `
-      display:flex;justify-content:space-between;align-items:baseline;gap:14px;
-      padding:10px 16px;cursor:pointer;font-size:12px;letter-spacing:2px;
-      color:rgba(255,255,255,0.85);transition:background 0.15s;
-    `;
-    row.innerHTML = `<span>${nice(m.name)}</span>
-      <span style="font-size:9px;color:rgba(140,180,255,0.55)">&asymp; ${Math.round(travelSeconds(m))}s</span>`;
-    row.addEventListener('mouseenter', () => { row.style.background = 'rgba(120,180,255,0.1)'; });
-    row.addEventListener('mouseleave', () => { row.style.background = 'transparent'; });
-    row.addEventListener('click', () => goTo(m));
-    resultsEl.appendChild(row);
-  }
-  resultsEl.style.display = 'block';
-}
-
 // ── Toggle / state ────────────────────────────────────────────────────
 export function toggleStarMap() {
   if (!overlayEl) { pendingOpen = true; return; }
   active = !active;
   emit('starmap:toggled', active);
   if (active) {
-    buildChart();
-    searchEl.value = '';
-    applyFilter('');
+    canvasWrap.innerHTML = '';
+    const canvas = document.createElement('canvas');
+    canvas.style.display = 'block';
+    canvasWrap.appendChild(canvas);
+    view = new StarMapView(canvas, {
+      theme: 'natural',
+      autoRotate: true,
+      background: true,
+      rings: true,
+      onSelect: (d) => showCard(d),
+      onTier: (t) => setTier(t),
+    });
+    // Distances come from the live camera, not the snapshot's Earth
+    view.distLabel = distLabelFor;
+    window.__smView = view; // diagnostics, same spirit as getTransitDebug()
+    view.setData(buildDestinations());
+    setTier(view.tier());
+    showCard(null);
     overlayEl.style.opacity = '1';
     overlayEl.style.pointerEvents = 'auto';
     if (pillEl) pillEl.style.opacity = '0';
   } else {
+    if (view) { view.destroy(); view = null; }
     overlayEl.style.opacity = '0';
     overlayEl.style.pointerEvents = 'none';
-    searchEl.blur();
-    tooltipEl.style.opacity = '0';
     if (pillEl) pillEl.style.opacity = '1';
   }
 }
@@ -840,5 +398,5 @@ export function isStarMapOpen() {
   return active;
 }
 
-// Kept for main.js API compatibility — the chart is DOM/SVG, nothing to tick.
+// Kept for main.js API compatibility — the map runs its own rAF loop.
 export function updateStarMap() {}
