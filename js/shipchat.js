@@ -179,13 +179,14 @@ export function initShipChat() {
   inputWrap.appendChild(measurer);
   row.appendChild(inputWrap);
 
-  // The breath — Sol's only visible form, and only when it has
-  // something to be present FOR: thinking, speaking, feeling, being
-  // approached, or being spoken to. The rest of the time the corner is
-  // empty sky. Rendering and state animation live in companion-mark.js;
-  // the render loop in main.js drives it.
+  // The voiceprint — Sol's only visible form, and only when it has a
+  // voice to show: a thin phosphor trace under the words that ripples
+  // as it thinks and speaks, and lies as empty glass the rest of the
+  // time. Drifting the cursor over it (or opening the line) makes the
+  // trace stir faintly — the instrument warming to be read. Rendering
+  // and state animation live in companion-mark.js.
   const mark = document.createElement('canvas');
-  mark.style.cssText = 'width:48px;height:132px;';
+  mark.style.cssText = 'width:100%;height:30px;margin:0 0 2px;';
   initCompanionMark(mark);
   let markHover = false;
   mark.addEventListener('mouseenter', () => { markHover = true; });
@@ -197,10 +198,10 @@ export function initShipChat() {
     const attended = markHover || document.activeElement === input;
     mark.className = present ? 'sc-present' : attended ? 'sc-stir' : '';
   }, 240);
-  // Addressing the ship: click where the breath lives, the line opens.
+  // Addressing the ship: click the trace, the line opens.
   mark.addEventListener('click', () => input.focus());
-  row.appendChild(mark);
 
+  wrap.appendChild(mark);
   wrap.appendChild(row);
   document.body.appendChild(wrap);
 

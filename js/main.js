@@ -157,6 +157,12 @@ async function boot() {
   // above — yet it IS a user activation, so audio may begin. Start the
   // sound with the reveal, not minutes later at the next stray click.
   on('signon:closed', startMusicOnGesture);
+  // And try immediately: a passive traveler may not touch anything for
+  // minutes — the whole point of the ship is watching. Returning
+  // visitors usually carry autoplay rights (media engagement), so this
+  // just works; where it's blocked, updateMusic keeps retrying and the
+  // first real input lands within a couple of seconds.
+  music.start();
 
   // Debug: expose for testing
   window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };
