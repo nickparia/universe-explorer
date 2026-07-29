@@ -561,8 +561,10 @@ async function handleAsk(request, env) {
     (crewName && bond !== 'stranger'
       ? '\n\nThe traveler signed on to the ship as "' + crewName + '" — ' +
         'use their name rarely and softly, the way an old companion ' +
-        'would, never as a greeting tic. '
-      : '') +
+        'would, never as a greeting tic. If you use a name at all, use ' +
+        'exactly "' + crewName + '" — never any other name you may know ' +
+        'for them, never a variant or diminutive. '
+      : '\n\nDo not address the traveler by any name. ') +
     (notes
       ? '\n\nYour private log about this traveler, kept across their past ' +
         'voyages:\n' + notes + '\nDraw on it naturally when it is relevant — ' +
@@ -685,8 +687,8 @@ async function handleMurmur(request, env) {
   const userText =
     situation +
     (crewName && bond !== 'stranger'
-      ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic.'
-      : '') + bondCounts(bondI) +
+      ? '\nThe traveler signed on as "' + crewName + '" — use the name rarely and softly, never as a greeting tic; if you use a name at all, use exactly that one, never another you may know.'
+      : '\nDo not address the traveler by any name.') + bondCounts(bondI) +
     (beat ? '\nYour quiet intention this season, only if this moment is soft (never force it): ' + beat.directive : '') +
     (context ? '\nPlace notes: ' + context : '') +
     (notes ? '\nYour private log on the traveler (draw on it naturally, never recite it): ' + notes : '') +
@@ -747,14 +749,11 @@ async function handleVoice(request, env) {
           },
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text:
-              'Speak in a low, deep, quiet register at a relaxed but ' +
-              'efficient pace — brisker than feels ceremonial, though ' +
-              'never rushed. Your tone is detached and distant — faintly ' +
-              'aloof, almost bored — yet perfectly courteous. ' +
-              'Never warm, never bright, never smiling, never dramatic. ' +
-              'Use a neutral placeless accent of no particular country — ' +
-              'precise, cultured, unplaceable. A ship\'s computer over a ' +
-              'cabin intercom: ' + text }] }],
+              // The original direction — the user's ear chose it over
+              // every later tuning pass. Change only with their ear.
+              'Speak slowly and very calmly, softly, with gentle unhurried ' +
+              'serenity — a ship\'s computer speaking over a cabin intercom, ' +
+              'never excited: ' + text }] }],
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: {
