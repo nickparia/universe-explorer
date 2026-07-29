@@ -17,6 +17,12 @@ import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
 import { initCompanionMark, setCompanionState, setTraceCursor } from './companion-mark.js';
 import { prepareVoice, hushVoice } from './voice.js';
+
+// The spoken voice is OFF (user call): synthesis latency (3-6s) opened
+// a gap between asking and hearing that broke the teletype's
+// immediacy. The whole machinery — voice.js intercom, /api/voice,
+// live-level trace — stays dormant, ready for the day TTS can stream.
+const VOICE_ENABLED = false;
 import { musicCommand, getNowPlaying } from './music.js';
 import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
 import { openSignonTerminal } from './signon.js';
@@ -361,6 +367,10 @@ function stopSpeaking() {
 export function companionSay(text) {
   if (busy || stream) return false;
   const line = addLine('', 'solace');
+  if (!VOICE_ENABLED) {
+    streamInto(line, text);
+    return true;
+  }
   line._fadeAt = Infinity;
   // The voice warms up first (a breath, not a lag) — print and audio
   // then begin together, paced to end together. If the voice is
@@ -547,21 +557,25 @@ async function send() {
     if (res.ok && data.answer) {
       const answer = data.answer.trim();
       history.push({ role: 'assistant', content: answer });
-      // The traveler is waiting on an ANSWER: give the voice a few
-      // seconds to warm so print and speech start together, but never
-      // hold the words hostage — past the grace, the teletype goes
-      // ahead and the voice joins mid-print when it lands.
-      const prep = prepareVoice(spokenText(answer));
-      const v = await Promise.race([prep, new Promise((r) => setTimeout(() => r('slow'), 6000))]);
       pending.style.animation = '';
-      if (v === 'slow') {
+      if (!VOICE_ENABLED) {
         streamInto(pending, answer);
-        prep.then((late) => {
-          if (late && stream && stream.line === pending) late.play();
-        });
       } else {
-        const dur = v ? v.play() : 0;
-        streamInto(pending, answer, paceFor(dur, answer));
+        // The traveler is waiting on an ANSWER: give the voice a few
+        // seconds to warm so print and speech start together, but never
+        // hold the words hostage — past the grace, the teletype goes
+        // ahead and the voice joins mid-print when it lands.
+        const prep = prepareVoice(spokenText(answer));
+        const v = await Promise.race([prep, new Promise((r) => setTimeout(() => r('slow'), 6000))]);
+        if (v === 'slow') {
+          streamInto(pending, answer);
+          prep.then((late) => {
+            if (late && stream && stream.line === pending) late.play();
+          });
+        } else {
+          const dur = v ? v.play() : 0;
+          streamInto(pending, answer, paceFor(dur, answer));
+        }
       }
       scheduleReflect();
     } else {

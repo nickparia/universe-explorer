@@ -152,7 +152,13 @@ export function updateCompanionMark(dt) {
   const rgb = `${col[0] | 0},${col[1] | 0},${col[2] | 0}`;
   const wr = `${(col[0] + (255 - col[0]) * 0.6) | 0},${(col[1] + (255 - col[1]) * 0.6) | 0},${(col[2] + (255 - col[2]) * 0.6) | 0}`;
 
-  // The trace — sampled across the width; both ends fade to nothing
+  // The prompt block leads; the trace BEGINS after it — a cursor at
+  // the head of a line, never a line running through a cursor.
+  const ch = Math.min(11, cssH * 0.4), cw = ch * 0.48;
+  const cx0 = cssW * 0.045;
+  const x0 = cursorOn ? cx0 + cw + 6 : 0;
+
+  // The trace — sampled across its span; both ends fade to nothing
   // (nothing ends like a lightswitch, not even a line).
   const SEG = 72;
   const path = new Path2D();
@@ -161,7 +167,7 @@ export function updateCompanionMark(dt) {
     const win = Math.pow(Math.sin(Math.PI * u), 0.7); // edge taper
     const ya = waveY(prev, t, u), yb = waveY(cur, t, u);
     const y = cy + maxAmp * env * win * (ya + (yb - ya) * e);
-    const x = u * cssW;
+    const x = x0 + u * (cssW - x0);
     if (k === 0) path.moveTo(x, y); else path.lineTo(x, y);
   }
 
@@ -201,11 +207,10 @@ export function updateCompanionMark(dt) {
   // The prompt: a phosphor block blinking on the teletype beat at the
   // head of the trace — the ship, visibly listening.
   if (cursorOn && (t % 1.06) < 0.53) {
-    const ch = Math.min(11, cssH * 0.4), cw = ch * 0.48;
     ctx.fillStyle = `rgba(${wr},${0.85 * alpha})`;
     ctx.shadowColor = `rgba(${rgb},${0.6 * alpha})`;
     ctx.shadowBlur = 7;
-    ctx.fillRect(cssW * 0.045, cy - ch / 2, cw, ch);
+    ctx.fillRect(cx0, cy - ch / 2, cw, ch);
     ctx.shadowBlur = 0;
   }
 }

@@ -750,10 +750,11 @@ async function handleVoice(request, env) {
           body: JSON.stringify({
             contents: [{ role: 'user', parts: [{ text:
               // The original direction — the user's ear chose it over
-              // every later tuning pass. Change only with their ear.
+              // every later tuning pass, then asked for one shade of
+              // sadness. Change only with their ear.
               'Speak slowly and very calmly, softly, with gentle unhurried ' +
-              'serenity — a ship\'s computer speaking over a cabin intercom, ' +
-              'never excited: ' + text }] }],
+              'serenity and a faint undertone of sadness — a ship\'s ' +
+              'computer speaking over a cabin intercom, never excited: ' + text }] }],
             generationConfig: {
               responseModalities: ['AUDIO'],
               speechConfig: {
