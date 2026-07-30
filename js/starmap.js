@@ -1,16 +1,18 @@
-// js/starmap.js — the star map. "Deep Field" design.
+// js/starmap.js — the star map. "Navigator" design (second handoff).
 //
-// A full-screen 3D spatial chart: every destination rendered as a
-// procedural object (shaded planet, ringed Saturn, wispy nebula, spiral
-// galaxy…) floating in a drifting star field. Drag to rotate, scroll to
-// zoom through three scale tiers (solar system → interstellar →
-// galactic), click an object to see its card, then choose the crossing:
-// engage the warp yourself, or hand SOLACE the helm for the slow way.
+// A two-pane navigator: the destination catalog on the left — grouped
+// by section, poetic one-liners, live distances — and the full 3D
+// spatial chart on the right. Hovering a row lights the object in
+// space; clicking a row (or an object in the map) selects it, flies
+// the map camera to it, and raises a selection bar with the full
+// description and the crossing chooser: engage the warp yourself, or
+// hand SOLACE the helm for the slow way (both verbs — a per-journey
+// choice, never a setting).
 //
-// The renderer lives in starmap-engine.js (Canvas-2D, ported from the
-// design handoff); the poetic per-destination metadata (kind, one-liner,
-// real light-year distances) in starmap-data.js. Live positions, live
-// descriptions, and travel itself come from the running sim.
+// The renderer lives in starmap-engine.js (Canvas-2D, ported verbatim
+// from the handoff); poetic metadata (kind, one-liner, real light-year
+// distances) in starmap-data.js. Live positions, live descriptions,
+// and travel itself come from the running sim.
 
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getBodies } from './bodies.js';
@@ -18,18 +20,20 @@ import { warpTo, flyTo, cruiseTo, getCamPos } from './flight.js';
 import { emit } from './bus.js';
 import { AU } from './constants.js';
 import { StarMapView, KM_PER_AU } from './starmap-engine.js';
-import { DESTINATIONS } from './starmap-data.js';
+import { DESTINATIONS, SECTIONS } from './starmap-data.js';
 
 // ── State ─────────────────────────────────────────────────────────────
 let overlayEl = null;
 let canvasWrap = null;
-let cardEl = null;
+let listEl = null;        // the scrolling catalog
+let selBarEl = null;      // selection bar, bottom of the viewport
+let tierEl = null;        // live tier word in the wordmark subtitle
 let pillEl = null;
-let tierEls = null;       // { 'solar system': {dot, label}, ... }
 let view = null;          // StarMapView, alive only while the map is open
 let active = false;
 let pendingOpen = false;  // M pressed before boot finished building the map
-let selected = null;      // merged destination shown on the card
+let selected = null;
+let rowEls = {};          // name -> row element (hover/selected styling)
 
 // ── Live-world helpers ────────────────────────────────────────────────
 function worldPos(item) {
@@ -77,9 +81,6 @@ function distLabelFor(d) {
 }
 
 // ── Destination data: snapshot layout + live sim merged ──────────────
-// The snapshot supplies the designed composition (au/angle/phi layout,
-// kind, one-liner, real ly distances); the live sim supplies existence,
-// descriptions, positions, and travel.
 function buildDestinations() {
   const live = {};
   for (const b of getBodies()) live[b.name] = b;
@@ -144,10 +145,9 @@ function el(tag, css, text) {
 }
 
 const BTN_CSS =
-  'display:inline-block;margin-top:16px;padding:9px 22px;pointer-events:all;' +
-  'font-size:10px;letter-spacing:5px;cursor:pointer;color:rgba(120,180,255,0.9);' +
-  'background:rgba(120,180,255,0.06);border:1px solid rgba(120,180,255,0.4);' +
-  'transition:all 0.3s;white-space:nowrap;';
+  'padding:9px 22px;flex-shrink:0;font-size:10px;letter-spacing:5px;' +
+  'cursor:pointer;color:rgba(120,180,255,0.9);background:rgba(120,180,255,0.06);' +
+  'border:1px solid rgba(120,180,255,0.4);transition:all 0.3s;white-space:nowrap;';
 
 function makeButton(label) {
   const b = el('div', BTN_CSS, label);
@@ -162,139 +162,193 @@ function makeButton(label) {
   return b;
 }
 
-// ── Info card ─────────────────────────────────────────────────────────
-function showCard(d) {
-  selected = d;
-  if (!d) { cardEl.style.display = 'none'; return; }
-
-  cardEl.innerHTML = '';
-  const name = el('div',
-    'font-size:22px;letter-spacing:10px;color:rgba(255,255,255,0.95);font-weight:300;' +
-    `text-shadow:0 0 20px ${d.color || '#8fd8ff'},0 1px 6px rgba(0,0,0,0.9);`,
-    nice(d.name));
-  const meta = el('div',
-    'font-size:10px;letter-spacing:6px;color:rgba(120,180,255,0.8);margin-top:6px;' +
-    'text-shadow:0 1px 4px rgba(0,0,0,0.8);',
-    `${d.kind} · ${distLabelFor(d)}`);
-  const divider = el('div',
-    'width:40px;height:1px;background:rgba(120,180,255,0.25);margin:12px 0;');
-  const desc = el('div',
-    'font-size:12px;letter-spacing:1.5px;color:rgba(255,255,255,0.68);line-height:2;' +
-    'text-shadow:0 1px 6px rgba(0,0,0,0.9);',
-    d.desc);
-
-  cardEl.appendChild(name);
-  cardEl.appendChild(meta);
-  cardEl.appendChild(divider);
-  cardEl.appendChild(desc);
-
-  // The crossing chooser — two verbs, a per-journey choice, never a setting
-  if (!d.ship) {
-    const row = el('div', 'display:flex;gap:10px;flex-wrap:wrap;align-items:baseline;');
-    const warpBtn = makeButton(
-      (d.warps ? 'engage warp' : 'fly there') + '  ≈ ' + Math.round(travelSeconds(d)) + 's');
-    warpBtn.addEventListener('click', () => goWarp(d));
-    const cruiseBtn = makeButton('let solace take you  ≈ ' + cruiseMinutes(d) + ' min');
-    cruiseBtn.addEventListener('click', () => goCruise(d));
-    row.appendChild(warpBtn);
-    row.appendChild(cruiseBtn);
-    cardEl.appendChild(row);
-  }
-
-  cardEl.style.display = 'block';
-  // restart the enter animation
-  cardEl.style.animation = 'none';
-  void cardEl.offsetWidth;
-  cardEl.style.animation = 'sm-fadeUp 0.4s ease-out';
+// ── Selection (bar + row highlight, list↔map two-way) ────────────────
+function styleRow(name, state) {
+  const r = rowEls[name];
+  if (!r) return;
+  r.style.background = state === 'sel' ? 'rgba(120,180,255,0.10)'
+    : state === 'hov' ? 'rgba(120,180,255,0.06)' : 'transparent';
+  r.style.borderLeftColor = state === 'sel' ? 'rgba(120,180,255,0.7)' : 'transparent';
 }
 
-// ── Tier ribbon ───────────────────────────────────────────────────────
-const TIERS = ['solar system', 'interstellar', 'galactic'];
+function showSelection(d) {
+  if (selected && (!d || d.name !== selected.name)) styleRow(selected.name, null);
+  selected = d;
+  if (!d) { selBarEl.style.display = 'none'; return; }
+  styleRow(d.name, 'sel');
 
-function setTier(t) {
-  for (const name of TIERS) {
-    const on = name === t;
-    tierEls[name].dot.style.background = on ? '#8fd8ff' : 'rgba(140,180,255,0.25)';
-    tierEls[name].dot.style.boxShadow = on ? '0 0 8px #8fd8ff' : 'none';
-    tierEls[name].label.style.color = on ? 'rgba(220,235,255,0.9)' : 'rgba(180,210,255,0.35)';
+  // Bring the row into view if the catalog has it scrolled away
+  const r = rowEls[d.name];
+  if (r && listEl) {
+    const top = r.offsetTop - listEl.offsetTop;
+    if (top < listEl.scrollTop || top > listEl.scrollTop + listEl.clientHeight - 60) {
+      listEl.scrollTop = top - listEl.clientHeight / 2;
+    }
+  }
+
+  selBarEl.innerHTML = '';
+  selBarEl.appendChild(el('div',
+    'width:12px;height:12px;border-radius:50%;flex-shrink:0;' +
+    `background:${d.color};box-shadow:0 0 16px ${d.color};`));
+  const mid = el('div', 'flex:1;min-width:0;');
+  const nameRow = el('div', 'display:flex;align-items:baseline;gap:14px;');
+  nameRow.appendChild(el('span',
+    'font-size:16px;letter-spacing:6px;color:rgba(255,255,255,0.95);', nice(d.name)));
+  nameRow.appendChild(el('span',
+    'font-size:9px;letter-spacing:4px;color:rgba(120,180,255,0.75);', d.kind || ''));
+  mid.appendChild(nameRow);
+  mid.appendChild(el('div',
+    'font-size:10px;letter-spacing:1.5px;margin-top:5px;color:rgba(255,255,255,0.5);' +
+    'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', d.desc || d.short || ''));
+  selBarEl.appendChild(mid);
+  selBarEl.appendChild(el('div',
+    'font-size:10px;letter-spacing:2px;color:rgba(160,200,255,0.7);white-space:nowrap;',
+    distLabelFor(d).toLowerCase()));
+
+  // The crossing chooser — two verbs, a per-journey choice
+  if (!d.ship) {
+    const warpBtn = makeButton(
+      (d.warps ? 'engage warp' : 'fly there') + ' ≈ ' + Math.round(travelSeconds(d)) + 's');
+    warpBtn.addEventListener('click', () => goWarp(d));
+    selBarEl.appendChild(warpBtn);
+    const cruiseBtn = makeButton('let solace take you ≈ ' + cruiseMinutes(d) + ' min');
+    cruiseBtn.addEventListener('click', () => goCruise(d));
+    selBarEl.appendChild(cruiseBtn);
+  }
+
+  selBarEl.style.display = 'flex';
+  selBarEl.style.animation = 'none';
+  void selBarEl.offsetWidth;
+  selBarEl.style.animation = 'sm-fadeUp 0.3s ease-out';
+}
+
+// ── The catalog (left pane) ───────────────────────────────────────────
+function buildList(dests) {
+  listEl.innerHTML = '';
+  rowEls = {};
+  const byName = {};
+  for (const d of dests) byName[d.name] = d;
+
+  // The black hole rides with the galaxies
+  const sections = SECTIONS.map((s) =>
+    s.title === 'galaxies & voids'
+      ? { ...s, names: [...s.names, 'BLACK HOLE'] }
+      : s);
+
+  for (const sec of sections) {
+    const items = sec.names.map((n) => byName[n]).filter(Boolean);
+    if (!items.length) continue;
+    const wrap = el('div', 'margin:28px 0 6px;');
+    wrap.appendChild(el('div',
+      'font-size:10px;letter-spacing:5px;padding-bottom:12px;margin-bottom:4px;' +
+      'border-bottom:1px solid rgba(255,255,255,0.06);' +
+      `color:${sec.featured ? 'rgba(255,220,120,0.7)' : 'rgba(160,200,255,0.55)'};`,
+      sec.title));
+    for (const d of items) {
+      const row = el('div',
+        'display:flex;align-items:center;gap:16px;padding:11px 12px;cursor:pointer;' +
+        'border-radius:2px;border-left:2px solid transparent;' +
+        'transition:background 0.15s,border-color 0.15s;');
+      row.appendChild(el('div',
+        'width:10px;height:10px;border-radius:50%;flex-shrink:0;' +
+        `background:${d.color};box-shadow:0 0 12px ${d.color};`));
+      const mid = el('div', 'flex:1;min-width:0;');
+      mid.appendChild(el('div',
+        'font-size:13px;letter-spacing:3px;color:rgba(255,255,255,0.92);', nice(d.name)));
+      mid.appendChild(el('div',
+        'font-size:9px;letter-spacing:1.2px;margin-top:3px;color:rgba(200,220,255,0.4);' +
+        'overflow:hidden;text-overflow:ellipsis;white-space:nowrap;', d.short || ''));
+      row.appendChild(mid);
+      row.appendChild(el('div',
+        'font-size:9px;letter-spacing:1.5px;color:rgba(160,200,255,0.55);' +
+        'white-space:nowrap;flex-shrink:0;', distLabelFor(d).toLowerCase()));
+
+      row.addEventListener('mouseenter', () => {
+        if (view) view.highlight(d.name);
+        if (!selected || selected.name !== d.name) styleRow(d.name, 'hov');
+      });
+      row.addEventListener('mouseleave', () => {
+        if (view) view.highlight(null);
+        if (!selected || selected.name !== d.name) styleRow(d.name, null);
+      });
+      row.addEventListener('click', () => {
+        if (!view) return;
+        showSelection(view.select(d.name));
+      });
+
+      // Only the first appearance of a name owns the styled row ref
+      // (EARTH etc. appear in both "start here" and their own section)
+      if (!rowEls[d.name]) rowEls[d.name] = row;
+      wrap.appendChild(row);
+    }
+    listEl.appendChild(wrap);
   }
 }
 
 // ── Init ──────────────────────────────────────────────────────────────
 export function initStarMap() {
-  // keyframes for the card + hint animations
   const style = document.createElement('style');
   style.textContent = `
-    @keyframes sm-fadeUp{0%{opacity:0;transform:translateY(10px)}100%{opacity:1;transform:translateY(0)}}
-    @keyframes sm-hintPulse{0%,100%{opacity:0.3}50%{opacity:0.6}}
+    @keyframes sm-fadeUp{0%{opacity:0;transform:translateY(8px)}100%{opacity:1;transform:translateY(0)}}
+    #sm-list::-webkit-scrollbar{width:6px}
+    #sm-list::-webkit-scrollbar-thumb{background:rgba(160,200,255,0.25);border-radius:3px}
   `;
   document.head.appendChild(style);
 
   overlayEl = el('div',
-    'position:fixed;inset:0;z-index:68;overflow:hidden;' +
-    'background:radial-gradient(ellipse at 50% 45%, #060a16 0%, #03050c 55%, #010208 100%);' +
+    'position:fixed;inset:0;z-index:68;overflow:hidden;background:#04060c;' +
+    'display:grid;grid-template-columns:380px 1fr;' +
     "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;" +
     'color:rgba(255,255,255,0.94);' +
     'opacity:0;pointer-events:none;transition:opacity 0.45s ease;');
   overlayEl.id = 'starchart';
 
-  // The map canvas fills the viewport (canvas itself is created fresh on
-  // each open — the engine binds input listeners it never unbinds)
+  // ── Left: the catalog ──
+  const left = el('div',
+    'display:flex;flex-direction:column;overflow:hidden;' +
+    'background:rgba(8,10,18,0.92);border-right:1px solid rgba(160,200,255,0.15);' +
+    'box-shadow:4px 0 40px rgba(0,0,0,0.55);');
+  const header = el('div',
+    'flex-shrink:0;padding:26px 28px 18px;border-bottom:1px solid rgba(255,255,255,0.06);');
+  header.appendChild(el('div',
+    'font-size:11px;letter-spacing:7px;color:rgba(200,220,255,0.75);', 'destinations'));
+  header.appendChild(el('div',
+    'font-size:9px;letter-spacing:3px;margin-top:6px;color:rgba(255,255,255,0.35);',
+    'click to target · distances from your position'));
+  left.appendChild(header);
+  listEl = el('div',
+    'flex:1;overflow-y:auto;overflow-x:hidden;padding:10px 16px 60px;' +
+    'scrollbar-width:thin;scrollbar-color:rgba(160,200,255,0.25) transparent;');
+  listEl.id = 'sm-list';
+  left.appendChild(listEl);
+  overlayEl.appendChild(left);
+
+  // ── Right: the map viewport ──
+  const right = el('div',
+    'position:relative;overflow:hidden;' +
+    'background:radial-gradient(ellipse at 50% 45%, #070b16 0%, #03050c 60%, #010208 100%);');
   canvasWrap = el('div', 'position:absolute;inset:0;');
-  overlayEl.appendChild(canvasWrap);
+  right.appendChild(canvasWrap);
 
-  // Vignette
-  overlayEl.appendChild(el('div',
-    'position:absolute;inset:0;pointer-events:none;' +
-    'background:radial-gradient(ellipse at center, transparent 55%, rgba(0,0,0,0.5) 100%);'));
-
-  // Wordmark
-  const wordmark = el('div',
-    'position:absolute;top:30px;left:50%;transform:translateX(-50%);text-align:center;pointer-events:none;');
+  const wordmark = el('div', 'position:absolute;top:24px;left:28px;pointer-events:none;');
   wordmark.appendChild(el('div',
-    'font-size:12px;letter-spacing:9px;color:rgba(220,235,255,0.85);' +
-    'text-shadow:0 0 24px rgba(120,180,255,0.4),0 1px 8px rgba(0,0,0,0.9);',
-    'star map'));
-  wordmark.appendChild(el('div',
-    'font-size:8px;letter-spacing:4px;margin-top:8px;color:rgba(255,255,255,0.3);',
-    'press esc to close'));
-  overlayEl.appendChild(wordmark);
+    'font-size:12px;letter-spacing:8px;color:rgba(220,235,255,0.85);' +
+    'text-shadow:0 0 20px rgba(120,180,255,0.4);', 'star map'));
+  const sub = el('div',
+    'font-size:9px;letter-spacing:3px;margin-top:7px;color:rgba(180,210,255,0.35);');
+  tierEl = el('span', '', 'solar system');
+  sub.appendChild(tierEl);
+  sub.appendChild(document.createTextNode(' view · drag to rotate · scroll to zoom · esc closes'));
+  wordmark.appendChild(sub);
+  right.appendChild(wordmark);
 
-  // Tier ribbon
-  const ribbon = el('div',
-    'position:absolute;bottom:28px;left:50%;transform:translateX(-50%);' +
-    'display:flex;gap:30px;align-items:center;');
-  tierEls = {};
-  TIERS.forEach((name, i) => {
-    if (i > 0) ribbon.appendChild(el('div', 'width:26px;height:1px;background:rgba(160,200,255,0.15);'));
-    const item = el('div', 'display:flex;align-items:center;gap:9px;cursor:pointer;');
-    const dot = el('div',
-      'width:5px;height:5px;border-radius:50%;background:rgba(140,180,255,0.25);transition:background 0.3s;');
-    const label = el('span',
-      'font-size:9px;letter-spacing:4px;color:rgba(180,210,255,0.35);transition:color 0.3s;', name);
-    item.appendChild(dot);
-    item.appendChild(label);
-    item.addEventListener('click', () => { if (view) view.zoomTier(name); });
-    ribbon.appendChild(item);
-    tierEls[name] = { dot, label };
-  });
-  overlayEl.appendChild(ribbon);
-
-  // Controls hint
-  const hint = el('div',
-    'position:absolute;bottom:64px;right:28px;font-size:9px;letter-spacing:3px;' +
-    'color:rgba(255,255,255,0.3);text-align:right;line-height:2.1;' +
-    'animation:sm-hintPulse 4s ease-in-out infinite;pointer-events:none;');
-  hint.innerHTML = 'drag to rotate · scroll to zoom<br>click a light to learn more';
-  overlayEl.appendChild(hint);
-
-  // Info card
-  cardEl = el('div',
-    'position:absolute;bottom:70px;left:32px;max-width:400px;padding:22px 26px;' +
-    'pointer-events:none;display:none;' +
-    'background:linear-gradient(to right, rgba(5,8,16,0.55), transparent);' +
-    'backdrop-filter:blur(4px);-webkit-backdrop-filter:blur(4px);');
-  overlayEl.appendChild(cardEl);
+  selBarEl = el('div',
+    'position:absolute;left:28px;right:28px;bottom:22px;display:none;' +
+    'align-items:center;gap:22px;padding:16px 22px;' +
+    'background:rgba(8,12,20,0.7);backdrop-filter:blur(10px);-webkit-backdrop-filter:blur(10px);' +
+    'border:1px solid rgba(160,200,255,0.18);');
+  right.appendChild(selBarEl);
+  overlayEl.appendChild(right);
 
   document.body.appendChild(overlayEl);
 
@@ -365,6 +419,7 @@ export function toggleStarMap() {
   active = !active;
   emit('starmap:toggled', active);
   if (active) {
+    // Fresh canvas per open — the engine binds listeners it never unbinds
     canvasWrap.innerHTML = '';
     const canvas = document.createElement('canvas');
     canvas.style.display = 'block';
@@ -374,15 +429,18 @@ export function toggleStarMap() {
       autoRotate: true,
       background: true,
       rings: true,
-      onSelect: (d) => showCard(d),
-      onTier: (t) => setTier(t),
+      onSelect: (d) => showSelection(d),
+      onTier: (t) => { if (tierEl) tierEl.textContent = t; },
     });
     // Distances come from the live camera, not the snapshot's Earth
     view.distLabel = distLabelFor;
-    window.__smView = view; // diagnostics, same spirit as getTransitDebug()
-    view.setData(buildDestinations());
-    setTier(view.tier());
-    showCard(null);
+    window.__smView = view; // diagnostics
+    const dests = buildDestinations();
+    view.setData(dests);
+    buildList(dests);
+    if (tierEl) tierEl.textContent = view.tier();
+    selected = null;
+    selBarEl.style.display = 'none';
     overlayEl.style.opacity = '1';
     overlayEl.style.pointerEvents = 'auto';
     if (pillEl) pillEl.style.opacity = '0';
