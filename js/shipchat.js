@@ -58,6 +58,7 @@ const REFLECT_EVERY = 8;     // exchanges between forced reflections
 const REFLECT_QUIET_MS = 90000; // a lull in conversation → distill it
 
 const HALO = 'text-shadow:0 1px 4px rgba(0,0,0,0.95),0 0 10px rgba(0,0,0,0.6);';
+let markLineUsed = () => {}; // bound in initShipChat (the keycap retires)
 
 // The bond signals — how long Sol has known this traveler and how many
 // worlds they have seen together (companion.js's place log; read fresh
@@ -192,8 +193,36 @@ export function initShipChat() {
     if (e.key === 'Enter') { send(); placeCursor(); }
     if (e.key === 'Escape') input.blur();
   });
+  // The etched caption: consoles label their keys. Beside the resting
+  // prompt, in the machine's own register — "enter · speak" — until the
+  // traveler has used the line three times; then the ship stops
+  // labeling a control they know, forever.
+  const KEYCAP_KEY = 'solace_line_uses_v1';
+  let lineUses = 0;
+  try { lineUses = parseInt(localStorage.getItem(KEYCAP_KEY) || '0', 10) || 0; } catch (e) { /* fine */ }
+  const keycap = document.createElement('span');
+  keycap.textContent = 'enter · speak';
+  keycap.style.cssText =
+    'position:absolute;top:50%;transform:translateY(-50%);left:18px;' +
+    'pointer-events:none;font-family:' + MONO + ';font-size:8px;' +
+    'letter-spacing:3px;color:rgba(255,186,100,0.30);text-transform:uppercase;' +
+    'text-shadow:0 1px 3px rgba(0,0,0,0.9);transition:opacity 0.8s;';
+  const updateKeycap = () => {
+    keycap.style.opacity =
+      (document.activeElement !== input && lineUses < 3) ? '1' : '0';
+  };
+  markLineUsed = () => {
+    lineUses++;
+    try { localStorage.setItem(KEYCAP_KEY, String(lineUses)); } catch (e) { /* fine */ }
+    updateKeycap();
+  };
+  input.addEventListener('focus', updateKeycap);
+  input.addEventListener('blur', updateKeycap);
+  updateKeycap();
+
   inputWrap.appendChild(input);
   inputWrap.appendChild(inputCursor);
+  inputWrap.appendChild(keycap);
   inputWrap.appendChild(measurer);
   placeCursor(); // standing prompt visible from the first frame
   row.appendChild(inputWrap);
@@ -499,6 +528,7 @@ function buildContext(name) {
 async function send() {
   const q = input.value.trim();
   if (!q || busy) return;
+  markLineUsed(); // the traveler knows the line now — the keycap retires
   // Registry intents are handled by the ship's OS, not the brain: the
   // traveler asks SOLACE to sign them on (or off) in plain words.
   if (/^sign[ -]?on$|^log[ -]?in$/i.test(q)) {
