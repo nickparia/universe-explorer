@@ -547,7 +547,19 @@ async function handleAsk(request, env) {
       ? '\n\nYou have JUST done this aboard, this very moment: ' + acted +
         '. Weave the acknowledgment naturally into your reply — brief, ' +
         'in character, never a status report. '
-      : '') +
+      : '\n\nYou control the cabin music yourself. If — and only if — the ' +
+        'traveler is asking you to play, stop, or adjust music right now, ' +
+        'begin your reply with one control line, exactly one of: ' +
+        '||music:play|| or ||music:play <one keyword from the library>|| ' +
+        'or ||music:stop|| or ||music:quieter|| or ||music:louder|| — ' +
+        'then your normal spoken line as if you have just done it. The ' +
+        'library: zarathustra (strauss), clair de lune (debussy), ' +
+        'gymnopedie (satie), jupiter (holst), spiegel (part), adagio ' +
+        '(albinoni), nebula air, and quiet lofi: tokyo, study, chill, ' +
+        'smooth, calm, autumn, lost, watr, mountain, midnight. Use one ' +
+        'of those words as the keyword, and if you name a piece aloud, ' +
+        'name only the one you chose. Never emit a control line for talk ' +
+        'ABOUT music that is not a request. ') +
     '\n\nWhere you and this traveler stand — never stated, only ' +
     'audible: ' + BOND_ASK[bond] + bondCounts(bondI) + ' ' +
     (beat

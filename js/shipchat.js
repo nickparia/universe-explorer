@@ -554,11 +554,11 @@ async function send() {
   let acted = '';
   {
     const s = q.toLowerCase();
+    const MUSICY = /\b(music|song|songs|tune|tunes|track|playlist|something to listen)\b/;
     const wantsPlay = /^(play|put on)\b/.test(s) ||
-      (/\bmusic\b/.test(s) && /\b(play|some|put|start|on|score|little)\b/.test(s)) ||
-      /^music( please)?$/.test(s);
-    const wantsStop = (/\b(stop|pause|off|enough|silence|kill|no more)\b/.test(s) && /\bmusic\b/.test(s)) ||
-      /^stop the music$/.test(s);
+      (MUSICY.test(s) && /\b(play|some|put|start|on|score|little|hear|listen)\b/.test(s)) ||
+      /^music[?!. ]*$/.test(s);
+    const wantsStop = /\b(stop|pause|off|enough|silence|kill|no more)\b/.test(s) && MUSICY.test(s);
     if (wantsStop) {
       acted = musicCommand('stop') || '';
     } else if (/\b(quieter|softer|turn (it|the music) down|lower the (music|volume))\b/.test(s)) {
@@ -567,7 +567,8 @@ async function send() {
       acted = musicCommand('louder') || '';
     } else if (wantsPlay) {
       const hint = s.replace(/^(play|put on)\b/, '')
-        .replace(/\b(music|some|something|the|a|please|for me|would you|now)\b/g, '')
+        .replace(/\b(music|song|songs|tune|tunes|track|playlist|some|something|to listen to|the|a|please|for me|would you|can you|could you|now)\b/g, '')
+        .replace(/[?!.]/g, '')
         .trim();
       acted = musicCommand('play', hint.length >= 3 ? hint : null) || '';
     } else if (/\bwhat('s| is) (this|playing|the music)\b/.test(s)) {
@@ -613,7 +614,16 @@ async function send() {
     });
     const data = await res.json();
     if (res.ok && data.answer) {
-      const answer = data.answer.trim();
+      let answer = data.answer.trim();
+      // The brain's hands: when the client-side intent match missed a
+      // music request, the brain may lead with a control directive —
+      // execute it, strip it, and let the spoken line stand alone.
+      const ctl = answer.match(/^\s*\|\|music:(play|stop|quieter|louder)(?:\s+([^|]{1,40}))?\|\|\s*/);
+      if (ctl) {
+        answer = answer.slice(ctl[0].length).trim();
+        if (!acted) musicCommand(ctl[1], (ctl[2] || '').trim() || null);
+      }
+      if (!answer) answer = 'Done.';
       history.push({ role: 'assistant', content: answer });
       pending.style.animation = '';
       if (!VOICE_ENABLED) {
