@@ -13,14 +13,19 @@
 // setCompanionState(key), drive updateCompanionMark(dt) from the main
 // render loop. Never cut between states — a 0.9s easeInOutCubic blend.
 
+// Amber phosphor throughout — MU/TH/UR's chamber, the user's chosen
+// register: the P3-phosphor family on near-black. States now speak
+// through WARMTH and energy, not hue-jumps: dormant is embers, idle a
+// steady lamp, pleased runs golden-bright, concerned goes hot orange,
+// and the sinister slip deepens toward red — a screen running wrong.
 const STATES = [
-  { key: 'idle',      col: [120, 180, 255], glow: 10, alpha: 0.9  },
-  { key: 'thinking',  col: [150, 200, 255], glow: 13, alpha: 0.95 },
-  { key: 'speaking',  col: [185, 218, 255], glow: 15, alpha: 1    },
-  { key: 'pleased',   col: [255, 206, 148], glow: 17, alpha: 1    },
-  { key: 'concerned', col: [255, 200, 80],  glow: 14, alpha: 0.95 },
-  { key: 'sinister',  col: [255, 124, 96],  glow: 20, alpha: 1    },
-  { key: 'dormant',   col: [92, 124, 176],  glow: 6,  alpha: 0.42 },
+  { key: 'idle',      col: [255, 176, 64],  glow: 10, alpha: 0.9  },
+  { key: 'thinking',  col: [255, 190, 88],  glow: 13, alpha: 0.95 },
+  { key: 'speaking',  col: [255, 205, 110], glow: 15, alpha: 1    },
+  { key: 'pleased',   col: [255, 224, 150], glow: 17, alpha: 1    },
+  { key: 'concerned', col: [255, 150, 40],  glow: 14, alpha: 0.95 },
+  { key: 'sinister',  col: [255, 96, 56],   glow: 20, alpha: 1    },
+  { key: 'dormant',   col: [176, 116, 44],  glow: 6,  alpha: 0.42 },
 ];
 const BY = {};
 STATES.forEach((s) => { BY[s.key] = s; });
@@ -45,12 +50,6 @@ export function setCompanionState(key) {
 }
 
 export function getCompanionState() { return cur; }
-
-// The blinking block at the trace's head — MOTHER's prompt, standing
-// invitation to address the ship. Hidden while the traveler's own line
-// is open (the input carries its own cursor).
-let cursorOn = true;
-export function setTraceCursor(v) { cursorOn = !!v; }
 
 // When real audio is playing, the trace follows the actual level —
 // the line on the glass IS the waveform of the voice. Negative = no
@@ -152,14 +151,9 @@ export function updateCompanionMark(dt) {
   const rgb = `${col[0] | 0},${col[1] | 0},${col[2] | 0}`;
   const wr = `${(col[0] + (255 - col[0]) * 0.6) | 0},${(col[1] + (255 - col[1]) * 0.6) | 0},${(col[2] + (255 - col[2]) * 0.6) | 0}`;
 
-  // The prompt block leads; the trace BEGINS after it — a cursor at
-  // the head of a line, never a line running through a cursor.
-  const ch = Math.min(11, cssH * 0.4), cw = ch * 0.48;
-  const cx0 = cssW * 0.045;
-  const x0 = cursorOn ? cx0 + cw + 6 : 0;
-
-  // The trace — sampled across its span; both ends fade to nothing
-  // (nothing ends like a lightswitch, not even a line).
+  // The trace — pure voiceprint now, no cursor of its own (the
+  // standing prompt lives on the traveler's line below). Sampled
+  // across the width; both ends fade to nothing.
   const SEG = 72;
   const path = new Path2D();
   for (let k = 0; k <= SEG; k++) {
@@ -167,7 +161,7 @@ export function updateCompanionMark(dt) {
     const win = Math.pow(Math.sin(Math.PI * u), 0.7); // edge taper
     const ya = waveY(prev, t, u), yb = waveY(cur, t, u);
     const y = cy + maxAmp * env * win * (ya + (yb - ya) * e);
-    const x = x0 + u * (cssW - x0);
+    const x = u * cssW;
     if (k === 0) path.moveTo(x, y); else path.lineTo(x, y);
   }
 
@@ -204,13 +198,13 @@ export function updateCompanionMark(dt) {
   ctx.stroke(path);
   ctx.globalAlpha = 1;
 
-  // The prompt: a phosphor block blinking on the teletype beat at the
-  // head of the trace — the ship, visibly listening.
-  if (cursorOn && (t % 1.06) < 0.53) {
-    ctx.fillStyle = `rgba(${wr},${0.85 * alpha})`;
-    ctx.shadowColor = `rgba(${rgb},${0.6 * alpha})`;
-    ctx.shadowBlur = 7;
-    ctx.fillRect(cx0, cy - ch / 2, cw, ch);
-    ctx.shadowBlur = 0;
+  // CRT raster: thin alternating rows sliced OUT of the glow — the
+  // tube's scanlines, visible only where the phosphor is lit, so the
+  // sky behind stays untouched.
+  ctx.globalCompositeOperation = 'destination-out';
+  ctx.fillStyle = 'rgba(0,0,0,0.28)';
+  for (let y = Math.floor(cy - maxAmp) - 4; y < cy + maxAmp + 4; y += 3) {
+    ctx.fillRect(0, y, cssW, 1);
   }
+  ctx.globalCompositeOperation = 'source-over';
 }

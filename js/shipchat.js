@@ -15,7 +15,7 @@ import { on } from './bus.js';
 import { getLocation } from './catalog.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
-import { initCompanionMark, setCompanionState, setTraceCursor } from './companion-mark.js';
+import { initCompanionMark, setCompanionState } from './companion-mark.js';
 import { prepareVoice, hushVoice } from './voice.js';
 
 // The spoken voice is OFF (user call): synthesis latency (3-6s) opened
@@ -101,7 +101,16 @@ export function initShipChat() {
     'transition:filter 0.45s;}' +
     '#ship-chat canvas:hover{filter:brightness(1.5) ' +
     'drop-shadow(0 0 7px rgba(150,200,255,0.6)) drop-shadow(0 0 14px rgba(120,180,255,0.35));}' +
-    '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(255,255,255,0.18) transparent;}' +
+    // CRT raster on the glyphs themselves: a scanline mask carves thin
+    // rows out of the letters and cursor — texture on the phosphor,
+    // never a panel over the sky. A slow phosphor waver breathes the
+    // whole block, an old tube holding its charge.
+    '#ship-chat .sc-line,#ship-chat input,#ship-chat .sc-cursor{' +
+    '-webkit-mask-image:repeating-linear-gradient(0deg,#000 0 2px,rgba(0,0,0,0.62) 2px 3px);' +
+    'mask-image:repeating-linear-gradient(0deg,#000 0 2px,rgba(0,0,0,0.62) 2px 3px);}' +
+    '#ship-chat{animation:sc-phosphor 7.3s ease-in-out infinite;}' +
+    '@keyframes sc-phosphor{0%,100%{opacity:1;}38%{opacity:0.965;}61%{opacity:0.985;}72%{opacity:0.955;}}' +
+    '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(255,190,100,0.18) transparent;}' +
     '#ship-chat .sc-log::-webkit-scrollbar{width:4px;}' +
     '#ship-chat .sc-log::-webkit-scrollbar-track{background:transparent;}' +
     '#ship-chat .sc-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:2px;}' +
@@ -146,7 +155,7 @@ export function initShipChat() {
   input.style.cssText =
     'width:100%;box-sizing:border-box;padding:7px 2px;' +
     'background:transparent;border:none;caret-color:transparent;' +
-    'border-radius:0;outline:none;color:rgba(190,215,240,0.85);' +
+    'border-radius:0;outline:none;color:rgba(255,196,110,0.88);' +
     'font-size:10.5px;letter-spacing:2px;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;' + HALO;
   // The block cursor is ours, not the browser's: a phosphor slab that
@@ -155,20 +164,23 @@ export function initShipChat() {
   inputCursor.className = 'sc-cursor';
   inputCursor.textContent = '█'; // full phosphor slab — MOTHER's prompt
   inputCursor.style.cssText =
-    'position:absolute;top:50%;transform:translateY(-50%);left:2px;display:none;' +
-    'pointer-events:none;color:rgba(205,232,255,0.95);' +
+    'position:absolute;top:50%;transform:translateY(-50%);left:2px;' +
+    'pointer-events:none;color:rgba(255,200,110,0.95);' +
     'font-family:' + MONO + ';font-size:10.5px;' +
-    'text-shadow:0 0 7px rgba(150,200,255,0.6),0 1px 4px rgba(0,0,0,0.95);';
+    'text-shadow:0 0 7px rgba(255,170,50,0.6),0 1px 4px rgba(0,0,0,0.95);';
   // Hidden twin used to measure where the typed text ends
   const measurer = document.createElement('span');
   measurer.style.cssText =
     'position:absolute;visibility:hidden;white-space:pre;' +
     'font-size:10.5px;letter-spacing:2px;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;';
+  // The standing prompt: ALWAYS blinking on the traveler's own line —
+  // the lowest row, nearest them — dimmed while at rest, full phosphor
+  // once the line is open, riding the end of whatever they type.
   const placeCursor = () => {
-    if (document.activeElement !== input) { inputCursor.style.display = 'none'; return; }
-    measurer.textContent = input.value;
-    inputCursor.style.display = 'inline';
+    const open = document.activeElement === input;
+    measurer.textContent = open ? input.value : '';
+    inputCursor.style.opacity = open ? '1' : '0.45';
     inputCursor.style.left = (2 + measurer.offsetWidth) + 'px';
   };
   input.addEventListener('input', placeCursor);
@@ -182,6 +194,7 @@ export function initShipChat() {
   inputWrap.appendChild(input);
   inputWrap.appendChild(inputCursor);
   inputWrap.appendChild(measurer);
+  placeCursor(); // standing prompt visible from the first frame
   row.appendChild(inputWrap);
 
   // The voiceprint — Sol's visible form: a thin phosphor trace under
@@ -192,8 +205,6 @@ export function initShipChat() {
   const mark = document.createElement('canvas');
   mark.style.cssText = 'width:100%;height:30px;margin:0 0 2px;';
   initCompanionMark(mark);
-  input.addEventListener('focus', () => setTraceCursor(false));
-  input.addEventListener('blur', () => setTraceCursor(true));
   // Addressing the ship: click the trace, the line opens.
   mark.addEventListener('click', () => input.focus());
   // Or simply press Enter — the terminal convention that needs no
@@ -282,9 +293,9 @@ function addLine(text, who) {
     'white-space:pre-wrap;overflow-wrap:break-word;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;' +
     (who === 'you'
-      ? 'color:rgba(160,190,220,0.5);' + HALO
-      : 'color:rgba(205,232,255,0.95);' +
-        'text-shadow:0 0 7px rgba(150,200,255,0.6),0 0 18px rgba(120,180,255,0.25),0 1px 4px rgba(0,0,0,0.95);');
+      ? 'color:rgba(220,180,120,0.5);' + HALO
+      : 'color:rgba(255,206,120,0.95);' +
+        'text-shadow:0 0 7px rgba(255,170,50,0.55),0 0 18px rgba(255,140,30,0.22),0 1px 4px rgba(0,0,0,0.95);');
   line.textContent = who === 'you' ? '> ' + text : text;
   line._fadeAt = performance.now() + 14000; // streamed lines override this
   log.appendChild(line);
