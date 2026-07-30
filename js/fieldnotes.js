@@ -59,6 +59,16 @@ export function initFieldNotes() {
   });
   on('crew:signed-on', ({ name }) => whisper('\u2014 crew record open \u00b7 ' + name + ' \u2014'));
   on('crew:signed-off', () => whisper('\u2014 record closed \u2014'));
+  // Once, ever: the ship teaches the one control that can't be found
+  // by fishing in the dark. Same OS voice as the helm whispers.
+  let enterHintDone = false;
+  try { enterHintDone = !!localStorage.getItem('solace_enter_hint_v1'); } catch (e) { /* fine */ }
+  on('orbit:enter', () => {
+    if (enterHintDone) return;
+    enterHintDone = true;
+    try { localStorage.setItem('solace_enter_hint_v1', '1'); } catch (e) { /* fine */ }
+    setTimeout(() => whisper('\u2014 enter \u00b7 speak to the ship \u2014'), 7000);
+  });
 }
 
 function buildDeck(name) {

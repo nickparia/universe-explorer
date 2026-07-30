@@ -196,6 +196,17 @@ export function initShipChat() {
   input.addEventListener('blur', () => setTraceCursor(true));
   // Addressing the ship: click the trace, the line opens.
   mark.addEventListener('click', () => input.focus());
+  // Or simply press Enter — the terminal convention that needs no
+  // explaining. Fishing for an invisible field in the dark was the
+  // only awkward act aboard. (The sign-on terminal captures its own
+  // keys before this; typing in any field is left alone.)
+  window.addEventListener('keydown', (e) => {
+    if (e.key !== 'Enter') return;
+    const el = document.activeElement;
+    if (el === input || (el && (el.tagName === 'INPUT' || el.tagName === 'TEXTAREA'))) return;
+    e.preventDefault();
+    input.focus();
+  });
 
   wrap.appendChild(mark);
   wrap.appendChild(row);
