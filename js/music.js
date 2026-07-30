@@ -19,6 +19,8 @@ const TRACKS = {
               'audio/lofi_midnight_piano.mp3', 'audio/part_spiegel.mp3'],
   nebula:    ['audio/lofi_watr_fluid.mp3', 'audio/nebula_air.mp3', 'audio/lofi_midnight_piano.mp3'],
   blackhole: ['audio/blackhole_adagio.ogg'],
+  // Groundside — standing on real terrain. Mountain air, sparse and low.
+  'ground-mars': ['audio/lofi_mountain.mp3', 'audio/lofi_lost_ambient.mp3', 'audio/deep_reverie.mp3'],
 };
 
 // ── Zone helpers ───────────────────────────────────────────────
@@ -49,6 +51,10 @@ const ZONES = [
   { name: 'deep',      check: () => true },
 ];
 
+// Groundside zone override — set by ground/ground.js on landfall
+let zoneOverride = null;
+export function setZoneOverride(z) { zoneOverride = z; }
+
 // Warp state — tracked via bus events from flight.js
 let warping = false;
 on('warp:start', () => { warping = true; });
@@ -64,6 +70,11 @@ on('crew:signed-on', ({ prefs }) => applyMusicPref(prefs));
 // travel voice carries the journey. Forcing a 'warp track' meant two
 // crossfades per trip, so the music was almost always overlapping.
 function detectZone(pos, allBodies) {
+  // Groundside override — the site's pocket frame is nowhere near any
+  // body, so position-based detection would fall through to 'deep'.
+  // The ground mode declares its zone explicitly instead.
+  if (zoneOverride) return zoneOverride;
+
   // Check landmark-specific zones first
   const landmarks = getLandmarks();
   for (const lm of landmarks) {

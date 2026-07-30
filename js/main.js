@@ -30,6 +30,7 @@ import { initGasGiantHud, updateGasGiantDive } from './atmosphere/gasgiant.js';
 import { updateAtmosphere } from './atmosphere/scatter.js';
 import { updateAltitude, getAltitude } from './altitude.js';
 import { updateTerrain } from './terrain/manager.js';
+import { initGround, updateGround, isGroundActive, getGroundCamPos, enterGround, exitGround } from './ground/ground.js';
 import { AU, MILKY_WAY_RADIUS } from './constants.js';
 import * as THREE from 'three';
 
@@ -132,9 +133,14 @@ async function boot() {
       if (isIntroPlaying()) return true;
       if (isStarMapOpen()) return true;
       if (titleActive) return true;
+      if (isGroundActive()) return true;
       return false;
     },
   });
+
+  // Groundside mode — Phase 0 of docs/LOOP.md. The landfall key only
+  // offers itself in Mars orbit; everything else lives in js/ground/.
+  initGround();
 
   // 10. Fade out loading screen and auto-start
   const hudEl = document.getElementById('hud');
@@ -165,7 +171,8 @@ async function boot() {
   music.start();
 
   // Debug: expose for testing
-  window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects };
+  window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects,
+    land: enterGround, liftoff: exitGround };
 
   // Make sure any legacy loading/overlay screens never show
   const legacyIds = ['loading', 'overlay'];
@@ -324,6 +331,22 @@ function animate() {
 
     // Gather all bodies for physics + HUD
     const allBodies = getBodies().concat(getDeepSpaceObjects());
+
+    // ── Groundside: standing on real terrain ────────────────────────
+    // The site owns the frame: terrain LOD, sky, boots, dust, wind.
+    // Space keeps its clock ticking above (updateBodies already ran),
+    // but every space-frame system below is parked until lift-off.
+    if (isGroundActive()) {
+      updateGround(dt);
+      updateCompanionMark(dtWall);
+      updateCompanion(dtWall, null);
+      updateMusic(getGroundCamPos(), allBodies);
+      updateSoundscape({ warp: 0, ratio: 0, free: false });
+      updateStarMap();
+      applyCameraRelative(getGroundCamPos());
+      composer.render();
+      return;
+    }
 
     // Update flight physics
     updateFlight(dt, allBodies, dtWall);

@@ -275,6 +275,8 @@ export function initFlight(camera) {
     window.addEventListener('keydown', (e) => {
         // Typing in an input (star map search, ship computer) never flies the ship
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        // Groundside the helm is cold — boots have their own hands
+        if (_suppressed) return;
         keys[e.code] = true;
 
         if (e.code === 'Space' || e.code.startsWith('Arrow')) {
@@ -339,7 +341,7 @@ export function initFlight(camera) {
             canvas.style.cursor = '';
             return;
         }
-        if (rightDown) {
+        if (rightDown && !_suppressed) {
             mouseDX += e.movementX;
             mouseDY += e.movementY;
         }
@@ -398,7 +400,7 @@ export function initFlight(camera) {
 // ── updateFlight ─────────────────────────────────────────────────────────────
 
 export function updateFlight(dt, allBodies, dtWall) {
-    if (!cam) return;
+    if (!cam || _suppressed) return;
     // Scripted travel advances on wall-clock time (capped per frame) so a
     // backgrounded tab still arrives; free-flight physics uses clamped dt.
     const dtTravel = Math.min(dtWall ?? dt, 2.0);
@@ -1837,6 +1839,20 @@ export function getVelocity()    { return velocity; }
 export function getSpeed()       { return velocity.length(); }
 export function getBoostEnergy() { return boostEnergy; }
 export function isWarping()      { return warpActive; }
+
+// ── Groundside suppression ───────────────────────────────────────────
+// While the traveler stands on real ground the helm goes cold: no key
+// steals a step, no drag steers the ship, no physics tick moves the
+// saved pose. ground/ground.js owns the camera until lift-off.
+let _suppressed = false;
+export function setFlightSuppressed(v) {
+  _suppressed = !!v;
+  if (_suppressed) {
+    for (const k in keys) keys[k] = false;
+    mouseDX = 0; mouseDY = 0;
+    rightDown = false;
+  }
+}
 
 export function getApproachInfo() { return _approachInfo; }
 export function getSpeedFeel()    { return _feel; }

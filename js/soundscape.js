@@ -271,6 +271,78 @@ function startLocationTone(name) {
   toneNodes = { gain, stops };
 }
 
+// ── Ground wind — the air of a real place ────────────────────────────
+// Started on ground:enter, driven per-frame by the same gust envelope
+// that moves the visible dust (what you hear is what you see). Two
+// colors from one noise source: a broad low moan (air over the canyon)
+// and a darker mid sigh that swells in gusts against the suit. On
+// lift-off it fades and the hull bed returns to full.
+let groundWind = null;   // { moanG, sighG, moan, sigh, stops }
+let _groundK = 0;
+
+function buildGroundWind() {
+  const noise = ctx.createBufferSource();
+  noise.buffer = makeNoiseBuffer(5);
+  noise.loop = true;
+
+  const moan = ctx.createBiquadFilter();
+  moan.type = 'lowpass';
+  moan.frequency.value = 130;
+  moan.Q.value = 0.8;
+  const moanG = ctx.createGain();
+  moanG.gain.value = 0;
+
+  const sigh = ctx.createBiquadFilter();
+  sigh.type = 'bandpass';
+  sigh.frequency.value = 420;
+  sigh.Q.value = 0.5;
+  const sighG = ctx.createGain();
+  sighG.gain.value = 0;
+
+  // Unhurried wander on the sigh's center — no two minutes alike
+  const lfo = ctx.createOscillator();
+  lfo.frequency.value = 0.05;
+  const lfoG = ctx.createGain();
+  lfoG.gain.value = 160;
+  lfo.connect(lfoG).connect(sigh.frequency);
+
+  noise.connect(moan).connect(moanG).connect(master);
+  noise.connect(sigh).connect(sighG).connect(master);
+  noise.start();
+  lfo.start();
+  groundWind = { moan, moanG, sigh, sighG, stops: [noise, lfo] };
+}
+
+function stopGroundWind() {
+  if (!groundWind) return;
+  const t = ctx.currentTime;
+  groundWind.moanG.gain.setTargetAtTime(0.0001, t, 0.8);
+  groundWind.sighG.gain.setTargetAtTime(0.0001, t, 0.8);
+  const gw = groundWind;
+  setTimeout(() => gw.stops.forEach((n) => { try { n.stop(); } catch (e) {} }), 4000);
+  groundWind = null;
+  _groundK = 0;
+  // The hull remembers its own voice
+  if (bedGain) bedGain.gain.setTargetAtTime(0.05 * (1 - 0.8 * _hush), t, 2);
+}
+
+/** Per-frame from the ground mode: 0 = still air, ~1.5 = hard gust. */
+export function setGroundWind(k) {
+  if (!started) return;
+  if (k > 0 && !groundWind) {
+    buildGroundWind();
+    // Groundside the room is the suit, not the hull — the bed thins
+    bedGain.gain.setTargetAtTime(0.018, ctx.currentTime, 2);
+  }
+  if (!groundWind) return;
+  if (Math.abs(k - _groundK) < 0.015) return;
+  _groundK = k;
+  const t = ctx.currentTime;
+  groundWind.moanG.gain.setTargetAtTime(0.030 * Math.min(1.4, k), t, 0.5);
+  groundWind.moan.frequency.setTargetAtTime(110 + 70 * k, t, 0.6);
+  groundWind.sighG.gain.setTargetAtTime(0.020 * Math.max(0, k - 0.25), t, 0.35);
+}
+
 // ── Void hush — the ship itself goes quiet inside the emptiness ─────
 let _hush = 0;
 export function setVoidHush(h) {
@@ -310,6 +382,7 @@ export function initSoundscape() {
     startLocationTone(name);
   });
   on('orbit:exit', () => { if (started) stopLocationTone(); });
+  on('ground:exit', () => { if (started) stopGroundWind(); });
 }
 
 /** Call from a user gesture — browsers require one to unlock audio. */

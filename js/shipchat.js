@@ -285,6 +285,15 @@ export function initShipChat() {
     currentLocation = name;
     setCompanionState('idle'); // dormant → idle: the ship wakes as you arrive
   });
+  // Groundside: the traveler stands on the place itself. Sol stays with
+  // them — the terminal rides along in the suit.
+  on('ground:enter', ({ name }) => {
+    currentLocation = name;
+    setCompanionState('idle');
+  });
+  on('ground:exit', ({ name }) => {
+    currentLocation = name || null;
+  });
   on('orbit:exit', () => {
     currentLocation = null;
     input.blur();
@@ -512,6 +521,21 @@ function scheduleReflect() {
 }
 
 function buildContext(name) {
+  // The groundside site is a place of our own naming — the catalog and
+  // planet config don't know it, so Sol is told directly.
+  if (name === 'COPRATES CHASMA') {
+    const parts = [
+      'The traveler is ON THE GROUND — standing on Mars itself, in eastern ' +
+      'Coprates Chasma, Valles Marineris. Real terrain from NASA elevation ' +
+      'data: the canyon floor at −4.7 km, the fluted north wall rising ' +
+      'nine kilometers, Coprates Montes to the south. They can walk, or ' +
+      'rove (V). This is the first ground under this ship\'s boots — ' +
+      'no crew has stood here before. L lifts back to orbit.',
+    ];
+    const visited = [...getVisited()];
+    if (visited.length) parts.push('Voyage log — places this traveler has orbited: ' + visited.join(', '));
+    return parts.join('\n').slice(0, 1500);
+  }
   const loc = getLocation(name);
   const cfg = getPlanetConfig(name);
   const info = (loc && loc.info) || (cfg && cfg.info) || {};
