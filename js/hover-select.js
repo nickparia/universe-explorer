@@ -189,21 +189,37 @@ export function updateHoverSelect() {
     }
   }
 
+  // The label is a TARGETING aid — it earns its place only at range.
+  // A world filling the window needs no name floating on it (the info
+  // card already carries it), so the label stays quiet for anything
+  // whose face is already unmistakable, while the click still works.
+  let labelWorthy = false;
+  if (found) {
+    const bp = (found.g.userData && found.g.userData._worldPos) || found.g.position;
+    const d = getCamPosFn().distanceTo(bp);
+    const fovRad = (camera.fov || 60) * Math.PI / 180;
+    const pxR = Math.tan(Math.atan(found.r / Math.max(d, 0.001))) /
+      Math.tan(fovRad / 2) * (window.innerHeight / 2);
+    labelWorthy = pxR < window.innerHeight * 0.22;
+  }
+
   if (found !== hoveredBody) {
     hoveredBody = found;
-    if (found) {
+    if (found && labelWorthy) {
       updateLabelContent(found);
       labelEl.style.opacity = '1';
-      if (canvas) canvas.style.cursor = 'pointer';
-    } else {
-      if (labelEl) labelEl.style.opacity = '0';
-      if (canvas) canvas.style.cursor = 'crosshair';
+    } else if (labelEl) {
+      labelEl.style.opacity = '0';
     }
+    if (canvas) canvas.style.cursor = found ? 'pointer' : 'crosshair';
+  } else if (hoveredBody && !labelWorthy && labelEl && labelEl.style.opacity !== '0') {
+    // Grew past the threshold mid-approach — the name dissolves
+    labelEl.style.opacity = '0';
   }
 
   // Track the body's current screen position every tick so the label
   // stays pinned above the body as the world moves (not to the cursor).
-  if (hoveredBody && labelEl) {
+  if (hoveredBody && labelWorthy && labelEl) {
     positionLabelAtBody(hoveredBody);
   }
 }
