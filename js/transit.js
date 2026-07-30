@@ -4,8 +4,8 @@
 // empty across four orders of magnitude, so even a curved, well-paced
 // warp reads as motion through nothing. This module seeds ephemeral
 // sights along the route while the drive is engaged: faint wisps of
-// interstellar cirrus that flow past (sometimes right over the canopy),
-// and the rare bright star that sweeps by with a streaked glint. All of
+// interstellar cirrus that flow past (sometimes right over the
+// canopy). All of
 // it spawns ahead, dies behind, and never exists while you're parked —
 // a river, not a theme park.
 
@@ -14,22 +14,19 @@ import { setWorldPos } from './engine.js';
 
 let scene = null;
 const wisps = [];   // { sprite, pos, size, life }
-const glints = [];  // { sprite, pos, life, maxLife }
 let _wispTex = null;
-let _glintTex = null;
 const _prevCam = new THREE.Vector3();
 let _hasPrev = false;
 const _dir = new THREE.Vector3();
 const _tmp = new THREE.Vector3();
 const _lat = new THREE.Vector3();
-let _glintTimer = 6;
 
 const MAX_WISPS = 8;
 
 // ── Space weather ────────────────────────────────────────────────────
 // Long crossings pass through weather: every minute or so the ship hits
 // a squall — a dense flurry of cirrus streaming past for ten-odd
-// seconds, glints flashing closer — then breaks back into clear void.
+// seconds — then breaks back into clear void.
 // The rhythm (clear → squall → clear) is what keeps a four-minute
 // cruise alive; uniform density would fade into wallpaper.
 let travelTime = 0;      // accumulated seconds of active travel
@@ -105,37 +102,8 @@ function makeWispTex() {
   return t;
 }
 
-function makeGlintTex() {
-  const S = 128;
-  const cv = document.createElement('canvas');
-  cv.width = S; cv.height = S;
-  const ctx = cv.getContext('2d');
-  const g = ctx.createRadialGradient(S / 2, S / 2, 0, S / 2, S / 2, S / 2);
-  g.addColorStop(0, 'rgba(255,255,255,1)');
-  g.addColorStop(0.12, 'rgba(255,250,240,0.7)');
-  g.addColorStop(0.5, 'rgba(255,240,220,0.1)');
-  g.addColorStop(1, 'rgba(255,255,255,0)');
-  ctx.fillStyle = g;
-  ctx.fillRect(0, 0, S, S);
-  // Streak rays — the light that crosses the window
-  ctx.globalCompositeOperation = 'lighter';
-  const ray = (ang, len, w) => {
-    ctx.save();
-    ctx.translate(S / 2, S / 2);
-    ctx.rotate(ang);
-    const rg = ctx.createLinearGradient(-len, 0, len, 0);
-    rg.addColorStop(0, 'rgba(255,245,230,0)');
-    rg.addColorStop(0.5, 'rgba(255,245,230,0.55)');
-    rg.addColorStop(1, 'rgba(255,245,230,0)');
-    ctx.fillStyle = rg;
-    ctx.fillRect(-len, -w / 2, len * 2, w);
-    ctx.restore();
-  };
-  ray(0, S * 0.48, 2.5);
-  ray(Math.PI / 2, S * 0.34, 2);
-  const t = new THREE.CanvasTexture(cv);
-  return t;
-}
+// (The travel "glint" — a bright cross-ray flare that swept the window —
+// is gone: it read as a lens-flare game artifact, not a thing in space.)
 
 const WISP_TINTS = [
   0x8fb0d8, 0x9fb8e0, 0xb0a8d8, // pale blues / violets
@@ -146,11 +114,10 @@ const WISP_TINTS = [
 export function initTransit(sceneRef) {
   scene = sceneRef;
   _wispTex = makeWispTex();
-  _glintTex = makeGlintTex();
 }
 
 // Diagnostics — what the weather layer thinks is happening this frame
-const _dbg = { active: false, speed: 0, feelWarp: 0, wisps: 0, glints: 0, inStorm: false };
+const _dbg = { active: false, speed: 0, feelWarp: 0, wisps: 0, inStorm: false };
 export function getTransitDebug() { return _dbg; }
 
 function spawnWisp(camPos, speed, stormBoost) {
@@ -177,27 +144,6 @@ function spawnWisp(camPos, speed, stormBoost) {
   scene.add(sprite);
   setWorldPos(sprite, pos);
   wisps.push({ sprite, pos, size, target: (0.07 + Math.random() * 0.09) * (stormBoost ? 1.15 : 1) });
-}
-
-function spawnGlint(camPos, speed) {
-  const mat = new THREE.SpriteMaterial({
-    map: _glintTex, color: 0xf0f6ff,
-    transparent: true, opacity: 0,
-    blending: THREE.AdditiveBlending, depthWrite: false,
-  });
-  const sprite = new THREE.Sprite(mat);
-  const lookahead = speed * (2.0 + Math.random() * 2.0);
-  _lat.set(Math.random() - 0.5, Math.random() - 0.5, Math.random() - 0.5)
-    .addScaledVector(_dir, -_lat.dot(_dir)).normalize();
-  const latDist = lookahead * (0.06 + Math.random() * 0.12);
-  const pos = new THREE.Vector3().copy(camPos)
-    .addScaledVector(_dir, lookahead)
-    .addScaledVector(_lat, latDist);
-  const size = latDist * 0.5;
-  sprite.scale.set(size, size, 1);
-  scene.add(sprite);
-  setWorldPos(sprite, pos);
-  glints.push({ sprite, pos, life: 0, maxLife: 5 + Math.random() * 3 });
 }
 
 /**
@@ -231,7 +177,7 @@ export function updateTransit(dt, camPos, feel) {
   const inStorm = active && travelTime < stormUntil;
   _dbg.active = active; _dbg.speed = Math.round(speed);
   _dbg.feelWarp = +(feel.warp || 0).toFixed(2);
-  _dbg.wisps = wisps.length; _dbg.glints = glints.length; _dbg.inStorm = inStorm;
+  _dbg.wisps = wisps.length; _dbg.inStorm = inStorm;
   _dbg.travelTime = Math.round(travelTime);
   _dbg.nextBankAt = Math.round(nextBankAt);
   _dbg.nextStormAt = Math.round(nextStormAt);
@@ -247,12 +193,6 @@ export function updateTransit(dt, camPos, feel) {
     spawnBank(camPos, speed);
     nextBankAt = travelTime + 130 + Math.random() * 80;
   }
-  _glintTimer -= dt;
-  if (active && _glintTimer <= 0) {
-    spawnGlint(camPos, speed);
-    _glintTimer = inStorm ? 2 + Math.random() * 3 : 5 + Math.random() * 6;
-  }
-
   // Update / cull
   for (let i = wisps.length - 1; i >= 0; i--) {
     const w = wisps[i];
@@ -265,21 +205,6 @@ export function updateTransit(dt, camPos, feel) {
       scene.remove(w.sprite);
       w.sprite.material.dispose();
       wisps.splice(i, 1);
-    }
-  }
-  for (let i = glints.length - 1; i >= 0; i--) {
-    const g = glints[i];
-    g.life += dt;
-    const behind = _tmp.copy(g.pos).sub(camPos).dot(_dir);
-    const dist = _tmp.copy(g.pos).sub(camPos).length();
-    // Brightest at closest approach — the ray sweeps the window
-    const proximity = Math.max(0, 1 - Math.abs(behind) / Math.max(dist, 1));
-    const env = Math.min(1, g.life / 1.2) * Math.max(0, 1 - (g.life / g.maxLife));
-    g.sprite.material.opacity = (!active ? 0 : (0.35 + proximity * 0.6) * env);
-    if (g.life > g.maxLife || (!active && g.sprite.material.opacity < 0.004)) {
-      scene.remove(g.sprite);
-      g.sprite.material.dispose();
-      glints.splice(i, 1);
     }
   }
 }
