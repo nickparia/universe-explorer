@@ -155,9 +155,10 @@ export function initShipChat() {
   input.style.cssText =
     'width:100%;box-sizing:border-box;padding:7px 2px;' +
     'background:transparent;border:none;caret-color:transparent;' +
-    'border-radius:0;outline:none;color:rgba(255,196,110,0.88);' +
+    'border-radius:0;outline:none;color:rgba(175,212,255,0.9);' +
     'font-size:10.5px;letter-spacing:2px;text-transform:uppercase;' +
-    'font-family:' + MONO + ';font-weight:400;' + HALO;
+    'font-family:' + MONO + ';font-weight:400;' +
+    'text-shadow:0 0 6px rgba(130,185,255,0.45),0 1px 4px rgba(0,0,0,0.95);';
   // The block cursor is ours, not the browser's: a phosphor slab that
   // rides the end of the typed text, blinking on the teletype beat.
   const inputCursor = document.createElement('span');
@@ -293,8 +294,12 @@ function addLine(text, who) {
     'font-size:10.5px;letter-spacing:1.8px;line-height:2.0;flex:none;' +
     'white-space:pre-wrap;overflow-wrap:break-word;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;' +
+    // Two voices, two temperatures: the ship is warm amber phosphor;
+    // the traveler's words are an ethereal ice-blue — cool glass
+    // against the tube's glow.
     (who === 'you'
-      ? 'color:rgba(220,180,120,0.5);' + HALO
+      ? 'color:rgba(168,208,255,0.66);' +
+        'text-shadow:0 0 6px rgba(130,185,255,0.4),0 1px 4px rgba(0,0,0,0.95);'
       : 'color:rgba(255,206,120,0.95);' +
         'text-shadow:0 0 7px rgba(255,170,50,0.55),0 0 18px rgba(255,140,30,0.22),0 1px 4px rgba(0,0,0,0.95);');
   line.textContent = who === 'you' ? '> ' + text : text;
