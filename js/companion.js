@@ -149,6 +149,10 @@ function murmur(key, place) {
 // fallback. `fallbackKey` null means: if the brain is silent, so are we.
 async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
   lastMurmurAt = tSec; // reserve the slot — no doubled murmurs while we wait
+  // The thought is visible before the words: while the brain composes,
+  // the trace twists into its quiet tangle, then unwinds into speech.
+  const wasResting = restingState();
+  if (wasResting) setCompanionState('thinking');
   let line = null;
   try {
     const loc = getLocation(name);
@@ -178,6 +182,11 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
   // left this orbit, say nothing. Journey/waypoint/departure lines are
   // spoken from TRANSIT — no orbit to check (this guard silently ate
   // every mid-cruise murmur when it applied to all events).
+  // The tangle unwinds — into speech if a line landed, back to rest if
+  // the thought came to nothing (or arrived too late to still be true).
+  if (wasResting && getCompanionState() === 'thinking') {
+    setCompanionState(orbitName ? 'idle' : 'dormant');
+  }
   if ((event === 'arrival' || event === 'return') && orbitName !== name) return;
   if (line) {
     companionSay(line);

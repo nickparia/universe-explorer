@@ -1,46 +1,25 @@
-// fieldnotes.js — ambient narration while orbiting.
+// fieldnotes.js — the ship's OS whispers.
 //
-// Instead of a static info card, the location's facts and lore drip in one
-// line at a time with documentary pacing: fade in, hold, fade out, silence,
-// next. Orbiting longer keeps revealing more. Content comes straight from
-// the catalog (deep-space locations) or planetconfig (planets, moons,
-// spacecraft) — adding notes to a location is a data change, not code.
+// One information law aboard (the user's call — two competing homes
+// meant no home): FACTS live in the info card, bottom-left. Sol's
+// words live bottom-right. The center of the screen belongs to the
+// view. The old top-center "field notes" deck — location lore dripping
+// in over the vista — duplicated the card and made the eye hunt, so
+// it's gone. What remains here is the OS whisper: brief, transient
+// state lines low on the glass (helm handoffs, courses laid in, the
+// crew record, the one Enter hint).
 
 import { on } from './bus.js';
-import { getLocation } from './catalog.js';
-import { getPlanetConfig } from './planetconfig.js';
-
-const FIRST_DELAY = 4500;   // ms after arriving before the first note
-const FADE = 1800;          // ms fade in/out (matches CSS transition)
-const HOLD = 12000;         // ms a note stays readable
-const GAP = 6000;           // ms of silence between notes
-
-let el = null;
-let deck = [];
-let idx = 0;
-let timers = [];
 
 export function initFieldNotes() {
-  el = document.createElement('div');
-  el.id = 'field-notes';
-  el.style.cssText =
-    'position:fixed;top:12%;left:50%;transform:translateX(-50%);z-index:40;' +
+  const helmEl = document.createElement('div');
+  helmEl.style.cssText =
+    'position:fixed;bottom:10%;left:50%;transform:translateX(-50%);z-index:40;' +
     'max-width:560px;width:80vw;text-align:center;pointer-events:none;' +
     "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;" +
-    'font-size:12px;letter-spacing:2.5px;line-height:2.1;' +
+    'font-size:11px;letter-spacing:2.5px;line-height:2.1;' +
     'color:rgba(205,225,255,0.6);text-shadow:0 0 2px rgba(0,0,0,0.85),0 0 2px rgba(0,0,0,0.85),0 1px 3px rgba(0,0,0,0.95),0 0 14px rgba(0,0,0,0.6);' +
-    `opacity:0;transition:opacity ${FADE}ms ease;`;
-  document.body.appendChild(el);
-
-  on('orbit:enter', ({ name }) => start(name));
-  on('orbit:exit', stop);
-
-  // Helm whispers — their own element so they never fight the deck
-  const helmEl = document.createElement('div');
-  helmEl.style.cssText = el.style.cssText;
-  helmEl.style.top = 'auto';
-  helmEl.style.bottom = '10%';
-  helmEl.style.fontSize = '11px';
+    'opacity:0;transition:opacity 1800ms ease;';
   document.body.appendChild(helmEl);
   let helmTimer = null;
   const whisper = (text) => {
@@ -69,45 +48,4 @@ export function initFieldNotes() {
     try { localStorage.setItem('solace_enter_hint_v1', '1'); } catch (e) { /* fine */ }
     setTimeout(() => whisper('\u2014 enter \u00b7 speak to the ship \u2014'), 7000);
   });
-}
-
-function buildDeck(name) {
-  const lines = [];
-  const loc = getLocation(name);
-  const cfg = getPlanetConfig(name);
-  const info = (loc && loc.info) || (cfg && cfg.info) || null;
-  if (info) {
-    if (info.type) lines.push(info.type.toLowerCase());
-    if (info.facts) for (const f of info.facts) lines.push(f);
-    if (info.lore) lines.push(info.lore);
-  } else if (loc && loc.desc) {
-    lines.push(loc.desc);
-  }
-  return lines;
-}
-
-function start(name) {
-  stop();
-  deck = buildDeck(name);
-  idx = 0;
-  if (deck.length === 0) return;
-  timers.push(setTimeout(showNext, FIRST_DELAY));
-}
-
-function showNext() {
-  if (deck.length === 0) return;
-  el.textContent = deck[idx % deck.length];
-  idx++;
-  el.style.opacity = '1';
-  timers.push(setTimeout(() => {
-    el.style.opacity = '0';
-    timers.push(setTimeout(showNext, FADE + GAP));
-  }, FADE + HOLD));
-}
-
-function stop() {
-  for (const t of timers) clearTimeout(t);
-  timers = [];
-  deck = [];
-  if (el) el.style.opacity = '0';
 }

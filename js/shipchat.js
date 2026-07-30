@@ -242,9 +242,9 @@ export function initShipChat() {
       }
       if (!line._fading && now >= line._fadeAt) {
         line._fading = true;
-        line.style.transition = 'opacity 6s ease';
+        line.style.transition = 'opacity 3.2s ease';
         line.style.opacity = '0';
-        line._goneAt = now + 6500;
+        line._goneAt = now + 3600;
       } else if (line._fading && now >= line._goneAt) {
         line.remove();
       }
@@ -276,8 +276,9 @@ function applyAgeFade() {
 }
 
 // How long a line stays lit once fully spoken: enough to read it calmly
+// Spoken, not posted: long enough to read once, then off the glass.
 function readingHold(text) {
-  return Math.min(20000, 4000 + text.length * 55);
+  return Math.min(11000, 2500 + text.length * 42);
 }
 
 function addLine(text, who) {
@@ -297,7 +298,7 @@ function addLine(text, who) {
       : 'color:rgba(255,206,120,0.95);' +
         'text-shadow:0 0 7px rgba(255,170,50,0.55),0 0 18px rgba(255,140,30,0.22),0 1px 4px rgba(0,0,0,0.95);');
   line.textContent = who === 'you' ? '> ' + text : text;
-  line._fadeAt = performance.now() + 14000; // streamed lines override this
+  line._fadeAt = performance.now() + 9000; // streamed lines override this
   log.appendChild(line);
   while (log.children.length > HISTORY_KEPT) log.removeChild(log.firstChild);
   applyAgeFade();

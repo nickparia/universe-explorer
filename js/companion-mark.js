@@ -96,6 +96,16 @@ function envelope(key, tt) {
   return 0.1;
 }
 
+// Horizontal displacement (px) — only the thinking-tangle uses it: the
+// sin/cos pairing with waveY makes the line trace slow little loops,
+// subtle and unhurried, never manic.
+function waveX(key, tt, u) {
+  if (key !== 'thinking') return 0;
+  const c = 0.5 + 0.16 * Math.sin(tt * 0.21);
+  const g = Math.exp(-Math.pow((u - c) * 6.5, 2));
+  return g * 6 * Math.sin(u * 34 + tt * 1.7);
+}
+
 // The trace's shape at position u∈[0,1], in units of max amplitude.
 function waveY(key, tt, u) {
   const w1 = Math.sin(u * 14 + tt * 3.1);
@@ -106,10 +116,13 @@ function waveY(key, tt, u) {
       // dense voiceprint texture — three traveling components
       return 0.5 * w1 + 0.32 * w2 + 0.18 * w3;
     case 'thinking': {
-      // a packet scanning along the line, reading it
-      const scan = ((tt * 1.15) % 2.4) / 2.4;
-      const p = Math.exp(-Math.pow((u - scan) * 9, 2));
-      return 0.28 * w1 + p * Math.sin(u * 40 + tt * 6);
+      // The tangle: one slow drifting knot where the line curls in on
+      // itself (waveX supplies the horizontal half of each loop) —
+      // a thought being turned over. Unwinding into speech is free:
+      // the state blend interpolates the curl away.
+      const c = 0.5 + 0.16 * Math.sin(tt * 0.21);
+      const g = Math.exp(-Math.pow((u - c) * 6.5, 2));
+      return 0.22 * w1 + g * Math.cos(u * 34 + tt * 1.7) * 1.15;
     }
     case 'concerned':
       // fine fast tremor over the body
@@ -161,7 +174,8 @@ export function updateCompanionMark(dt) {
     const win = Math.pow(Math.sin(Math.PI * u), 0.7); // edge taper
     const ya = waveY(prev, t, u), yb = waveY(cur, t, u);
     const y = cy + maxAmp * env * win * (ya + (yb - ya) * e);
-    const x = u * cssW;
+    const xa = waveX(prev, t, u), xb = waveX(cur, t, u);
+    const x = u * cssW + (xa + (xb - xa) * e) * win;
     if (k === 0) path.moveTo(x, y); else path.lineTo(x, y);
   }
 
