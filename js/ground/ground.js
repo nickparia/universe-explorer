@@ -21,7 +21,7 @@ import { setGroundWind } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
 import { initSky, updateSky, disposeSky, getSunState, debugSky } from './sky.js';
-import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY } from './controller.js';
+import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
 import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 
@@ -239,6 +239,9 @@ export function updateGround(dt) {
       terrain: debugTerrain(),
       sky: debugSky(),
     };
+    window.__groundLine = 'p:' + local.x.toFixed(0) + ',' + local.z.toFixed(0) +
+      ' v:' + getGroundSpeed().toFixed(1) + ' held:' + getHeldKeys() +
+      ' rel:' + (window.__relCount || 0);
     try { document.body.dataset.groundDbg = JSON.stringify(window._groundDbg); } catch (e) {}
   }
 

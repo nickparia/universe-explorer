@@ -349,7 +349,8 @@ function animate() {
     requestAnimationFrame(animate);
     if (++_frameCount === 2) revealWorld();
     if (window.__hb && !window.__hb.textContent.startsWith('ERR') && !window.__hb.textContent.startsWith('REJ')) {
-      window.__hb.textContent = 'f' + _frameCount + ' g' + (isGroundActive() ? 1 : 0) + (window.__hbPerf || '') +
+      window.__hb.textContent = 'f' + _frameCount + ' g' + (isGroundActive() ? 1 : 0) +
+        (window.__groundLine ? ' | ' + window.__groundLine : '') +
         (window.__winKey ? ' | win:' + window.__winKey : '') +
         (window.__ctlKey ? ' | ctl:' + window.__ctlKey : '');
     }

@@ -86,7 +86,8 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
     if (rightDown && !(e.buttons & 2)) { rightDown = false; canvas.style.cursor = ''; return; }
     if (rightDown) { mouseDX += e.movementX; mouseDY += e.movementY; }
   });
-  const release = () => { rightDown = false; canvas.style.cursor = ''; mouseDX = 0; mouseDY = 0; for (const k in keys) keys[k] = false; };
+  const release = () => { rightDown = false; canvas.style.cursor = ''; mouseDX = 0; mouseDY = 0; for (const k in keys) keys[k] = false;
+    if (typeof window !== 'undefined') window.__relCount = (window.__relCount || 0) + 1; };
   addL(window, 'blur', release);
   addL(document, 'mouseleave', release);
 }
@@ -98,6 +99,7 @@ export function disposeController() {
 }
 
 export function getLocalPos() { return pos; }
+export function getHeldKeys() { return Object.keys(keys).filter((k) => keys[k]).join('+') || '-'; }
 export function getMode() { return mode; }
 export function getGroundSpeed() { return Math.hypot(vel.x, vel.z); }
 
