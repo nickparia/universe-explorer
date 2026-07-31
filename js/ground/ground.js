@@ -23,6 +23,7 @@ import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terr
 import { initSky, updateSky, disposeSky, getSunState, debugSky } from './sky.js';
 import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
+import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 
 const POCKET = new THREE.Vector3(0, 6e8, 0);  // far above the galactic plane
 const SITE_NAME = 'COPRATES CHASMA';
@@ -140,6 +141,7 @@ export async function enterGround() {
   // raking from the west. The vista is the first thing the boots see.
   initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
   initDustField(rootGroup, new THREE.Vector3(0, 2, 0));
+  initLamp(rootGroup);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -170,6 +172,7 @@ export async function exitGround() {
 
   disposeController();
   disposeDustField();
+  disposeLamp();
   disposeSky(scene);
   disposeTerrain();
   if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -210,6 +213,7 @@ export function updateGround(dt) {
 
   const roverK = getMode() === 'rove' ? Math.min(1, getGroundSpeed() / 20) : 0;
   lastGust = updateDustField(dt, local, roverK);
+  updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
 
   // What you hear is what you see: base air + gusts + your own speed
   setGroundWind(0.35 + lastGust * 0.65 + roverK * 0.5 +

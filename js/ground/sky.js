@@ -96,6 +96,22 @@ export function initSky(parentGroup, scene) {
         sky += uSunCol * disc * 5.0 * max(uDay, 0.08);
         // Night floor — never a dead black; dust remembers the light
         sky = max(sky, uZenith * 0.4);
+        // The stars come out as the day factor dies — no light
+        // pollution on Mars, so the night sky is the show. Hashed
+        // cells on the dome; haze eats them near the horizon.
+        float night = 1.0 - uDay;
+        if (night > 0.03 && elev > 0.0) {
+          vec2 sp = vec2(atan(dir.z, dir.x) * 44.5, asin(clamp(dir.y, -1.0, 1.0)) * 89.0);
+          vec2 cell = floor(sp);
+          vec2 fpt = fract(sp);
+          float h = fract(sin(dot(cell, vec2(127.1, 311.7))) * 43758.5453);
+          float h2 = fract(h * 91.17);
+          vec2 spos = vec2(fract(h * 7.31), fract(h * 13.73)) * 0.8 + 0.1;
+          float d = length(fpt - spos);
+          float star = smoothstep(0.10, 0.015, d) * step(0.76, h2);
+          float horizonFade = smoothstep(0.0, 0.18, elev);
+          sky += vec3(0.82, 0.87, 1.0) * star * (0.25 + 0.75 * h) * night * horizonFade * 1.4;
+        }
         gl_FragColor = vec4(sky, 1.0);
       }
     `,
@@ -150,7 +166,11 @@ export function debugSky() {
 
 export function updateSky(dt, camLocal) {
   if (!dome) return;
-  solT = (solT + dt / SOL_SECONDS) % 1;
+  // Asymmetric clock: the authored sol lingers in daylight and hurries
+  // through the dark — night is an event (stars, the lamp, the cold),
+  // not an 80-minute wall. Roughly 64 min of day, ~25 of night.
+  const rate = sunElevDeg < 0 ? 3.0 : 0.9;
+  solT = (solT + (dt * rate) / SOL_SECONDS) % 1;
 
   // Sun arc: a cosine day-curve — noon peaks at 38° toward the north
   // (we stand at 13°S), night bottoms at -14°. Azimuth runs east at
@@ -177,8 +197,10 @@ export function updateSky(dt, camLocal) {
   sunLight.target.position.copy(camLocal);
   sunLight.intensity = 2.4 * day + 0.05;
   sunLight.color.copy(COL.sunWarm).lerp(new THREE.Color('#ff9e66'), low * 0.7);
-  hemi.intensity = 0.14 + 0.44 * day;
-  fill.intensity = 0.12 + 0.20 * day;
+  // Night floor is starlight, faintly cool — silhouettes stay legible
+  hemi.intensity = 0.20 + 0.38 * day;
+  hemi.color.copy(new THREE.Color('#b07a52')).lerp(new THREE.Color('#5a6478'), 1 - day);
+  fill.intensity = 0.15 + 0.17 * day;
 
   mat.uniforms.uHorizon.value.copy(COL.horizonDusk).lerp(COL.horizonDay, day)
     .lerp(new THREE.Color('#c97a4e'), low * day * 0.5);
