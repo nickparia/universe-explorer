@@ -275,8 +275,18 @@ export function initFlight(camera) {
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
     window.addEventListener('keydown', (e) => {
-        // Typing in an input (star map search, ship computer) never flies the ship
-        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+        // Typing in an input (star map search, ship computer) never flies
+        // the ship — but an EMPTY line yields to the stick: after talking
+        // to Sol the input keeps focus, and movement keys must still fly.
+        if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+            if (!e.target.value && /^(Key[WASDQE]|Space|Shift(Left|Right)|KeyC)$/.test(e.code)) {
+                e.target.blur();
+                const cv = document.getElementById('c');
+                if (cv) cv.focus();
+            } else {
+                return;
+            }
+        }
         // Groundside the helm is cold — boots have their own hands
         if (_suppressed) return;
         keys[e.code] = true;

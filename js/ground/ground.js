@@ -84,7 +84,10 @@ export function initGround() {
   }, 700);
 
   window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      if (!(e.code === 'KeyL' && !e.target.value)) return;  // empty line yields
+      e.target.blur();
+    }
     if (e.code !== 'KeyL') return;
     if (state === 'active') exitGround();
     else if (state === 'idle' && getOrbitBodyName() === 'MARS') enterGround();
@@ -284,7 +287,8 @@ function refreshHud() {
     const el = document.getElementById(id);
     if (el) el.textContent = text;
   };
-  set('surface-alt', `ELEV ${(elevMsl / 1000).toFixed(2)} KM · ${getMode() === 'rove' ? 'ROVER' : 'ON FOOT'}`);
+  const spd = getGroundSpeed();
+  set('surface-alt', `ELEV ${(elevMsl / 1000).toFixed(2)} KM · ${getMode() === 'rove' ? 'ROVER' : 'ON FOOT'}${spd > 0.2 ? ` · ${spd.toFixed(1)} M/S` : ''}`);
   const east = (local.x / 1000).toFixed(1), south = (local.z / 1000).toFixed(1);
   set('surface-coords', `SITE +E ${east} KM · +S ${south} KM`);
   const t = cfg && cfg.surface && cfg.surface.temperature;

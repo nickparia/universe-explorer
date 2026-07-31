@@ -17,7 +17,7 @@ import { getLookInvert } from '../lookpref.js';
 const G_MARS = 3.71;
 const EYE_WALK = 1.65;
 const EYE_ROVE = 2.15;
-const WALK_SPEED = 2.3, WALK_RUN = 5.0;
+const WALK_SPEED = 3.2, WALK_RUN = 7.0;
 const ROVE_SPEED = 13.5, ROVE_BOOST = 24;
 const JUMP_V = 3.4;
 const MOUSE_SENS = 0.0022;      // the helm's own hand
@@ -58,7 +58,17 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
 
   const canvas = document.getElementById('c');
   addL(window, 'keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
+      // An EMPTY terminal line yields to the boots: after talking to
+      // Sol the input keeps focus, and without this every W went into
+      // the chat — "movement doesn't work." Mid-sentence, typing wins.
+      if (!e.target.value && /^(Key[WASDV]|Space|Shift(Left|Right))$/.test(e.code)) {
+        e.target.blur();
+        if (canvas) canvas.focus();
+      } else {
+        return;
+      }
+    }
     keys[e.code] = true;
     if (e.code === 'Space') e.preventDefault();
     if (e.code === 'KeyV') mode = (mode === 'walk') ? 'rove' : 'walk';
@@ -181,7 +191,7 @@ export function updateController(dt) {
       bob = (heightAt(pos.x * 3.1, pos.z * 3.1) % 0.13) * 0.16 * shake;
       lean = THREE.MathUtils.clamp(-_pendYaw * 5 * shake, -0.05, 0.05);
     } else {
-      bob = Math.sin(bobT * 6.2) * 0.028 * Math.min(1, sp / WALK_RUN);
+      bob = Math.sin(bobT * 6.2) * 0.042 * Math.min(1, sp / WALK_RUN);
     }
   }
   roverLean += (lean - roverLean) * (1 - Math.exp(-dt / 0.4));
