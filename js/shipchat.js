@@ -190,6 +190,16 @@ export function initShipChat() {
   input.addEventListener('focus', placeCursor);
   input.addEventListener('blur', placeCursor);
   input.addEventListener('keydown', (e) => {
+    // An EMPTY line yields to the hands: after speaking to Sol the
+    // line keeps focus, and a movement key with nothing typed means
+    // the traveler wants to move, not talk. Let it bubble to the helm
+    // or the boots. Mid-sentence, typing always wins.
+    if (!input.value && /^(Key[WASDQEVCL]|Space|Shift(Left|Right))$/.test(e.code)) {
+      input.blur();
+      const cv = document.getElementById('c');
+      if (cv) cv.focus();
+      return;
+    }
     e.stopPropagation(); // never fly the ship while typing
     if (e.key === 'Enter') { send(); placeCursor(); }
     if (e.key === 'Escape') input.blur();
