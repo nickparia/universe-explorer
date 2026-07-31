@@ -62,7 +62,7 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       // An EMPTY terminal line yields to the boots: after talking to
       // Sol the input keeps focus, and without this every W went into
       // the chat — "movement doesn't work." Mid-sentence, typing wins.
-      if (!e.target.value && /^(Key[WASDV]|Space|Shift(Left|Right))$/.test(e.code)) {
+      if (!e.target.value && /^(Key[WASDV]|Space|Shift(Left|Right)|Arrow)/.test(e.code)) {
         e.target.blur();
         if (canvas) canvas.focus();
       } else {
@@ -70,7 +70,8 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       }
     }
     keys[e.code] = true;
-    if (e.code === 'Space') e.preventDefault();
+    if (typeof window !== 'undefined') window.__ctlKey = e.code;  // debug echo
+    if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     if (e.code === 'KeyV') mode = (mode === 'walk') ? 'rove' : 'walk';
   });
   addL(window, 'keyup', (e) => { keys[e.code] = false; });
@@ -120,10 +121,10 @@ export function updateController(dt) {
   _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
   _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
   let ax = 0, az = 0;
-  if (keys['KeyW']) { ax += _fwd.x; az += _fwd.z; }
-  if (keys['KeyS']) { ax -= _fwd.x; az -= _fwd.z; }
-  if (keys['KeyD']) { ax += _right.x; az += _right.z; }
-  if (keys['KeyA']) { ax -= _right.x; az -= _right.z; }
+  if (keys['KeyW'] || keys['ArrowUp']) { ax += _fwd.x; az += _fwd.z; }
+  if (keys['KeyS'] || keys['ArrowDown']) { ax -= _fwd.x; az -= _fwd.z; }
+  if (keys['KeyD'] || keys['ArrowRight']) { ax += _right.x; az += _right.z; }
+  if (keys['KeyA'] || keys['ArrowLeft']) { ax -= _right.x; az -= _right.z; }
   const moving = (ax !== 0 || az !== 0);
   if (moving) { const l = Math.hypot(ax, az); ax /= l; az /= l; }
 

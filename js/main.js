@@ -177,7 +177,8 @@ async function boot() {
   // ground once the world exists — no intro race, no manual timing.
   // Also paints a heartbeat line (frames, ground flag, last error) so
   // remote screenshots carry ground truth.
-  if (new URLSearchParams(location.search).get('land') === '1') {
+  const _q = new URLSearchParams(location.search);
+  if (_q.get('debug') === '1' || _q.get('land') === '1') {
     const hb = document.createElement('div');
     hb.id = 'dev-heartbeat';
     hb.style.cssText = 'position:fixed;bottom:4px;left:8px;z-index:9999;' +
@@ -192,8 +193,17 @@ async function boot() {
       hb.textContent = 'REJ ' + String((e.reason && e.reason.message) || e.reason).slice(0, 120);
       hb.style.color = '#ff6060';
     });
-    skipArrival();
-    setTimeout(() => enterGround(), 800);
+    // Key echo: what the WINDOW sees vs what the ground controller
+    // registered — tells us in one glance where a keystroke dies.
+    window.addEventListener('keydown', (e) => {
+      const ae = document.activeElement;
+      window.__winKey = e.code + (e.isTrusted ? '' : '*') + ' foc:' +
+        (ae ? ae.tagName + (ae.id ? '#' + ae.id : '') : '?');
+    }, true);
+    if (_q.get('land') === '1') {
+      skipArrival();
+      setTimeout(() => enterGround(), 800);
+    }
   }
 
   // Make sure any legacy loading/overlay screens never show
@@ -336,7 +346,9 @@ function animate() {
     requestAnimationFrame(animate);
     if (++_frameCount === 2) revealWorld();
     if (window.__hb && !window.__hb.textContent.startsWith('ERR') && !window.__hb.textContent.startsWith('REJ')) {
-      window.__hb.textContent = 'f' + _frameCount + ' g' + (isGroundActive() ? 1 : 0) + (window.__hbPerf || '');
+      window.__hb.textContent = 'f' + _frameCount + ' g' + (isGroundActive() ? 1 : 0) + (window.__hbPerf || '') +
+        (window.__winKey ? ' | win:' + window.__winKey : '') +
+        (window.__ctlKey ? ' | ctl:' + window.__ctlKey : '');
     }
     const now = performance.now();
     // dt is clamped for physics stability; dtWall is real elapsed time so
