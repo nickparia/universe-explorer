@@ -343,6 +343,98 @@ export function setGroundWind(k) {
   groundWind.sighG.gain.setTargetAtTime(0.020 * Math.max(0, k - 0.25), t, 0.35);
 }
 
+// ── Footfalls and wheels — the ground answers the traveler ──────────
+// A footstep is a short granular crunch (regolith under a boot), pitch
+// and level jittered so no two strides match. Landing from a hop gets
+// a deeper, harder bite. The rover is a continuous machine: a low
+// electric hum that climbs with speed and gravel hiss under the wheels.
+let _crunchBuf = null;
+
+function makeCrunchBuffer() {
+  const rate = ctx.sampleRate;
+  const buf = ctx.createBuffer(1, (rate * 0.13) | 0, rate);
+  const d = buf.getChannelData(0);
+  for (let i = 0; i < d.length; i++) {
+    const t = i / d.length;
+    const env = Math.pow(1 - t, 1.7);
+    // granular: dense at contact, sparse grains as the boot settles
+    d[i] = (Math.random() * 2 - 1) * env * (Math.random() < 0.45 - t * 0.3 ? 1 : 0.3);
+  }
+  return buf;
+}
+
+/** One footfall. level ~0..1.3; hard=true for landings. */
+export function stepCrunch(level = 1, hard = false) {
+  if (!started) return;
+  if (!_crunchBuf) _crunchBuf = makeCrunchBuffer();
+  const t = ctx.currentTime;
+  const src = ctx.createBufferSource();
+  src.buffer = _crunchBuf;
+  src.playbackRate.value = (hard ? 0.62 : 0.92) + Math.random() * 0.3;
+  const f = ctx.createBiquadFilter();
+  f.type = 'lowpass';
+  f.frequency.value = hard ? 520 : 980 + Math.random() * 320;
+  f.Q.value = 0.4;
+  const g = ctx.createGain();
+  g.gain.value = (hard ? 0.075 : 0.034) * Math.min(1.4, level);
+  src.connect(f).connect(g).connect(master);
+  src.start(t);
+}
+
+let roverBed = null;
+let _rbK = -1;
+
+function buildRoverBed() {
+  const osc = ctx.createOscillator();
+  osc.type = 'sawtooth';
+  osc.frequency.value = 58;
+  const lp = ctx.createBiquadFilter();
+  lp.type = 'lowpass';
+  lp.frequency.value = 150;
+  lp.Q.value = 0.7;
+  const og = ctx.createGain();
+  og.gain.value = 0;
+  const noise = ctx.createBufferSource();
+  noise.buffer = makeNoiseBuffer(3);
+  noise.loop = true;
+  const bp = ctx.createBiquadFilter();
+  bp.type = 'bandpass';
+  bp.frequency.value = 420;
+  bp.Q.value = 0.55;
+  const ng = ctx.createGain();
+  ng.gain.value = 0;
+  osc.connect(lp).connect(og).connect(master);
+  noise.connect(bp).connect(ng).connect(master);
+  osc.start();
+  noise.start();
+  roverBed = { osc, og, bp, ng, stops: [osc, noise] };
+}
+
+function stopRoverBed() {
+  if (!roverBed) return;
+  const t = ctx.currentTime;
+  roverBed.og.gain.setTargetAtTime(0.0001, t, 0.4);
+  roverBed.ng.gain.setTargetAtTime(0.0001, t, 0.4);
+  const rb = roverBed;
+  setTimeout(() => rb.stops.forEach((n) => { try { n.stop(); } catch (e) {} }), 2500);
+  roverBed = null;
+  _rbK = -1;
+}
+
+/** Per-frame from the rover: 0 = parked/afoot (bed sleeps), ~1 = boost. */
+export function setRoverBed(k) {
+  if (!started) return;
+  if (k > 0.02 && !roverBed) buildRoverBed();
+  if (!roverBed) return;
+  if (Math.abs(k - _rbK) < 0.01) return;
+  _rbK = k;
+  const t = ctx.currentTime;
+  roverBed.og.gain.setTargetAtTime(0.011 * Math.min(1, 0.25 + k), t, 0.2);
+  roverBed.osc.frequency.setTargetAtTime(56 + 64 * k, t, 0.25);
+  roverBed.ng.gain.setTargetAtTime(0.030 * k * k + 0.005 * Math.min(1, k * 3), t, 0.2);
+  roverBed.bp.frequency.setTargetAtTime(380 + 340 * k, t, 0.3);
+}
+
 // ── Void hush — the ship itself goes quiet inside the emptiness ─────
 let _hush = 0;
 export function setVoidHush(h) {
@@ -382,7 +474,7 @@ export function initSoundscape() {
     startLocationTone(name);
   });
   on('orbit:exit', () => { if (started) stopLocationTone(); });
-  on('ground:exit', () => { if (started) stopGroundWind(); });
+  on('ground:exit', () => { if (started) { stopGroundWind(); stopRoverBed(); } });
 }
 
 /** Call from a user gesture — browsers require one to unlock audio. */

@@ -21,7 +21,7 @@ import { setGroundWind } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
 import { initSky, updateSky, disposeSky, getSunState, debugSky } from './sky.js';
-import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys } from './controller.js';
+import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
 import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 
@@ -42,7 +42,8 @@ export function isGroundActive() { return state === 'active' || state === 'exiti
 
 export function getGroundCamPos() {
   const p = getLocalPos();
-  return _worldCam.set(POCKET.x + p.x, POCKET.y + getEyeY(), POCKET.z + p.z);
+  const v = getVisOffset();
+  return _worldCam.set(POCKET.x + p.x + v.x, POCKET.y + getEyeY(), POCKET.z + p.z + v.z);
 }
 
 export function getGroundState() {

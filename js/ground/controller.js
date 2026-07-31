@@ -13,6 +13,7 @@
 import * as THREE from 'three';
 import { heightAt } from './site.js';
 import { getLookInvert } from '../lookpref.js';
+import { stepCrunch, setRoverBed } from '../soundscape.js';
 
 const G_MARS = 3.71;
 const EYE_WALK = 1.65;
@@ -34,9 +35,18 @@ let pos = new THREE.Vector3();
 let vel = new THREE.Vector3();
 let mode = 'walk';
 let grounded = true;
-let bobT = 0;
 let listeners = [];
 let roverLean = 0;
+
+// ── The feel state ──
+let stridePh = 0;          // stride phase; footfalls at each half-cycle
+let landDip = 0, landVel = 0;   // knee-compression spring after airtime
+let impact = 0;            // touchdown speed captured by the physics
+let accelPitch = 0;        // rover: nose lifts on throttle, dips on brake
+let slopeRoll = 0;         // cross-slope lean, walk and rover
+let prevFwdSpeed = 0;
+let fovBase = 0;
+let visX = 0, visZ = 0;    // lateral bob offset (visual only, not physics)
 
 const _fwd = new THREE.Vector3();
 const _right = new THREE.Vector3();
@@ -54,7 +64,11 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
   yaw = faceYaw; pitch = facePitch;
   vel.set(0, 0, 0);
   mode = 'walk';
+  grounded = true;
   keys = {}; mouseDX = 0; mouseDY = 0; _pendYaw = 0; _pendPitch = 0;
+  stridePh = 0; landDip = 0; landVel = 0; impact = 0;
+  accelPitch = 0; slopeRoll = 0; prevFwdSpeed = 0; visX = 0; visZ = 0;
+  fovBase = camera.fov;
 
   const canvas = document.getElementById('c');
   addL(window, 'keydown', (e) => {
@@ -101,8 +115,12 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
 export function disposeController() {
   for (const [t, ev, fn] of listeners) t.removeEventListener(ev, fn);
   listeners = [];
+  if (cam && fovBase) { cam.fov = fovBase; cam.updateProjectionMatrix(); }
   cam = null;
 }
+
+/** Lateral bob offset — visual sway only, never part of the physics. */
+export function getVisOffset() { return { x: visX, z: visZ }; }
 
 export function getLocalPos() { return pos; }
 export function getHeldKeys() { return Object.keys(keys).filter((k) => keys[k]).join('+') || '-'; }
@@ -154,7 +172,8 @@ export function updateController(dt) {
   }
 
   // ── Integrate ──
-  const tau = moving ? (roving ? 1.1 : 0.35) : (roving ? 0.9 : 0.22);
+  // A touch of weight in the ramps: not sluggish, never instant.
+  const tau = moving ? (roving ? 1.25 : 0.42) : (roving ? 0.95 : 0.28);
   const k = 1 - Math.exp(-dt / tau);
   const tx = moving ? ax * top * slopeK : 0;
   const tz = moving ? az * top * slopeK : 0;
@@ -190,35 +209,88 @@ export function updateController(dt) {
     if (standY - pos.y > 0.9) grounded = false; // walked off an edge
   } else if (pos.y <= standY) {
     pos.y = standY;
+    impact = Math.max(impact, -vel.y);   // touchdown speed for the knees
     vel.y = 0;
     grounded = true;
   }
 
-  // ── Camera compose ──
-  bobT += dt * (1 + getGroundSpeed() * 0.9);
-  let bob = 0, lean = 0;
+  // ── Camera compose — the feel ──────────────────────────────────────
   const sp = getGroundSpeed();
-  if (grounded && sp > 0.3) {
-    if (roving) {
-      // The rover reads the rocks: fine height noise becomes shake
-      const shake = Math.min(1, sp / ROVE_SPEED);
-      bob = (heightAt(pos.x * 3.1, pos.z * 3.1) % 0.13) * 0.16 * shake;
-      lean = THREE.MathUtils.clamp(-_pendYaw * 5 * shake, -0.05, 0.05);
-    } else {
-      bob = Math.sin(bobT * 6.2) * 0.042 * Math.min(1, sp / WALK_RUN);
-    }
-  }
-  roverLean += (lean - roverLean) * (1 - Math.exp(-dt / 0.4));
+  const spK = Math.min(1, sp / (roving ? ROVE_SPEED : WALK_RUN));
+  const ke = (t) => 1 - Math.exp(-dt / t);   // easing helper
 
-  _e.set(pitch, yaw, roverLean);
+  // Landing: the knees take it. Impact charges a stiff, well-damped
+  // spring; the eye dips and recovers in a quarter second.
+  if (impact > 0.4) {
+    landVel -= Math.min(2.4, impact) * 0.16;
+    stepCrunch(Math.min(1.3, impact * 0.35), true);
+  }
+  impact = 0;
+  landVel += (-90 * landDip - 14 * landVel) * dt;
+  landDip = THREE.MathUtils.clamp(landDip + landVel * dt, -0.24, 0.1);
+
+  let bobY = 0, bobLat = 0, walkRoll = 0;
+  if (!roving && grounded && sp > 0.35) {
+    // Stride-locked bob: vertical beats twice per cycle (each footfall),
+    // sway once — the classic figure-8 — and the crunch lands exactly
+    // on the beat. Stride quickens with pace.
+    const strideHz = 1.25 + 1.05 * spK;
+    const prev = stridePh;
+    stridePh += dt * Math.PI * 2 * strideHz;
+    if (Math.floor(stridePh / Math.PI) !== Math.floor(prev / Math.PI)) {
+      stepCrunch(0.45 + 0.6 * spK, false);
+    }
+    const w = 0.35 + 0.65 * spK;
+    bobY = Math.sin(stridePh * 2) * 0.020 * w;
+    bobLat = Math.sin(stridePh) * 0.013 * w;
+    walkRoll = Math.sin(stridePh) * 0.007 * spK;
+  } else if (!roving) {
+    stridePh = 0;
+  }
+
+  // Cross-slope lean: the body reads the camber of the ground
+  {
+    const hl = heightAt(pos.x - _right.x * 1.5, pos.z - _right.z * 1.5);
+    const hr = heightAt(pos.x + _right.x * 1.5, pos.z + _right.z * 1.5);
+    const camber = THREE.MathUtils.clamp((hl - hr) / 3.0, -0.35, 0.35);
+    const rollT = camber * (roving ? 0.16 : 0.07) * (0.3 + 0.7 * spK);
+    slopeRoll += (rollT - slopeRoll) * ke(0.45);
+  }
+
+  let lean = 0;
+  if (roving) {
+    // The machine has a body: nose lifts under throttle, dips under
+    // braking; it leans into turns; the motor sings with the wheels.
+    const fwdSpeed = vel.x * _fwd.x + vel.z * _fwd.z;
+    const a = (fwdSpeed - prevFwdSpeed) / Math.max(dt, 1e-3);
+    prevFwdSpeed = fwdSpeed;
+    const pitchT = THREE.MathUtils.clamp(-a * 0.006, -0.05, 0.035);
+    accelPitch += (pitchT - accelPitch) * ke(0.4);
+    lean = THREE.MathUtils.clamp((-_pendYaw / Math.max(dt, 1e-3)) * 0.01 * spK, -0.07, 0.07);
+    setRoverBed(grounded ? 0.15 + 0.85 * spK : 0.1);
+  } else {
+    accelPitch += (0 - accelPitch) * ke(0.3);
+    prevFwdSpeed = 0;
+    setRoverBed(0);
+  }
+  roverLean += (lean - roverLean) * ke(0.35);
+
+  // Speed widens the eye — subtle at a run, real at rover boost
+  const fovT = fovBase + (roving ? 2.0 + 4.5 * spK * (run ? 1 : 0.4) : 2.2 * spK * (run ? 1 : 0));
+  cam.fov += (fovT - cam.fov) * ke(0.45);
+  cam.updateProjectionMatrix();
+
+  _e.set(pitch + accelPitch, yaw, roverLean + walkRoll + slopeRoll);
   cam.quaternion.setFromEuler(_e);
-  lastEyeY = pos.y + bob;
+  lastEyeY = pos.y + bobY + landDip;
+  visX = _right.x * bobLat;
+  visZ = _right.z * bobLat;
 
   return {
     mode,
     grounded,
     speed: sp,
     airborne: !grounded,
-    camY: pos.y + bob,
+    camY: lastEyeY,
   };
 }
