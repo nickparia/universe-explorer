@@ -100,10 +100,29 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
     keys[e.code] = false;
     if (e.code.startsWith('Meta')) for (const k in keys) keys[k] = false;
   });
-  addL(canvas, 'mousedown', (e) => { if (e.button === 2) { rightDown = true; canvas.style.cursor = 'none'; } });
-  addL(window, 'mouseup', (e) => { if (e.button === 2) { rightDown = false; canvas.style.cursor = ''; } });
+  // Pointer Lock while looking: the cursor is captured, deltas flow
+  // forever, and no screen edge can interrupt a pan mid-arc.
+  addL(canvas, 'mousedown', (e) => {
+    if (e.button === 2) {
+      rightDown = true;
+      canvas.style.cursor = 'none';
+      try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* fallback: raw deltas */ }
+    }
+  });
+  addL(window, 'mouseup', (e) => {
+    if (e.button === 2) {
+      rightDown = false;
+      canvas.style.cursor = '';
+      if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
+    }
+  });
+  addL(document, 'pointerlockchange', () => {
+    // Lock torn down externally (Esc) — end the look cleanly
+    if (!document.pointerLockElement && rightDown) { rightDown = false; canvas.style.cursor = ''; }
+  });
   addL(window, 'mousemove', (e) => {
-    if (rightDown && !(e.buttons & 2)) { rightDown = false; canvas.style.cursor = ''; return; }
+    const locked = document.pointerLockElement === canvas;
+    if (rightDown && !locked && !(e.buttons & 2)) { rightDown = false; canvas.style.cursor = ''; return; }
     if (rightDown) { mouseDX += e.movementX; mouseDY += e.movementY; }
   });
   const release = () => { rightDown = false; canvas.style.cursor = ''; mouseDX = 0; mouseDY = 0; for (const k in keys) keys[k] = false;

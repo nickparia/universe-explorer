@@ -336,12 +336,24 @@ export function initFlight(camera) {
         if (e.button === 2) {
             rightDown = true;
             canvas.style.cursor = 'none';
+            // Pointer Lock: capture the cursor while looking — deltas
+            // keep flowing past every screen edge, nothing ever sticks.
+            try { const p = canvas.requestPointerLock(); if (p && p.catch) p.catch(() => {}); } catch (err) { /* raw-delta fallback */ }
         }
         canvas.focus();
     });
 
     window.addEventListener('mouseup', (e) => {
         if (e.button === 2) {
+            rightDown = false;
+            canvas.style.cursor = '';
+            if (document.pointerLockElement === canvas && document.exitPointerLock) document.exitPointerLock();
+        }
+    });
+
+    document.addEventListener('pointerlockchange', () => {
+        // Lock torn down externally (Esc) — end the look cleanly
+        if (!document.pointerLockElement && rightDown) {
             rightDown = false;
             canvas.style.cursor = '';
         }
@@ -351,7 +363,9 @@ export function initFlight(camera) {
         // Self-heal: if the right button was released OUTSIDE the window,
         // our mouseup never fired and the look would stick to bare mouse
         // movement on re-entry. e.buttons is ground truth — trust it.
-        if (rightDown && !(e.buttons & 2)) {
+        // (Skipped while pointer-locked: there is no outside anymore.)
+        const locked = document.pointerLockElement === canvas;
+        if (rightDown && !locked && !(e.buttons & 2)) {
             rightDown = false;
             canvas.style.cursor = '';
             return;
