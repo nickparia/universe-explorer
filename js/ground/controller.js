@@ -70,7 +70,12 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       }
     }
     keys[e.code] = true;
-    if (typeof window !== 'undefined') window.__ctlKey = e.code;  // debug echo
+    if (typeof window !== 'undefined') {   // debug echo, last four
+      const c = window.__ctlKeys = window.__ctlKeys || [];
+      if (c[c.length - 1] !== e.code) c.push(e.code);
+      if (c.length > 4) c.shift();
+      window.__ctlKey = c.join(',');
+    }
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     if (e.code === 'KeyV') mode = (mode === 'walk') ? 'rove' : 'walk';
   });

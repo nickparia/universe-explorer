@@ -197,7 +197,10 @@ async function boot() {
     // registered — tells us in one glance where a keystroke dies.
     window.addEventListener('keydown', (e) => {
       const ae = document.activeElement;
-      window.__winKey = e.code + (e.isTrusted ? '' : '*') + ' foc:' +
+      const w = window.__winKeys = window.__winKeys || [];
+      if (w[w.length - 1] !== e.code) w.push(e.code + (e.isTrusted ? '' : '*'));
+      if (w.length > 4) w.shift();
+      window.__winKey = w.join(',') + ' foc:' +
         (ae ? ae.tagName + (ae.id ? '#' + ae.id : '') : '?');
     }, true);
     if (_q.get('land') === '1') {
