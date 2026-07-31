@@ -200,9 +200,9 @@ export function updateSky(dt, camLocal) {
   // Skylight: a dusty atmosphere scatters real light into the shade —
   // shadowed slopes must keep readable texture or walking over them
   // reads as standing still. Night floor is starlight, faintly cool.
-  hemi.intensity = 0.30 + 0.42 * day;
+  hemi.intensity = 0.38 + 0.40 * day;
   hemi.color.copy(new THREE.Color('#b07a52')).lerp(new THREE.Color('#5a6478'), 1 - day);
-  fill.intensity = 0.20 + 0.20 * day;
+  fill.intensity = 0.26 + 0.18 * day;
 
   mat.uniforms.uHorizon.value.copy(COL.horizonDusk).lerp(COL.horizonDay, day)
     .lerp(new THREE.Color('#c97a4e'), low * day * 0.5);
