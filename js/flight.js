@@ -324,6 +324,9 @@ export function initFlight(camera) {
         // No input guard here: clearing is always safe, and skipping it
         // wedges a key as held when focus moves into an input mid-press.
         keys[e.code] = false;
+        // macOS swallows other keys' keyups while Cmd is held — letting
+        // go of Cmd releases everything (screenshot chords stuck Shift).
+        if (e.code.startsWith('Meta')) for (const k in keys) keys[k] = false;
     });
 
     // ── Mouse ────────────────────────────────────────────────────────────────

@@ -197,10 +197,12 @@ export function updateSky(dt, camLocal) {
   sunLight.target.position.copy(camLocal);
   sunLight.intensity = 2.4 * day + 0.05;
   sunLight.color.copy(COL.sunWarm).lerp(new THREE.Color('#ff9e66'), low * 0.7);
-  // Night floor is starlight, faintly cool — silhouettes stay legible
-  hemi.intensity = 0.20 + 0.38 * day;
+  // Skylight: a dusty atmosphere scatters real light into the shade —
+  // shadowed slopes must keep readable texture or walking over them
+  // reads as standing still. Night floor is starlight, faintly cool.
+  hemi.intensity = 0.30 + 0.42 * day;
   hemi.color.copy(new THREE.Color('#b07a52')).lerp(new THREE.Color('#5a6478'), 1 - day);
-  fill.intensity = 0.15 + 0.17 * day;
+  fill.intensity = 0.20 + 0.20 * day;
 
   mat.uniforms.uHorizon.value.copy(COL.horizonDusk).lerp(COL.horizonDay, day)
     .lerp(new THREE.Color('#c97a4e'), low * day * 0.5);

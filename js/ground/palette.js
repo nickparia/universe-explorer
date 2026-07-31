@@ -18,7 +18,7 @@ const out = [1, 1, 1];
 export function hashTint(x, z, slope) {
   const sK = Math.min(1, slope * 2.0);
   // Steep ground: darker, slightly cooler — exposed rock under debris
-  let v = 1.0 - sK * 0.42;
+  let v = 1.0 - sK * 0.30;
   // Mineral speckle at ~7 m so close ground isn't airbrushed
   const sp = h2(Math.floor(x / 7), Math.floor(z / 7));
   v *= 0.88 + 0.24 * sp;

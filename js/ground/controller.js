@@ -69,6 +69,9 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
         return;
       }
     }
+    // macOS: while Cmd is held other keys' keyups are swallowed — a
+    // screenshot chord left Shift stuck down. Chorded keys don't move.
+    if (e.metaKey && !e.code.startsWith('Meta')) return;
     keys[e.code] = true;
     if (typeof window !== 'undefined') {   // debug echo, last four
       const c = window.__ctlKeys = window.__ctlKeys || [];
@@ -79,7 +82,10 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
     if (e.code === 'KeyV') mode = (mode === 'walk') ? 'rove' : 'walk';
   });
-  addL(window, 'keyup', (e) => { keys[e.code] = false; });
+  addL(window, 'keyup', (e) => {
+    keys[e.code] = false;
+    if (e.code.startsWith('Meta')) for (const k in keys) keys[k] = false;
+  });
   addL(canvas, 'mousedown', (e) => { if (e.button === 2) { rightDown = true; canvas.style.cursor = 'none'; } });
   addL(window, 'mouseup', (e) => { if (e.button === 2) { rightDown = false; canvas.style.cursor = ''; } });
   addL(window, 'mousemove', (e) => {
