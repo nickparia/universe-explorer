@@ -13,6 +13,7 @@
 
 import { on } from './bus.js';
 import { getLocation } from './catalog.js';
+import { getLookInvert, setLookInvert } from './lookpref.js';
 import { getPlanetConfig } from './planetconfig.js';
 import { getVisited } from './session.js';
 import { initCompanionMark, setCompanionState } from './companion-mark.js';
@@ -598,6 +599,17 @@ async function send() {
     } else if (/\bwhat('s| is) (this|playing|the music)\b/.test(s)) {
       const nowP = getNowPlaying();
       acted = nowP ? 'the cabin speakers are currently playing "' + nowP + '"' : 'no music is playing just now';
+    }
+    // Look-Y intent: there is no options menu on this ship — the
+    // traveler asks, the ship flips it, the record remembers.
+    const LOOKY = /\b(look|mouse|camera|view|y[- ]?axis)\b/;
+    if (!acted && LOOKY.test(s) && /\b(invert|inverted|flip|reverse|uninvert|normal|standard)\b/.test(s)) {
+      const wantNormal = /\b(uninvert|normal|standard|regular|un-invert)\b/.test(s);
+      const next = wantNormal ? false : !getLookInvert();
+      setLookInvert(next);
+      acted = next
+        ? 'look inversion engaged — pull the hand down and the eyes rise, as at the helm'
+        : 'look inversion disengaged — the eyes now follow the hand directly';
     }
   }
 

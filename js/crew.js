@@ -86,11 +86,16 @@ export function initCrew() {
       });
   }
 
-  // Ship preferences moved (music on/off, cabin volume) — upstream.
+  // Ship preferences moved (music on/off, cabin volume, look-Y) —
+  // upstream. Emitters send only their own keys, so accumulate: a lone
+  // {lookInvert} push must never erase the music preference.
+  const prefsAcc = {};
+  on('crew:signed-on', ({ prefs }) => { Object.assign(prefsAcc, prefs || {}); });
   let prefsTimer = null;
   on('prefs:changed', (prefs) => {
+    Object.assign(prefsAcc, prefs || {});
     if (prefsTimer) clearTimeout(prefsTimer);
-    prefsTimer = setTimeout(() => { prefsTimer = null; pushCrewState({ prefs }); }, 3000);
+    prefsTimer = setTimeout(() => { prefsTimer = null; pushCrewState({ prefs: prefsAcc }); }, 3000);
   });
 
   // Local place history moved — push it upstream, gently debounced.

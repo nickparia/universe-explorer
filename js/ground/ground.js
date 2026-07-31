@@ -143,6 +143,11 @@ export async function enterGround() {
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
+  // The boots must own the keys: if the terminal input held focus
+  // through the descent, WASD would type into the chat instead of walk.
+  if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
+  const cv = document.getElementById('c');
+  if (cv) cv.focus();
   emit('ground:enter', { name: SITE_NAME });
 
   state = 'active';

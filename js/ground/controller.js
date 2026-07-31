@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { heightAt } from './site.js';
+import { getLookInvert } from '../lookpref.js';
 
 const G_MARS = 3.71;
 const EYE_WALK = 1.65;
@@ -21,7 +22,6 @@ const ROVE_SPEED = 13.5, ROVE_BOOST = 24;
 const JUMP_V = 3.4;
 const MOUSE_SENS = 0.0022;      // the helm's own hand
 const TAU_LOOK = 0.07;
-const INVERT_Y = true;          // one ship, one Y — matches flight.js
 const MAX_PITCH = THREE.MathUtils.degToRad(86);
 
 let cam = null;
@@ -95,7 +95,8 @@ export function updateController(dt) {
 
   // ── Look — the helm's smoothing, no roll ──
   _pendYaw += -mouseDX * MOUSE_SENS;
-  _pendPitch += (INVERT_Y ? 1 : -1) * mouseDY * MOUSE_SENS;
+  // One ship, one Y — the shared preference (ask Sol to flip it)
+  _pendPitch += (getLookInvert() ? 1 : -1) * mouseDY * MOUSE_SENS;
   mouseDX = 0; mouseDY = 0;
   const lk = 1 - Math.exp(-dt / TAU_LOOK);
   yaw += _pendYaw * lk; _pendYaw *= (1 - lk);

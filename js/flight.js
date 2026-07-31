@@ -4,6 +4,7 @@ import { getAltitude } from './altitude.js';
 import { getLandmarks, getDeepSpaceObjects } from './deepspace.js';
 import { getShot } from './planetconfig.js';
 import { emit, on } from './bus.js';
+import { getLookInvert } from './lookpref.js';
 import { setStarFieldOpacity, setSkyboxOpacity, setMilkyWayOpacity, BASE_FOV, GALACTIC_CENTER } from './engine.js';
 
 // Star map open state — tracked via bus events so flight doesn't import starmap
@@ -38,7 +39,8 @@ const TAU_COAST = 0.6;        // s — keys released → glide to rest
 // Mouse look: direct rotation with light smoothing (no rotational inertia).
 const MOUSE_SENS = 0.0022;
 const TAU_LOOK   = 0.07;      // s — look smoothing
-const INVERT_Y   = true;      // flight-sim Y: pull down = pitch up
+// Look-Y direction lives in lookpref.js now — one preference for the
+// helm and the boots, flipped by asking Sol, synced to the crew record.
 const ROLL_ACCEL = 1.6;
 const TAU_ROLL   = 0.30;
 
@@ -967,7 +969,7 @@ export function updateFlight(dt, allBodies, dtWall) {
 
     // ── 2. Mouse look — direct rotation with smoothing, inverted Y ──────────
     _pendYaw   += -mouseDX * MOUSE_SENS;
-    _pendPitch += (INVERT_Y ? 1 : -1) * mouseDY * MOUSE_SENS;
+    _pendPitch += (getLookInvert() ? 1 : -1) * mouseDY * MOUSE_SENS;
     mouseDX = 0;
     mouseDY = 0;
 
