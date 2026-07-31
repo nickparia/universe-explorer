@@ -130,19 +130,24 @@ export function heightAt(x, z, minLambda = 0) {
   let h = demAt(x, z);
   const slope = macroSlopeAt(x, z);
   const sK = Math.min(1, slope * 2.2);        // 0 on the floor, 1 on walls
+  // Domain warp: sample the octaves through a slowly wandering
+  // distortion so ripples meander like wind-worked ground instead of
+  // repeating on a lattice — unwarped value noise reads as CG.
+  const wx = x + 48 * (vnoise(x / 230, z / 230) - 0.5) * 2;
+  const wz = z + 48 * (vnoise((x + 911) / 230, (z - 347) / 230) - 0.5) * 2;
   // Octaves fade smoothly toward the LOD cutoff instead of hard-
   // stopping: a hard break gave adjacent LOD rings meter-scale height
   // steps that read as dark dash artifacts along every seam.
   for (const [lam, amp, ridged] of FLOOR_OCTAVES) {
     const k = lodFade(lam, minLambda);
     if (k <= 0) break;
-    const n = vnoise(x / lam, z / lam);
+    const n = vnoise(wx / lam, wz / lam);
     h += (n - 0.5) * 2 * amp * k * (1 - sK * 0.55);
   }
   for (const [lam, amp, ridged] of SLOPE_OCTAVES) {
     const k = lodFade(lam, minLambda);
     if (k <= 0) break;
-    const n = ridged ? rnoise(x / lam, z / lam) : vnoise(x / lam, z / lam);
+    const n = ridged ? rnoise(wx / lam, wz / lam) : vnoise(wx / lam, wz / lam);
     h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * k * sK;
   }
   return h;

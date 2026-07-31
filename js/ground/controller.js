@@ -17,9 +17,9 @@ import { stepCrunch, setRoverBed } from '../soundscape.js';
 
 const G_MARS = 3.71;
 const EYE_WALK = 1.65;
-const EYE_ROVE = 2.15;
-const WALK_SPEED = 3.2, WALK_RUN = 7.0;
-const ROVE_SPEED = 13.5, ROVE_BOOST = 24;
+const EYE_ROVE = 2.6;
+const WALK_SPEED = 4.2, WALK_RUN = 8.5;
+const ROVE_SPEED = 18, ROVE_BOOST = 34;
 const JUMP_V = 3.4;
 const MOUSE_SENS = 0.0022;      // the helm's own hand
 const TAU_LOOK = 0.07;
@@ -39,6 +39,7 @@ let listeners = [];
 let roverLean = 0;
 
 // ── The feel state ──
+let vehYaw = 0;            // the rover's own heading — A/D steer it
 let stridePh = 0;          // stride phase; footfalls at each half-cycle
 let landDip = 0, landVel = 0;   // knee-compression spring after airtime
 let impact = 0;            // touchdown speed captured by the physics
@@ -94,7 +95,10 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       window.__ctlKey = c.join(',');
     }
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-    if (e.code === 'KeyV') mode = (mode === 'walk') ? 'rove' : 'walk';
+    if (e.code === 'KeyV') {
+      mode = (mode === 'walk') ? 'rove' : 'walk';
+      if (mode === 'rove') vehYaw = yaw;   // mount facing where you look
+    }
   });
   addL(window, 'keyup', (e) => {
     keys[e.code] = false;
@@ -170,13 +174,36 @@ export function updateController(dt) {
   const top = roving ? (run ? ROVE_BOOST : ROVE_SPEED) : (run ? WALK_RUN : WALK_SPEED);
   _fwd.set(-Math.sin(yaw), 0, -Math.cos(yaw));
   _right.set(Math.cos(yaw), 0, -Math.sin(yaw));
-  let ax = 0, az = 0;
-  if (keys['KeyW'] || keys['ArrowUp']) { ax += _fwd.x; az += _fwd.z; }
-  if (keys['KeyS'] || keys['ArrowDown']) { ax -= _fwd.x; az -= _fwd.z; }
-  if (keys['KeyD'] || keys['ArrowRight']) { ax += _right.x; az += _right.z; }
-  if (keys['KeyA'] || keys['ArrowLeft']) { ax -= _right.x; az -= _right.z; }
-  const moving = (ax !== 0 || az !== 0);
-  if (moving) { const l = Math.hypot(ax, az); ax /= l; az /= l; }
+  let ax = 0, az = 0, moving = false, mag = 1, steer = 0, throttle = 0;
+  if (roving) {
+    // A VEHICLE, not fast boots: W/S throttle along the rover's own
+    // heading, A/D steer it (sharper with speed, like real wheels),
+    // and the camera free-looks over the top.
+    throttle = ((keys['KeyW'] || keys['ArrowUp']) ? 1 : 0) + ((keys['KeyS'] || keys['ArrowDown']) ? -0.45 : 0);
+    steer = ((keys['KeyA'] || keys['ArrowLeft']) ? 1 : 0) - ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0);
+    const sp0 = Math.hypot(vel.x, vel.z);
+    vehYaw += steer * 1.35 * Math.min(1, 0.22 + sp0 / 9) * dt;
+    if (throttle !== 0) {
+      const sgn = Math.sign(throttle);
+      ax = -Math.sin(vehYaw) * sgn;
+      az = -Math.cos(vehYaw) * sgn;
+      mag = Math.abs(throttle);
+      moving = true;
+    }
+    // Driving forward, hands off the mouse: the gaze drifts home to
+    // the direction of travel — free look is a glance, not a divorce.
+    if (!rightDown && throttle > 0) {
+      const dyaw = ((vehYaw - yaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      yaw += dyaw * (1 - Math.exp(-dt / 2.0));
+    }
+  } else {
+    if (keys['KeyW'] || keys['ArrowUp']) { ax += _fwd.x; az += _fwd.z; }
+    if (keys['KeyS'] || keys['ArrowDown']) { ax -= _fwd.x; az -= _fwd.z; }
+    if (keys['KeyD'] || keys['ArrowRight']) { ax += _right.x; az += _right.z; }
+    if (keys['KeyA'] || keys['ArrowLeft']) { ax -= _right.x; az -= _right.z; }
+    moving = (ax !== 0 || az !== 0);
+    if (moving) { const l = Math.hypot(ax, az); ax /= l; az /= l; }
+  }
 
   // Slope resistance: sample the climb ahead; steep ground wins.
   let slopeK = 1;
@@ -187,15 +214,15 @@ export function updateController(dt) {
     const grade = (hAhead - hHere) / probe;
     const maxGrade = roving ? 0.49 : 0.67;   // ~26° / ~34°
     if (grade > 0) slopeK = THREE.MathUtils.clamp(1 - grade / maxGrade, 0, 1);
-    else slopeK = Math.min(1.15, 1 - grade * 0.1); // a little free speed downhill
+    else slopeK = Math.min(1.2, 1 - grade * 0.14); // downhill pays
   }
 
   // ── Integrate ──
-  // A touch of weight in the ramps: not sluggish, never instant.
-  const tau = moving ? (roving ? 1.25 : 0.42) : (roving ? 0.95 : 0.28);
+  // A touch of weight in the ramps; the rover coasts like a machine.
+  const tau = moving ? (roving ? 1.25 : 0.42) : (roving ? 1.5 : 0.28);
   const k = 1 - Math.exp(-dt / tau);
-  const tx = moving ? ax * top * slopeK : 0;
-  const tz = moving ? az * top * slopeK : 0;
+  const tx = moving ? ax * top * mag * slopeK : 0;
+  const tz = moving ? az * top * mag * slopeK : 0;
   if (grounded) {
     vel.x += (tx - vel.x) * k;
     vel.z += (tz - vel.z) * k;
@@ -285,7 +312,8 @@ export function updateController(dt) {
     prevFwdSpeed = fwdSpeed;
     const pitchT = THREE.MathUtils.clamp(-a * 0.006, -0.05, 0.035);
     accelPitch += (pitchT - accelPitch) * ke(0.4);
-    lean = THREE.MathUtils.clamp((-_pendYaw / Math.max(dt, 1e-3)) * 0.01 * spK, -0.07, 0.07);
+    // Lean into the steer, harder with speed — motorcycle physics
+    lean = steer * 0.06 * (0.3 + 0.7 * spK);
     setRoverBed(grounded ? 0.15 + 0.85 * spK : 0.1);
   } else {
     accelPitch += (0 - accelPitch) * ke(0.3);
@@ -295,7 +323,7 @@ export function updateController(dt) {
   roverLean += (lean - roverLean) * ke(0.35);
 
   // Speed widens the eye — subtle at a run, real at rover boost
-  const fovT = fovBase + (roving ? 2.0 + 4.5 * spK * (run ? 1 : 0.4) : 2.2 * spK * (run ? 1 : 0));
+  const fovT = fovBase + (roving ? 3.0 + 6.0 * spK : 2.2 * spK * (run ? 1 : 0));
   cam.fov += (fovT - cam.fov) * ke(0.45);
   cam.updateProjectionMatrix();
 

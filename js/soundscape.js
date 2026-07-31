@@ -429,9 +429,9 @@ export function setRoverBed(k) {
   if (Math.abs(k - _rbK) < 0.01) return;
   _rbK = k;
   const t = ctx.currentTime;
-  roverBed.og.gain.setTargetAtTime(0.011 * Math.min(1, 0.25 + k), t, 0.2);
+  roverBed.og.gain.setTargetAtTime(0.016 * Math.min(1, 0.25 + k), t, 0.2);
   roverBed.osc.frequency.setTargetAtTime(56 + 64 * k, t, 0.25);
-  roverBed.ng.gain.setTargetAtTime(0.030 * k * k + 0.005 * Math.min(1, k * 3), t, 0.2);
+  roverBed.ng.gain.setTargetAtTime(0.042 * k * k + 0.007 * Math.min(1, k * 3), t, 0.2);
   roverBed.bp.frequency.setTargetAtTime(380 + 340 * k, t, 0.3);
 }
 
