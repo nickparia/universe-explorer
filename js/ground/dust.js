@@ -46,7 +46,7 @@ export function initDustField(parentGroup, camLocal) {
   geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
   mat = new THREE.PointsMaterial({
     map: makeSprite(),
-    size: 0.55,
+    size: 0.26,
     sizeAttenuation: true,
     transparent: true,
     opacity: 0.0,

@@ -173,6 +173,28 @@ async function boot() {
   // Debug: expose for testing
   window._dbg = { getCamPos, getSpeed, getBodies, getDeepSpaceObjects,
     land: enterGround, liftoff: exitGround };
+  // Dev-only deterministic bootfall: /?land=1 goes straight to the
+  // ground once the world exists — no intro race, no manual timing.
+  // Also paints a heartbeat line (frames, ground flag, last error) so
+  // remote screenshots carry ground truth.
+  if (new URLSearchParams(location.search).get('land') === '1') {
+    const hb = document.createElement('div');
+    hb.id = 'dev-heartbeat';
+    hb.style.cssText = 'position:fixed;bottom:4px;left:8px;z-index:9999;' +
+      'font:11px monospace;color:#7fff7f;pointer-events:none;';
+    document.body.appendChild(hb);
+    window.__hb = hb;
+    window.addEventListener('error', (e) => {
+      hb.textContent = 'ERR ' + (e.message || '?') + ' @ ' + (e.filename || '').split('/').pop() + ':' + e.lineno;
+      hb.style.color = '#ff6060';
+    });
+    window.addEventListener('unhandledrejection', (e) => {
+      hb.textContent = 'REJ ' + String((e.reason && e.reason.message) || e.reason).slice(0, 120);
+      hb.style.color = '#ff6060';
+    });
+    skipArrival();
+    setTimeout(() => enterGround(), 800);
+  }
 
   // Make sure any legacy loading/overlay screens never show
   const legacyIds = ['loading', 'overlay'];
@@ -313,6 +335,9 @@ const PHOTO_CONTEXT_VISUALS = new Set(['pillars', 'crab', 'carina', 'horsehead',
 function animate() {
     requestAnimationFrame(animate);
     if (++_frameCount === 2) revealWorld();
+    if (window.__hb && !window.__hb.textContent.startsWith('ERR') && !window.__hb.textContent.startsWith('REJ')) {
+      window.__hb.textContent = 'f' + _frameCount + ' g' + (isGroundActive() ? 1 : 0) + (window.__hbPerf || '');
+    }
     const now = performance.now();
     // dt is clamped for physics stability; dtWall is real elapsed time so
     // scripted travel keeps progressing while the tab is backgrounded
@@ -337,14 +362,21 @@ function animate() {
     // Space keeps its clock ticking above (updateBodies already ran),
     // but every space-frame system below is parked until lift-off.
     if (isGroundActive()) {
+      const _t0 = performance.now();
       updateGround(dt);
+      const _t1 = performance.now();
       updateCompanionMark(dtWall);
       updateCompanion(dtWall, null);
       updateMusic(getGroundCamPos(), allBodies);
       updateSoundscape({ warp: 0, ratio: 0, free: false });
       updateStarMap();
       applyCameraRelative(getGroundCamPos());
+      const _t2 = performance.now();
       composer.render();
+      const _t3 = performance.now();
+      if (window.__hb) {
+        window.__hbPerf = ' ug:' + ((_t1 - _t0) | 0) + ' mid:' + ((_t2 - _t1) | 0) + ' rnd:' + ((_t3 - _t2) | 0) + ' pre:' + ((_t0 - now) | 0);
+      }
       return;
     }
 

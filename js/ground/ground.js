@@ -135,8 +135,10 @@ export async function enterGround() {
 
   initTerrain(rootGroup);
   initSky(rootGroup, scene);
-  // Bootfall: at the landing point, facing the north wall
-  initController(camera, new THREE.Vector3(0, 0, 0), -0.12);
+  // Bootfall: at the shelf lip, facing south-southwest and pitched
+  // gently down — out over the 3.9 km drop to the canyon floor, sun
+  // raking from the west. The vista is the first thing the boots see.
+  initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
   initDustField(rootGroup, new THREE.Vector3(0, 2, 0));
 
   swapHud(true);
@@ -233,7 +235,7 @@ export function updateGround(dt) {
 
 // ── The surface HUD (the dormant #surface-hud, woken in amber) ──────
 
-const HUD_IDS_HIDE = ['crosshair', 'target-info', 'planet-bar', 'time-scale', 'nav-rail-tab'];
+const HUD_IDS_HIDE = ['crosshair', 'target-info', 'planet-bar', 'time-scale', 'nav-rail-tab', 'info-card', 'info-panel'];
 let hudPrev = null;
 
 function swapHud(onGround) {

@@ -24,7 +24,14 @@ const START_T = 0.645;             // late afternoon, sun low in the west
 let dome = null, mat = null;
 let sunLight = null, hemi = null, fill = null;
 let fog = null;
-let solT = START_T;
+// Dev: /?solt=0.70 starts the sol at a chosen phase (sunset ≈ 0.707)
+let solT = (() => {
+  try {
+    const p = new URLSearchParams(location.search).get('solt');
+    if (p !== null) { const v = parseFloat(p); if (v >= 0 && v < 1) return v; }
+  } catch (e) { /* non-browser */ }
+  return START_T;
+})();
 const sunDir = new THREE.Vector3(0, 1, 0);
 let sunElevDeg = 30;
 
@@ -96,6 +103,7 @@ export function initSky(parentGroup, scene) {
   dome = new THREE.Mesh(new THREE.SphereGeometry(DOME_R, 48, 24), mat);
   dome.renderOrder = -10;
   dome.frustumCulled = false;
+  dome.onBeforeRender = () => { if (typeof window !== 'undefined') window.__domeDrawn = (window.__domeDrawn || 0) + 1; };
   parentGroup.add(dome);
 
   sunLight = new THREE.DirectionalLight(0xffd9b0, 2.4);
@@ -108,7 +116,9 @@ export function initSky(parentGroup, scene) {
   fill = new THREE.AmbientLight(0x40281c, 0.30);
   parentGroup.add(fill);
 
-  fog = new THREE.FogExp2(COL.fogDay.getHex(), 2.3e-5);
+  // Thin: the far canyon rim must stay legible from the floor — at
+  // 25 km this gives ~70% transmittance, haze without milk.
+  fog = new THREE.FogExp2(COL.fogDay.getHex(), 1.45e-5);
   scene.fog = fog;
 
   updateSky(0, new THREE.Vector3());
@@ -133,6 +143,8 @@ export function debugSky() {
     pos: dome ? dome.position.toArray().map((v) => +v.toFixed(1)) : null,
     day: mat ? +mat.uniforms.uDay.value.toFixed(2) : null,
     fog: !!fog,
+    drawn: (typeof window !== 'undefined' && window.__domeDrawn) || 0,
+    sunY: +sunDir.y.toFixed(2),
   };
 }
 

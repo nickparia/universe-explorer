@@ -34,15 +34,31 @@ export function initTerrain(parentGroup) {
   cx0 = (site.minX + site.maxX) / 2;
   cz0 = (site.minZ + site.maxZ) / 2;
 
-  material = new THREE.MeshStandardMaterial({
+  // Lambert, not Standard: PBR grazing-angle Fresnel put a wet sheen
+  // on sunward crest lines at low sun — bright contour-following
+  // filaments on bone-dry dust. Diffuse-only is the truthful BRDF here.
+  material = new THREE.MeshLambertMaterial({
     map: site.albedo,
     vertexColors: true,
-    roughness: 1.0,
-    metalness: 0.0,
     // DoubleSide for the skirts' sake — a culled skirt is a see-through
     // seam from the wrong angle, and the overdraw cost here is small.
     side: THREE.DoubleSide,
   });
+  // Near-field grain: vertex density can never carry sub-meter texture,
+  // so the last 200 m to the eye gets a world-anchored detail noise
+  // (two octaves, fading with view distance so the far field keeps the
+  // photograph's color). Chunk positions are site-local and static —
+  // the grain never swims under camera-relative rendering.
+  const detailTex = makeDetailTexture();
+  material.onBeforeCompile = (shader) => {
+    shader.uniforms.uDetail = { value: detailTex };
+    shader.vertexShader = shader.vertexShader
+      .replace('#include <common>', '#include <common>\nvarying vec2 vSitePos;\nvarying float vViewZ;')
+      .replace('#include <project_vertex>', '#include <project_vertex>\nvSitePos = position.xz;\nvViewZ = -mvPosition.z;');
+    shader.fragmentShader = shader.fragmentShader
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}');
+  };
 
   root = new THREE.Group();
   parentGroup.add(root);
@@ -61,6 +77,48 @@ export function disposeTerrain() {
   queued.clear();
   if (material) { material.dispose(); material = null; }
   root = null;
+}
+
+// Tileable two-tone grain: value noise + rock speckle, generated once.
+function makeDetailTexture() {
+  const S = 256;
+  const c = document.createElement('canvas');
+  c.width = c.height = S;
+  const g = c.getContext('2d');
+  const img = g.createImageData(S, S);
+  const h = (x, y) => {
+    let n = ((x * 374761393 + y * 668265263) | 0);
+    n = Math.imul(n ^ (n >>> 13), 1274126177);
+    return ((n ^ (n >>> 16)) >>> 0) / 4294967296;
+  };
+  for (let y = 0; y < S; y++) {
+    for (let x = 0; x < S; x++) {
+      // torus-wrapped value noise at two scales for tileability
+      let v = 0;
+      for (const sc of [8, 32]) {
+        const fx = (x / S) * sc, fy = (y / S) * sc;
+        const ix = Math.floor(fx), iy = Math.floor(fy);
+        const tx = fx - ix, ty = fy - iy;
+        const sx = tx * tx * (3 - 2 * tx), sy = ty * ty * (3 - 2 * ty);
+        const w = (a, b) => ((a % sc) + sc) % sc * 1000 + ((b % sc) + sc) % sc;
+        const n00 = h(w(ix, iy), sc), n10 = h(w(ix + 1, iy), sc);
+        const n01 = h(w(ix, iy + 1), sc), n11 = h(w(ix + 1, iy + 1), sc);
+        v += (n00 + (n10 - n00) * sx) * (1 - sy) + (n01 + (n11 - n01) * sx) * sy;
+      }
+      v *= 0.5;
+      // sparse dark pebbles
+      if (h(x * 7 + 3, y * 13 + 1) > 0.985) v *= 0.55;
+      const b = Math.round(90 + v * 165);
+      const i = (y * S + x) * 4;
+      img.data[i] = img.data[i + 1] = img.data[i + 2] = b;
+      img.data[i + 3] = 255;
+    }
+  }
+  g.putImageData(img, 0, 0);
+  const tex = new THREE.CanvasTexture(c);
+  tex.wrapS = tex.wrapT = THREE.RepeatWrapping;
+  tex.colorSpace = THREE.NoColorSpace;
+  return tex;
 }
 
 function nodeKey(d, i, j) { return d + '_' + i + '_' + j; }
@@ -203,7 +261,9 @@ function ensureBuilt(key, { d, i, j }, sync) {
       const z = cz - half + jz * step;
       const y = heightAt(x, z, minLambda);
       pos[vi * 3] = x; pos[vi * 3 + 1] = y; pos[vi * 3 + 2] = z;
-      normalAt(x, z, Math.max(step, 2), minLambda, n);
+      // Half-step epsilon: full-step normals average away the wall's
+      // fluted spurs at distance — the relief that sells the scale.
+      normalAt(x, z, Math.max(step * 0.5, 1.5), minLambda, n);
       nrm[vi * 3] = n.x; nrm[vi * 3 + 1] = n.y; nrm[vi * 3 + 2] = n.z;
       // Site-global UV into the Viking albedo
       uv[vi * 2] = (x - site.minX) / spanX;
@@ -214,20 +274,33 @@ function ensureBuilt(key, { d, i, j }, sync) {
     }
   }
 
-  // Skirts: copy each edge vertex, dropped down — hides LOD seams
+  // Skirts as outward-sloped APRONS: a vertical curtain can't seal the
+  // wedge cracks that open ABOVE a fine edge against a coarse
+  // neighbor's straight edge — backlit by a low sun they sparkled as
+  // bright dash strings along every LOD ring. Leaning the flap outward
+  // by half a cell closes the seam from both sides.
+  const apron = step * 0.55;
   const edges = [];
-  for (let ix = 0; ix < side; ix++) edges.push(ix);                    // north row
-  for (let ix = 0; ix < side; ix++) edges.push((side - 1) * side + ix); // south row
-  for (let jz = 0; jz < side; jz++) edges.push(jz * side);              // west col
-  for (let jz = 0; jz < side; jz++) edges.push(jz * side + side - 1);   // east col
+  const edgeDir = [];   // outward xz direction per skirt vertex
+  for (let ix = 0; ix < side; ix++) { edges.push(ix); edgeDir.push([0, -1]); }                     // north row
+  for (let ix = 0; ix < side; ix++) { edges.push((side - 1) * side + ix); edgeDir.push([0, 1]); }  // south row
+  for (let jz = 0; jz < side; jz++) { edges.push(jz * side); edgeDir.push([-1, 0]); }              // west col
+  for (let jz = 0; jz < side; jz++) { edges.push(jz * side + side - 1); edgeDir.push([1, 0]); }    // east col
   for (let k = 0; k < skirtCount; k++) {
     const src = edges[k], dst = gridCount + k;
-    pos[dst * 3] = pos[src * 3];
+    const ox = pos[src * 3] + edgeDir[k][0] * apron;
+    const oz = pos[src * 3 + 2] + edgeDir[k][1] * apron;
+    pos[dst * 3] = ox;
     pos[dst * 3 + 1] = pos[src * 3 + 1] - skirtDrop;
-    pos[dst * 3 + 2] = pos[src * 3 + 2];
-    nrm[dst * 3] = nrm[src * 3]; nrm[dst * 3 + 1] = nrm[src * 3 + 1]; nrm[dst * 3 + 2] = nrm[src * 3 + 2];
-    uv[dst * 2] = uv[src * 2]; uv[dst * 2 + 1] = uv[src * 2 + 1];
-    col[dst * 3] = col[src * 3]; col[dst * 3 + 1] = col[src * 3 + 1]; col[dst * 3 + 2] = col[src * 3 + 2];
+    pos[dst * 3 + 2] = oz;
+    // Shade the flap like the ground BEYOND the edge — a flap lit as
+    // "up-facing" on a backlit slope reads as a bright dash string.
+    normalAt(ox, oz, Math.max(step * 0.5, 1.5), minLambda, n);
+    nrm[dst * 3] = n.x; nrm[dst * 3 + 1] = n.y; nrm[dst * 3 + 2] = n.z;
+    uv[dst * 2] = (ox - site.minX) / spanX;
+    uv[dst * 2 + 1] = 1 - (oz - site.minZ) / spanZ;
+    const t = hashTint(ox, oz, macroSlopeAt(ox, oz));
+    col[dst * 3] = t[0]; col[dst * 3 + 1] = t[1]; col[dst * 3 + 2] = t[2];
   }
 
   const idx = [];

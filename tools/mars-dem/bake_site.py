@@ -69,17 +69,45 @@ def main():
     m_per_px_ns = deg_per_px * M_PER_DEG
     m_per_px_ew = m_per_px_ns * np.cos(np.radians(LAT_C))
 
-    # Landing origin: flattest floor patch in the band between the central
-    # inselberg and the north wall foot (searched in trimmed-grid px).
+    # Landing origin: a flat spur SHELF partway up the north wall —
+    # bootfall faces south over a 3.9 km drop to the canyon floor with
+    # the fluted upper wall climbing 2.4 km behind. From the floor a
+    # 100 km-wide canyon's walls never tower (the first bench hides
+    # them); from the shelf, the whole canyon is the vista. Chosen
+    # 2026-07-31 with a sightline search (no early southward block).
     gy, gx = np.gradient(dem, m_per_px_ns, m_per_px_ew)
     slope = np.hypot(gx, gy)
-    y0, y1, x0, x1 = 130, 195, 170, 300
+    y0, y1, x0, x1 = 90, 135, 250, 380
     region = slope[y0:y1, x0:x1].copy()
-    # prefer genuinely low ground (canyon floor)
-    region[dem[y0:y1, x0:x1] > -4000] = 9e9
-    ly, lx = np.unravel_index(np.argmin(region), region.shape)
-    ly += y0
-    lx += x0
+    # shelf band, not floor and not rim
+    e = dem[y0:y1, x0:x1]
+    region[(e < -2600) | (e > -900)] = 9e9
+
+    # The vista must be REAL from eye height: reject any shelf whose
+    # southward sightline is blocked early (a bench that hides the
+    # floor turns the money shot into a plain).
+    def south_view_open(px, py):
+        e0 = dem[py, px] + 2.0
+        min_ang = 90.0
+        for y in range(py + 2, min(rows - 1, py + 100)):
+            d = (y - py) * m_per_px_ns
+            ang = np.degrees(np.arctan((dem[y, px] - e0) / d))
+            if ang < min_ang:
+                min_ang = ang
+            elif ang > min_ang + 0.01 and dem[y, px] > e0 - 500:
+                return False
+        return min_ang < -10.0
+
+    order = np.argsort(region, axis=None)
+    ly = lx = None
+    for flat_idx in order[:200]:
+        yy, xx = np.unravel_index(flat_idx, region.shape)
+        if region[yy, xx] > 1e8:
+            break
+        if south_view_open(xx + x0, yy + y0):
+            ly, lx = yy + y0, xx + x0
+            break
+    assert ly is not None, "no open-vista shelf found"
     print(f"landing px ({lx},{ly}) elev {dem[ly,lx]:.0f} m slope {slope[ly,lx]*100:.1f}%",
           file=sys.stderr)
 
@@ -88,6 +116,26 @@ def main():
         cwin, _ = window_for(ds, LON_C, LAT_C, HALF_KM)
         rgb = ds.read([1, 2, 3], window=cwin)
     rgb = np.moveaxis(rgb, 0, -1)
+
+    # Hand-signing pass: the Viking mosaic carries baked-in bluish
+    # frost/cloud on the upper walls — standing on a white patch reads
+    # as snow, not Mars. Clamp every pixel's hue into the red-ochre
+    # band and floor the saturation, preserving luminance/shading.
+    f = rgb.astype(np.float32) / 255.0
+    lum = f @ np.array([0.299, 0.587, 0.114], np.float32)
+    mx, mn = f.max(-1), f.min(-1)
+    sat = np.where(mx > 0, (mx - mn) / np.maximum(mx, 1e-6), 0)
+    # target: the scene's median chromatic direction (a real Mars red)
+    warm = np.array([1.0, 0.62, 0.38], np.float32)
+    warm /= (warm @ np.array([0.299, 0.587, 0.114], np.float32))
+    k = np.clip((0.40 - sat) / 0.40, 0, 1) * 0.95  # only desaturated pixels move
+    blue_excess = np.clip(f[..., 2] - f[..., 0] * 0.75, 0, 1) * 3.0
+    k = np.maximum(k, np.clip(blue_excess, 0, 1))
+    # bright pale patches (frost/cloud) get pulled hardest
+    k = np.maximum(k, np.clip((lum - 0.62) * 3.0, 0, 1) * np.clip((0.5 - sat) / 0.5, 0, 1))
+    tinted = lum[..., None] * warm[None, None, :]
+    f = f * (1 - k[..., None]) + tinted * k[..., None]
+    rgb = (np.clip(f, 0, 1) * 255).astype(np.uint8)
     img = Image.fromarray(rgb).resize((cols, rows), Image.LANCZOS)
     # match the DEM trim proportionally: the color window covers the
     # untrimmed extent, so crop the same western fraction before resize

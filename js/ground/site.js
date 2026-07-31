@@ -130,17 +130,27 @@ export function heightAt(x, z, minLambda = 0) {
   let h = demAt(x, z);
   const slope = macroSlopeAt(x, z);
   const sK = Math.min(1, slope * 2.2);        // 0 on the floor, 1 on walls
+  // Octaves fade smoothly toward the LOD cutoff instead of hard-
+  // stopping: a hard break gave adjacent LOD rings meter-scale height
+  // steps that read as dark dash artifacts along every seam.
   for (const [lam, amp, ridged] of FLOOR_OCTAVES) {
-    if (lam < minLambda) break;
+    const k = lodFade(lam, minLambda);
+    if (k <= 0) break;
     const n = vnoise(x / lam, z / lam);
-    h += (n - 0.5) * 2 * amp * (1 - sK * 0.55);
+    h += (n - 0.5) * 2 * amp * k * (1 - sK * 0.55);
   }
   for (const [lam, amp, ridged] of SLOPE_OCTAVES) {
-    if (lam < minLambda) break;
-    const n = ridged ? rnoise(x / lam, z / lam) : vnoise(x / lam, z / lam) ;
-    h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * sK;
+    const k = lodFade(lam, minLambda);
+    if (k <= 0) break;
+    const n = ridged ? rnoise(x / lam, z / lam) : vnoise(x / lam, z / lam);
+    h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * k * sK;
   }
   return h;
+}
+
+function lodFade(lam, minLambda) {
+  if (minLambda <= 0) return 1;
+  return Math.max(0, Math.min(1, lam / minLambda - 1));
 }
 
 /** Surface normal by central difference, consistent across chunk seams. */

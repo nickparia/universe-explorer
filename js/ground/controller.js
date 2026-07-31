@@ -47,11 +47,11 @@ function addL(target, ev, fn, opts) {
   listeners.push([target, ev, fn]);
 }
 
-export function initController(camera, spawn, faceYaw) {
+export function initController(camera, spawn, faceYaw, facePitch = 0) {
   cam = camera;
   pos.copy(spawn);
   pos.y = heightAt(spawn.x, spawn.z) + EYE_WALK;
-  yaw = faceYaw; pitch = 0;
+  yaw = faceYaw; pitch = facePitch;
   vel.set(0, 0, 0);
   mode = 'walk';
   keys = {}; mouseDX = 0; mouseDY = 0; _pendYaw = 0; _pendPitch = 0;
