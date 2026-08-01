@@ -199,6 +199,11 @@ function startLocationTone(name) {
   } else if (/(PILLARS|CRAB|CARINA|HORSEHEAD|RING NEBULA|ETA CARINAE)/.test(n)) {
     spec = { partials: [[196, 0.0034], [294, 0.0026], [392, 0.0019]],
              noise: [{ type: 'bandpass', f: 1250, q: 0.7, g: 0.0028, lfoF: 0.05, lfoD: 280 }] };
+  } else if (n.includes('COPRATES')) {
+    // The ground's own voice: a deep cold sub under thin high air —
+    // the field recording of standing in a canyon on a dead world.
+    spec = { subs: [{ f: 39, g: 0.013, lfoF: 0.028, lfoD: 0.65 }],
+             noise: [{ type: 'bandpass', f: 540, q: 2.6, g: 0.0032, lfoF: 0.017, lfoD: 130 }] };
   }
   if (!spec) return; // planets & the void: the music (or silence) carries
 
@@ -474,7 +479,8 @@ export function initSoundscape() {
     startLocationTone(name);
   });
   on('orbit:exit', () => { if (started) stopLocationTone(); });
-  on('ground:exit', () => { if (started) { stopGroundWind(); stopRoverBed(); } });
+  on('ground:enter', ({ name }) => { if (started) startLocationTone(name); });
+  on('ground:exit', () => { if (started) { stopGroundWind(); stopRoverBed(); stopLocationTone(); } });
 }
 
 /** Call from a user gesture — browsers require one to unlock audio. */

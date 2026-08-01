@@ -17,6 +17,7 @@ let textTimer = 0;
 let strip = null;
 let chips = {};      // key → {el, cap}
 let lastGait = null;
+let cockpit = null;  // the rover's cab framing
 
 const HELMET_BG =
   'radial-gradient(ellipse 75% 66% at 50% 46%, transparent 58%, rgba(12,7,4,0.34) 100%)';
@@ -100,6 +101,23 @@ export function initGroundHud(siteName, actions = {}) {
   }
   document.body.appendChild(panel);
 
+  // The rover cab: A-pillars and a console shadow — you sit IN it
+  cockpit = document.createElement('div');
+  cockpit.style.cssText =
+    'position:fixed;inset:0;pointer-events:none;z-index:45;opacity:0;transition:opacity 0.6s ease;';
+  cockpit.innerHTML =
+    '<div style="position:absolute;left:0;top:0;bottom:0;width:11vw;' +
+    'background:linear-gradient(105deg, rgba(8,5,3,0.92) 0%, rgba(8,5,3,0.55) 45%, transparent 100%);"></div>' +
+    '<div style="position:absolute;right:0;top:0;bottom:0;width:11vw;' +
+    'background:linear-gradient(-105deg, rgba(8,5,3,0.92) 0%, rgba(8,5,3,0.55) 45%, transparent 100%);"></div>' +
+    '<div style="position:absolute;left:0;right:0;bottom:0;height:13vh;' +
+    'background:linear-gradient(to top, rgba(8,5,3,0.9) 0%, rgba(8,5,3,0.45) 55%, transparent 100%);"></div>' +
+    '<div style="position:absolute;left:14vw;right:14vw;bottom:10.5vh;height:1px;' +
+    'background:linear-gradient(90deg, transparent, rgba(255,170,80,0.35), transparent);"></div>' +
+    '<div style="position:absolute;left:0;right:0;top:0;height:5vh;' +
+    'background:linear-gradient(to bottom, rgba(8,5,3,0.75), transparent);"></div>';
+  document.body.appendChild(cockpit);
+
   // The switch strip — the suit labels its own controls, like every
   // console aboard. Clickable switches, lit when engaged.
   strip = document.createElement('div');
@@ -116,8 +134,8 @@ export function initGroundHud(siteName, actions = {}) {
 }
 
 export function disposeGroundHud() {
-  for (const el of [vignette, compass, panel, strip]) if (el && el.parentNode) el.parentNode.removeChild(el);
-  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {};
+  for (const el of [vignette, compass, panel, strip, cockpit]) if (el && el.parentNode) el.parentNode.removeChild(el);
+  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; cockpit = null;
 }
 
 const CARDINALS = [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']];
@@ -135,6 +153,7 @@ export function updateGroundHud(dt, s) {
     const roving = s.mode === 'rove';
     const flying = s.mode === 'descent' || s.mode === 'ascent';
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
+    if (cockpit) cockpit.style.opacity = roving ? '1' : '0';
     if (strip) strip.style.opacity = flying ? '0' : '1';   // no switches mid-air
     if (chips.gait) {
       chips.gait.cap.textContent = roving ? 'DISMOUNT' : 'ROVER';

@@ -16,7 +16,7 @@ import { setFlightSuppressed, restorePose, getCamPos, getCamQuat, getOrbitBodyNa
 import { getBodies } from '../bodies.js';
 import { getPlanetConfig } from '../planetconfig.js';
 import { emit } from '../bus.js';
-import { setZoneOverride } from '../music.js';
+import { setZoneOverride, setMusicDuck } from '../music.js';
 import { setGroundWind, setRoverBed } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
@@ -27,6 +27,7 @@ import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
+import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
@@ -158,9 +159,13 @@ export async function enterGround() {
   updateRocks(new THREE.Vector3(0, 0, 0));
   initDevils(rootGroup);
   initGroundHud(SITE_NAME, { onGait: toggleGait, onLiftoff: () => exitGround() });
+  initGroundMap();
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
+  // On the ground the place is the music: the library ducks to a
+  // whisper (the Bootes law), and the canyon's own tone carries.
+  setMusicDuck(0.94);
   // The boots must own the keys: if the terminal input held focus
   // through the descent, WASD would type into the chat instead of walk.
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
@@ -206,6 +211,7 @@ export function exitGround() {
     disposeRocks();
     disposeDevils();
     disposeGroundHud();
+    disposeGroundMap();
     disposeSky(scene);
     disposeTerrain();
     if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -223,6 +229,7 @@ export function exitGround() {
 
     swapHud(false);
     setZoneOverride(null);
+    setMusicDuck(0);
     setGroundWind(0);
     emit('ground:exit', { name: savedPose.orbitName || 'MARS' });
     savedPose = null;
@@ -266,6 +273,7 @@ export function updateGround(dt) {
       run: false,
       gust: lastGust,
     });
+    updateGroundMap(dt, local, heading);
     return null;
   }
   if (state !== 'active') return null;
@@ -308,6 +316,7 @@ export function updateGround(dt) {
       run: !!ctl.run,
       gust: lastGust,
     });
+    updateGroundMap(dt, local, heading);
   }
 
   // Dev probe — written to the DOM (dataset survives script-world

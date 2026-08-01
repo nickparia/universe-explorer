@@ -46,6 +46,7 @@ let impact = 0;            // touchdown speed captured by the physics
 let accelPitch = 0;        // rover: nose lifts on throttle, dips on brake
 let slopeRoll = 0;         // cross-slope lean, walk and rover
 let prevFwdSpeed = 0;
+let joltAcc = 0, joltNext = 4;
 let fovBase = 0;
 let visX = 0, visZ = 0;    // lateral bob offset (visual only, not physics)
 
@@ -322,7 +323,7 @@ export function updateController(dt) {
     const fwdSpeed = vel.x * _fwd.x + vel.z * _fwd.z;
     const a = (fwdSpeed - prevFwdSpeed) / Math.max(dt, 1e-3);
     prevFwdSpeed = fwdSpeed;
-    const pitchT = THREE.MathUtils.clamp(-a * 0.006, -0.05, 0.035);
+    const pitchT = THREE.MathUtils.clamp(-a * 0.0085, -0.065, 0.045);
     accelPitch += (pitchT - accelPitch) * ke(0.4);
     // Lean into the steer, harder with speed — motorcycle physics
     lean = steer * 0.06 * (0.3 + 0.7 * spK);
