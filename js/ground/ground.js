@@ -354,6 +354,7 @@ export function updateGround(dt) {
       speed: getGroundSpeed(),
       mode: getMode(),
       run: !!ctl.run,
+      rollDeg: (ctl.roll || 0) * 180 / Math.PI,
       gust: lastGust,
       pitchDeg: Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI,
       marks: (() => {

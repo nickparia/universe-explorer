@@ -363,6 +363,7 @@ export function updateController(dt) {
     grounded,
     run,
     speed: sp,
+    roll: roverLean + walkRoll + slopeRoll,
     airborne: !grounded,
     camY: lastEyeY,
   };
