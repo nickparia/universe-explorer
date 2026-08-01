@@ -29,6 +29,7 @@ import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './
 import { openSignonTerminal } from './signon.js';
 
 let wrap = null;
+let chatHeader = null;
 let log = null;
 let input = null;
 let currentLocation = null;
@@ -75,6 +76,54 @@ function bondSignals() {
   }
 }
 
+/**
+ * Where Sol's line lives right now. The information belongs to the
+ * surface that carries it:
+ *  'void'  — aboard: a CRT intercom panel over the glass
+ *  'visor' — afoot: bare radio text on the helmet glass
+ *  'cab'   — roving: a swing-arm comms screen mounted by the console
+ */
+export function setChatSurface(mode) {
+  if (!wrap) return;
+  if (mode === 'cab') {
+    wrap.style.right = '26px';
+    wrap.style.bottom = '332px';
+    wrap.style.width = '300px';
+    wrap.style.padding = '0 10px 8px';
+    wrap.style.background = 'linear-gradient(rgba(8,6,4,0.88), rgba(10,7,5,0.92))';
+    wrap.style.borderRadius = '9px';
+    wrap.style.boxShadow =
+      '0 0 0 5px rgba(26,22,18,0.95), 0 0 0 7px rgba(210,195,165,0.4), ' +
+      'inset 0 0 26px rgba(0,0,0,0.55), 0 8px 22px rgba(0,0,0,0.6)';
+    chatHeader.style.display = 'block';
+    chatHeader.textContent = 'SOL // CAB COMMS · CH 2';
+  } else if (mode === 'visor') {
+    wrap.style.right = '24px';
+    wrap.style.bottom = '64px';
+    wrap.style.width = '320px';
+    wrap.style.padding = '0';
+    wrap.style.background = 'none';
+    wrap.style.borderRadius = '0';
+    wrap.style.boxShadow = 'none';
+    chatHeader.style.display = 'block';
+    chatHeader.style.borderBottom = 'none';
+    chatHeader.textContent = 'COM · SOL';
+  } else {
+    wrap.style.right = '24px';
+    wrap.style.bottom = '64px';
+    wrap.style.width = '320px';
+    wrap.style.padding = '0 10px 8px';
+    wrap.style.background = 'linear-gradient(rgba(6,7,5,0.62), rgba(7,8,6,0.72))';
+    wrap.style.borderRadius = '10px';
+    wrap.style.boxShadow =
+      '0 0 0 4px rgba(22,20,16,0.9), 0 0 0 6px rgba(210,195,165,0.32), ' +
+      'inset 0 0 30px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.55)';
+    chatHeader.style.display = 'block';
+    chatHeader.style.borderBottom = '1px solid rgba(255,186,100,0.18)';
+    chatHeader.textContent = 'SOL // SHIPBOARD INTERCOM';
+  }
+}
+
 export function initShipChat() {
   // Always present — the mark is the companion's body, not an orbit
   // widget. It sleeps (dormant) in transit and wakes when you arrive.
@@ -82,7 +131,19 @@ export function initShipChat() {
   wrap.id = 'ship-chat';
   wrap.style.cssText =
     'position:fixed;right:24px;bottom:64px;width:320px;z-index:60;' +
+    'transition:background 0.5s, box-shadow 0.5s, border-radius 0.5s;' +
     "font-family:'Segoe UI','Helvetica Neue',Arial,sans-serif;font-weight:300;";
+
+  // The line's HOUSING: Sol is reached through surfaces, never floats.
+  // A header names the circuit; the surface mode dresses the metal.
+  chatHeader = document.createElement('div');
+  chatHeader.style.cssText =
+    "font-family:" + MONO + ";font-size:9px;letter-spacing:4px;" +
+    'color:rgba(255,186,100,0.5);padding:7px 10px 5px;display:none;' +
+    'border-bottom:1px solid rgba(255,186,100,0.18);margin-bottom:6px;' +
+    'text-shadow:0 1px 3px rgba(0,0,0,0.9);';
+  chatHeader.textContent = 'SOL // SHIPBOARD INTERCOM';
+  wrap.appendChild(chatHeader);
   // The scene's picker listens on window — swallow pointer events here so
   // clicking the mark (or the words) never also selects whatever object
   // happens to drift beneath the chat.
@@ -263,6 +324,7 @@ export function initShipChat() {
   wrap.appendChild(mark);
   wrap.appendChild(row);
   document.body.appendChild(wrap);
+  setChatSurface('void');
 
   // The glass clears itself: spoken lines hold while they're read, then
   // dissolve. Attention (hovering the log, or being at the line) keeps

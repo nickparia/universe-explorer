@@ -8,6 +8,7 @@
 
 import * as THREE from 'three';
 import { setMapMount } from './map.js';
+import { setChatSurface } from '../shipchat.js';
 
 const MONO = "'SF Mono','Cascadia Mono','JetBrains Mono',Menlo,Consolas,'Courier New',monospace";
 const AMBER = 'rgba(255,186,100,';
@@ -326,6 +327,7 @@ export function updateGroundHud(dt, s) {
     const flying = s.mode === 'descent' || s.mode === 'ascent';
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
     setMapMount(roving);
+    setChatSurface(roving ? 'cab' : 'visor');
     if (cockpit) {
       const helm = cockpit.querySelector('#hud-helmet');
       const cab = cockpit.querySelector('#hud-cab');

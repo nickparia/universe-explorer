@@ -17,6 +17,7 @@ import { getBodies } from '../bodies.js';
 import { getPlanetConfig } from '../planetconfig.js';
 import { emit } from '../bus.js';
 import { setZoneOverride, setMusicDuck } from '../music.js';
+import { setChatSurface } from '../shipchat.js';
 import { setGroundWind, setRoverBed } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
@@ -202,6 +203,7 @@ export async function enterGround() {
   if (document.activeElement && document.activeElement.blur) document.activeElement.blur();
   const cv = document.getElementById('c');
   if (cv) cv.focus();
+  setChatSurface('visor');
   emit('ground:enter', { name: SITE_NAME });
 
   // Out of blackout twelve kilometers up: the descent corridor flies
@@ -261,6 +263,7 @@ export function exitGround() {
     restorePose(savedPose.pos, savedPose.quat, orbitRef);
 
     swapHud(false);
+    setChatSurface('void');
     setZoneOverride(null);
     setMusicDuck(0);
     setGroundWind(0);
