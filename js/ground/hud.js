@@ -56,6 +56,58 @@ function makeChip(keyLabel, caption, onClick) {
   return { el, key, cap };
 }
 
+// The visor's instruments become cab hardware when the gait changes:
+// the compass ribbon gets a heading-tape housing bolted to the header,
+// the switch strip becomes a row of backlit console buttons.
+function mountCompass(roving) {
+  if (!compass) return;
+  if (roving) {
+    compass.style.top = '46px';
+    compass.style.background = 'linear-gradient(rgba(8,6,4,0.94), rgba(11,8,6,0.96))';
+    compass.style.borderRadius = '7px';
+    compass.style.boxShadow =
+      '0 0 0 4px rgba(26,22,18,0.95), 0 0 0 6px rgba(210,195,165,0.38), ' +
+      'inset 0 0 14px rgba(0,0,0,0.5), 0 5px 14px rgba(0,0,0,0.55)';
+  } else {
+    compass.style.top = '14px';
+    compass.style.background = 'none';
+    compass.style.borderRadius = '0';
+    compass.style.boxShadow = 'none';
+  }
+}
+
+function mountStrip(roving) {
+  if (!strip) return;
+  if (roving) {
+    strip.style.bottom = '18px';
+    strip.style.padding = '9px 20px';
+    strip.style.background = 'linear-gradient(rgba(16,13,10,0.95), rgba(10,8,6,0.97))';
+    strip.style.borderRadius = '8px';
+    strip.style.boxShadow =
+      '0 0 0 3px rgba(26,22,18,0.95), 0 0 0 5px rgba(210,195,165,0.32), ' +
+      'inset 0 1px 0 rgba(255,255,255,0.05), 0 4px 12px rgba(0,0,0,0.5)';
+  } else {
+    strip.style.bottom = '22px';
+    strip.style.padding = '0';
+    strip.style.background = 'none';
+    strip.style.borderRadius = '0';
+    strip.style.boxShadow = 'none';
+  }
+  for (const k in chips) {
+    const key = chips[k].key;
+    if (roving) {
+      key.style.background = key.style.background || 'transparent';
+      key.style.backgroundColor = '#1d1712';
+      key.style.boxShadow = '0 2px 0 rgba(0,0,0,0.65), inset 0 1px 0 rgba(255,255,255,0.07)';
+      key.style.borderRadius = '4px';
+    } else {
+      key.style.backgroundColor = '';
+      key.style.boxShadow = '';
+      key.style.borderRadius = '3px';
+    }
+  }
+}
+
 function setChipLit(chip, lit) {
   chip.key.style.background = lit ? AMBER + '0.18)' : 'transparent';
   chip.key.style.color = lit ? AMBER + '1)' : AMBER + '0.75)';
@@ -328,6 +380,8 @@ export function updateGroundHud(dt, s) {
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
     setMapMount(roving);
     setChatSurface(roving ? 'cab' : 'visor');
+    mountCompass(roving);
+    mountStrip(roving);
     if (cockpit) {
       const helm = cockpit.querySelector('#hud-helmet');
       const cab = cockpit.querySelector('#hud-cab');
