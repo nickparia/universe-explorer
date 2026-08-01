@@ -133,7 +133,9 @@ export function updateGroundHud(dt, s) {
   if (s.mode !== lastGait) {
     lastGait = s.mode;
     const roving = s.mode === 'rove';
+    const flying = s.mode === 'descent' || s.mode === 'ascent';
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
+    if (strip) strip.style.opacity = flying ? '0' : '1';   // no switches mid-air
     if (chips.gait) {
       chips.gait.cap.textContent = roving ? 'DISMOUNT' : 'ROVER';
       setChipLit(chips.gait, roving);
@@ -187,9 +189,12 @@ export function updateGroundHud(dt, s) {
     textTimer = 0.25;
     lines.elev.textContent = `ELEV ${(s.elevMsl / 1000).toFixed(2)} KM`;
     lines.env.textContent = `${s.tempC} °C · SUN ${s.sunElev > 0 ? '+' : ''}${s.sunElev.toFixed(0)}° · 6 MBAR`;
-    lines.motion.textContent = s.speed > 0.2
-      ? `${s.mode === 'rove' ? 'ROVER' : 'ON FOOT'} · ${s.speed.toFixed(1)} M/S`
-      : (s.mode === 'rove' ? 'ROVER · HALTED' : 'ON FOOT');
+    lines.motion.textContent =
+      s.mode === 'descent' ? `ENTRY · ${s.speed.toFixed(0)} M/S`
+      : s.mode === 'ascent' ? `ASCENT · ${s.speed.toFixed(0)} M/S`
+      : s.speed > 0.2
+        ? `${s.mode === 'rove' ? 'ROVER' : 'ON FOOT'} · ${s.speed.toFixed(1)} M/S`
+        : (s.mode === 'rove' ? 'ROVER · HALTED' : 'ON FOOT');
     const bars = Math.round(THREE.MathUtils.clamp(s.gust, 0, 1) * 5);
     lines.wind.textContent = 'WIND ' + '▁▂▃▄▅▆'.slice(0, bars + 1).split('').join('') + (s.gust > 0.7 ? ' GUST' : '');
   }

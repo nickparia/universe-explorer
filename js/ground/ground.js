@@ -27,11 +27,14 @@ import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
+import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent } from './descent.js';
+import { stepCrunch } from '../soundscape.js';
+import { heightAt } from './site.js';
 
 const POCKET = new THREE.Vector3(0, 6e8, 0);  // far above the galactic plane
 const SITE_NAME = 'COPRATES CHASMA';
 
-let state = 'idle';            // idle | entering | active | exiting
+let state = 'idle';            // idle | entering | descending | active | ascending
 let rootGroup = null;
 let hiddenChildren = null;     // [obj, wasVisible][]
 let savedPose = null;          // { pos, quat, orbitName }
@@ -40,9 +43,13 @@ let hintEl = null;
 let lastGust = 0;
 const _worldCam = new THREE.Vector3();
 
-export function isGroundActive() { return state === 'active' || state === 'exiting'; }
+export function isGroundActive() { return state === 'active' || state === 'descending' || state === 'ascending'; }
 
 export function getGroundCamPos() {
+  if (state === 'descending' || state === 'ascending') {
+    const d = getDescentPos();
+    return _worldCam.set(POCKET.x + d.x, POCKET.y + d.y, POCKET.z + d.z);
+  }
   const p = getLocalPos();
   const v = getVisOffset();
   return _worldCam.set(POCKET.x + p.x + v.x, POCKET.y + getEyeY(), POCKET.z + p.z + v.z);
@@ -118,7 +125,7 @@ export async function enterGround() {
     state = 'idle';
     return;
   }
-  await wait(1700);   // let the black settle — a held breath
+  await wait(900);    // a breath of black — the blackout is the cut
 
   const scene = getScene();
   const camera = getCamera();
@@ -145,10 +152,6 @@ export async function enterGround() {
 
   initTerrain(rootGroup);
   initSky(rootGroup, scene);
-  // Bootfall: at the shelf lip, facing south-southwest and pitched
-  // gently down — out over the 3.9 km drop to the canyon floor, sun
-  // raking from the west. The vista is the first thing the boots see.
-  initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
   initDustField(rootGroup, new THREE.Vector3(0, 2, 0));
   initLamp(rootGroup);
   initRocks(rootGroup);
@@ -165,61 +168,103 @@ export async function enterGround() {
   if (cv) cv.focus();
   emit('ground:enter', { name: SITE_NAME });
 
-  state = 'active';
-  await wait(400);
-  overlay.style.transition = 'opacity 3.2s ease';
+  // Out of blackout twelve kilometers up: the descent corridor flies
+  // the whole canyon down to the shelf, then hands the boots the keys.
+  // Bootfall faces south-southeast over the 3.9 km drop, sun raking.
+  const endLocal = new THREE.Vector3(0, heightAt(0, 1250), 1250);
+  state = 'descending';
+  startDescent(camera, endLocal, Math.PI + 0.25, -0.15, () => {
+    initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
+    stepCrunch(1.25, true);   // the shelf takes the weight
+    const cv2 = document.getElementById('c');
+    if (cv2) cv2.focus();
+    state = 'active';
+  });
+  overlay.style.transition = 'opacity 0.7s ease';
   overlay.style.opacity = '0';
 }
 
 // ── Exit ─────────────────────────────────────────────────────────────
 
-export async function exitGround() {
+export function exitGround() {
   if (state !== 'active') return;
-  state = 'exiting';
+  state = 'ascending';
 
-  overlay.style.transition = 'opacity 1.4s ease';
-  overlay.style.opacity = '1';
-  await wait(1600);
-
-  const scene = getScene();
-
+  // The climb-out: canyon dropping away, sky thinning, plasma washing
+  // in — the teardown happens behind the sheath.
+  const from = getLocalPos().clone();
+  from.y = getEyeY();
+  const camera = getCamera();
   disposeController();
-  disposeDustField();
-  disposeLamp();
-  disposeRocks();
-  disposeDevils();
-  disposeGroundHud();
-  disposeSky(scene);
-  disposeTerrain();
-  if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
+  startAscent(camera, from, () => {
+    const scene = getScene();
+    disposeDustField();
+    disposeLamp();
+    disposeRocks();
+    disposeDevils();
+    disposeGroundHud();
+    disposeSky(scene);
+    disposeTerrain();
+    if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
 
-  for (const [child, wasVisible] of (hiddenChildren || [])) {
-    child.visible = wasVisible;
-  }
-  hiddenChildren = null;
+    for (const [child, wasVisible] of (hiddenChildren || [])) {
+      child.visible = wasVisible;
+    }
+    hiddenChildren = null;
 
-  setFlightSuppressed(false);
-  const orbitRef = savedPose.orbitName
-    ? getBodies().find((b) => b.name === savedPose.orbitName) || null
-    : null;
-  restorePose(savedPose.pos, savedPose.quat, orbitRef);
+    setFlightSuppressed(false);
+    const orbitRef = savedPose.orbitName
+      ? getBodies().find((b) => b.name === savedPose.orbitName) || null
+      : null;
+    restorePose(savedPose.pos, savedPose.quat, orbitRef);
 
-  swapHud(false);
-  setZoneOverride(null);
-  setGroundWind(0);
-  emit('ground:exit', { name: savedPose.orbitName || 'MARS' });
-  savedPose = null;
+    swapHud(false);
+    setZoneOverride(null);
+    setGroundWind(0);
+    emit('ground:exit', { name: savedPose.orbitName || 'MARS' });
+    savedPose = null;
+    state = 'idle';
 
-  state = 'idle';
-  await wait(300);
-  overlay.style.transition = 'opacity 2.6s ease';
-  overlay.style.opacity = '0';
+    // Orbit resolves out of the fading sheath
+    fadePlasma(1.8);
+    disposeDescent();
+  });
 }
 
 // ── Per-frame ────────────────────────────────────────────────────────
 
 export function updateGround(dt) {
-  if (state !== 'active' && state !== 'exiting') return null;
+  if (state === 'descending' || state === 'ascending') {
+    const d = updateDescent(dt);
+    if (!d) return null;
+    const local = getDescentPos();
+    updateTerrain(local);
+    updateSky(dt, local);
+    if (local.y < 600) updateRocks(local);
+    lastGust = updateDustField(dt, local, 0);
+    updateDevils(dt, local);
+    setSkyGust(lastGust);
+    // The air roars out of blackout and calms with the deceleration —
+    // or builds again on the climb
+    setGroundWind(state === 'descending' ? 2.1 * (1 - d.frac) + 0.5 : 0.4 + 1.9 * d.frac);
+    const cam = getCamera();
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const heading = ((Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI) + 360) % 360;
+    const site = getSite();
+    const sun = getSunState();
+    updateGroundHud(dt, {
+      heading,
+      elevMsl: site.landingElev + local.y,
+      tempC: Math.round(-103 + 55 * Math.max(0, Math.sin(THREE.MathUtils.degToRad(sun.elevDeg)))),
+      sunElev: sun.elevDeg,
+      speed: d.speed,
+      mode: state === 'descending' ? 'descent' : 'ascent',
+      run: false,
+      gust: lastGust,
+    });
+    return null;
+  }
+  if (state !== 'active') return null;
 
   const ctl = updateController(dt) || {};
   const local = getLocalPos();
