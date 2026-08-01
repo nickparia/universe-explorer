@@ -119,12 +119,24 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
     }
   });
   addL(document, 'pointerlockchange', () => {
-    // Lock torn down externally (Esc) — end the look cleanly
-    if (!document.pointerLockElement && rightDown) { rightDown = false; canvas.style.cursor = ''; }
+    if (document.pointerLockElement === canvas) {
+      // Engaging the lock can swallow or synthesize button events on
+      // some platforms — re-assert: locked means looking.
+      rightDown = true;
+    } else if (rightDown) {
+      // Lock torn down externally (Esc) — end the look cleanly
+      rightDown = false;
+      canvas.style.cursor = '';
+    }
   });
   addL(window, 'mousemove', (e) => {
     const locked = document.pointerLockElement === canvas;
-    if (rightDown && !locked && !(e.buttons & 2)) { rightDown = false; canvas.style.cursor = ''; return; }
+    if (locked) {
+      // While locked, movement IS look — no button state can break it
+      mouseDX += e.movementX; mouseDY += e.movementY;
+      return;
+    }
+    if (rightDown && !(e.buttons & 2)) { rightDown = false; canvas.style.cursor = ''; return; }
     if (rightDown) { mouseDX += e.movementX; mouseDY += e.movementY; }
   });
   const release = () => { rightDown = false; canvas.style.cursor = ''; mouseDX = 0; mouseDY = 0; for (const k in keys) keys[k] = false;

@@ -28,7 +28,8 @@ import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
 import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
-import { initStakes, disposeStakes, updateStakes, plantOrUproot, nearestStake, getStakes } from './stakes.js';
+import { initStakes, disposeStakes, updateStakes, nearestStake, getStakes, uprootNear, stakeDef } from './stakes.js';
+import { initBuild, disposeBuild, beginPlacement, cancelPlacement, commitPlacement, updatePlacement, isPlacing } from './build.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
@@ -105,9 +106,12 @@ export function initGround() {
     }
     if (e.code === 'KeyE' && state === 'active') {
       const p = getLocalPos();
-      plantOrUproot(p.x, p.z);
+      if (isPlacing()) { commitPlacement(); return; }
+      if (uprootNear(p.x, p.z)) return;
+      beginPlacement(stakeDef());
       return;
     }
+    if (e.code === 'Escape' && isPlacing()) { cancelPlacement(); return; }
     if (e.code !== 'KeyL') return;
     if (state === 'active') exitGround();
     else if (state === 'idle' && getOrbitBodyName() === 'MARS') enterGround();
@@ -167,10 +171,16 @@ export async function enterGround() {
   initGroundHud(SITE_NAME, {
     onGait: toggleGait,
     onLiftoff: () => exitGround(),
-    onStake: () => { const p2 = getLocalPos(); plantOrUproot(p2.x, p2.z); },
+    onStake: () => {
+      const p2 = getLocalPos();
+      if (isPlacing()) { commitPlacement(); return; }
+      if (uprootNear(p2.x, p2.z)) return;
+      beginPlacement(stakeDef());
+    },
   });
   initGroundMap();
   initStakes(rootGroup);
+  initBuild(rootGroup);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -224,6 +234,7 @@ export function exitGround() {
     disposeGroundHud();
     disposeGroundMap();
     disposeStakes();
+    disposeBuild();
     disposeSky(scene);
     disposeTerrain();
     if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -304,6 +315,11 @@ export function updateGround(dt) {
   setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
   updateStakes(local, getSunState().elevDeg);
+  {
+    const cam0 = getCamera();
+    const f0 = new THREE.Vector3(0, 0, -1).applyQuaternion(cam0.quaternion);
+    updatePlacement(local, Math.atan2(-f0.x, -f0.z), getMode() === 'rove');
+  }
 
   // What you hear is what you see: base air + gusts + your own speed —
   // and a dust devil passing close roars over all of it
@@ -338,6 +354,7 @@ export function updateGround(dt) {
       })(),
       nearStake: (() => { const n = nearestStake(local.x, local.z); return n && n.dist < 8 ? { n: n.stake.n, dist: n.dist, readings: n.stake.readings } : null; })(),
       inReach: (() => { const n = nearestStake(local.x, local.z); return !!(n && n.dist < 3); })(),
+      placing: isPlacing(),
     });
     updateGroundMap(dt, local, heading);
   }

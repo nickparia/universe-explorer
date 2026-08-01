@@ -169,22 +169,21 @@ export function nearestStake(x, z) {
   return best ? { stake: best, dist: bd } : null;
 }
 
-/** E on the ground: uproot if within reach, otherwise plant here. */
-export function plantOrUproot(x, z) {
+/** Uproot the stake within reach, if any. */
+export function uprootNear(x, z) {
   const near = nearestStake(x, z);
-  if (near && near.dist < 3) {
-    group.remove(near.stake.mesh);
-    stakes = stakes.filter((s) => s !== near.stake);
-    persist();
-    stepCrunch(0.7, false);
-    emit('stake:uprooted', { n: near.stake.n });
-    return { action: 'uprooted', stake: near.stake };
-  }
-  if (stakes.length >= MAX_STAKES) return { action: 'full' };
-  if (near && near.dist < SURVEY_RADIUS * 0.35) {
-    // Stakes want spacing — a survey of the same circle teaches nothing
-    return { action: 'tooClose', dist: near.dist };
-  }
+  if (!(near && near.dist < 3)) return null;
+  group.remove(near.stake.mesh);
+  stakes = stakes.filter((s) => s !== near.stake);
+  persist();
+  stepCrunch(0.7, false);
+  emit('stake:uprooted', { n: near.stake.n });
+  return near.stake;
+}
+
+/** Commit a stake at a surveyed-and-accepted spot (the engine calls this). */
+export function plantAt(x, z) {
+  if (stakes.length >= MAX_STAKES) return null;
   const n = ++plantedCount;
   const readings = surveyReadings(x, z);
   const mesh = buildStakeMesh(x, z);
@@ -194,7 +193,23 @@ export function plantOrUproot(x, z) {
   persist();
   stepCrunch(1.1, true);   // driven into the regolith
   emit('stake:planted', { n, readings, count: plantedCount });
-  return { action: 'planted', stake };
+  return stake;
+}
+
+/** The stake's registration with the placement engine. */
+export function stakeDef() {
+  return {
+    key: 'stake',
+    footR: 0.9,
+    feet: [[0, 0]],
+    maxSlope: 0.55,
+    minSpacing: (x, z) => {
+      const near = nearestStake(x, z);
+      return near && near.dist < SURVEY_RADIUS * 0.35 ? SURVEY_RADIUS * 0.35 - near.dist : 0;
+    },
+    makeGhost: () => buildStakeMesh(0, 0),
+    onCommit: (x, z) => plantAt(x, z),
+  };
 }
 
 export function getStakes() { return stakes; }

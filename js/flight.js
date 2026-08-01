@@ -352,20 +352,28 @@ export function initFlight(camera) {
     });
 
     document.addEventListener('pointerlockchange', () => {
-        // Lock torn down externally (Esc) — end the look cleanly
-        if (!document.pointerLockElement && rightDown) {
+        if (document.pointerLockElement === canvas) {
+            // Engaging the lock can swallow or synthesize button events
+            // on some platforms — re-assert: locked means looking.
+            rightDown = true;
+        } else if (rightDown) {
+            // Lock torn down externally (Esc) — end the look cleanly
             rightDown = false;
             canvas.style.cursor = '';
         }
     });
 
     window.addEventListener('mousemove', (e) => {
+        const locked = document.pointerLockElement === canvas;
+        if (locked) {
+            // While locked, movement IS look — no button state breaks it
+            if (!_suppressed) { mouseDX += e.movementX; mouseDY += e.movementY; }
+            return;
+        }
         // Self-heal: if the right button was released OUTSIDE the window,
         // our mouseup never fired and the look would stick to bare mouse
         // movement on re-entry. e.buttons is ground truth — trust it.
-        // (Skipped while pointer-locked: there is no outside anymore.)
-        const locked = document.pointerLockElement === canvas;
-        if (rightDown && !locked && !(e.buttons & 2)) {
+        if (rightDown && !(e.buttons & 2)) {
             rightDown = false;
             canvas.style.cursor = '';
             return;
