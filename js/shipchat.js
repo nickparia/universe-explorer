@@ -89,7 +89,7 @@ export function setChatSurface(mode) {
     // PROJECTED on the windshield, not bolted beside it: a thin
     // bracketed frame and a breath of glass tint — the window owns it.
     wrap.style.right = '30px';
-    wrap.style.bottom = '330px';
+    wrap.style.bottom = '430px';
     wrap.style.width = '300px';
     wrap.style.padding = '2px 10px 6px';
     wrap.style.background = 'rgba(255,160,70,0.025)';

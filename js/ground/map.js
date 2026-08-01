@@ -146,19 +146,17 @@ let miniTimer = 0;
  *  screen in the cab — the surface owns the information. */
 export function setMapMount(roving) {
   if (!mini) return;
+  // Projection in every gait — only the perch changes with the mode
+  mini.style.borderRadius = '50%';
+  mini.style.boxShadow = '0 0 0 1px rgba(255,186,100,0.28), 0 0 18px rgba(0,0,0,0.55)';
   if (roving) {
     mini.style.top = '';
-    mini.style.bottom = '128px';
-    mini.style.right = '30px';
-    mini.style.borderRadius = '10px';
-    mini.style.boxShadow =
-      '0 0 0 5px rgba(26,22,18,0.95), 0 0 0 7px rgba(210,195,165,0.4), 0 6px 18px rgba(0,0,0,0.6)';
+    mini.style.bottom = '236px';
+    mini.style.right = '26px';
   } else {
     mini.style.bottom = '';
     mini.style.top = '16px';
     mini.style.right = '18px';
-    mini.style.borderRadius = '50%';
-    mini.style.boxShadow = '0 0 0 1px rgba(255,186,100,0.28), 0 0 18px rgba(0,0,0,0.55)';
   }
 }
 
