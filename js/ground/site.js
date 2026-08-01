@@ -211,6 +211,18 @@ function lodFade(lam, minLambda) {
   return Math.max(0, Math.min(1, lam / minLambda - 1));
 }
 
+/**
+ * Cavity: concave ground reads darker, crests catch light — the baked
+ * ambient-occlusion trick every hand-painted world leans on. Positive
+ * in hollows, negative on ridges, roughly ±1.
+ */
+export function cavityAt(x, z, r, minLambda = 0) {
+  const h0 = heightAt(x, z, minLambda);
+  const avg = (heightAt(x + r, z, minLambda) + heightAt(x - r, z, minLambda) +
+               heightAt(x, z + r, minLambda) + heightAt(x, z - r, minLambda)) * 0.25;
+  return Math.max(-1, Math.min(1, (avg - h0) / (r * 0.22)));
+}
+
 /** Surface normal by central difference, consistent across chunk seams. */
 export function normalAt(x, z, eps = 2.0, minLambda = 0, out = null) {
   const hx0 = heightAt(x - eps, z, minLambda);

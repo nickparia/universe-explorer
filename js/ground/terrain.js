@@ -10,11 +10,11 @@
 
 import * as THREE from 'three';
 import { getConfig } from '../perf.js';
-import { getSite, heightAt, normalAt, macroSlopeAt } from './site.js';
+import { getSite, heightAt, normalAt, macroSlopeAt, cavityAt } from './site.js';
 import { hashTint } from './palette.js';
 
 const RES = 32;                 // quads per chunk side
-const SPLIT_K = 1.15;           // split while size > dist × K
+const SPLIT_K = 1.35;           // split while size > dist × K
 const CACHE_CAP = 420;          // built geometries kept around
 const MAX_DEPTH = { high: 11, medium: 10, low: 9 };
 
@@ -52,12 +52,28 @@ export function initTerrain(parentGroup) {
   const detailTex = makeDetailTexture();
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uDetail = { value: detailTex };
+    shader.uniforms.uNow = { value: 0 };
+    material.userData.shader = shader;
+    // Geomorph: every refined chunk carries the coarse height/normal it
+    // replaced and blends to its own over ~0.8 s from first showing —
+    // detail ARRIVES instead of popping.
     shader.vertexShader = shader.vertexShader
-      .replace('#include <common>', '#include <common>\nvarying vec2 vSitePos;\nvarying float vViewZ;')
+      .replace('#include <common>',
+        '#include <common>\nvarying vec2 vSitePos;\nvarying float vViewZ;' +
+        '\nattribute float aCoarseY;\nattribute vec3 aCoarseNrm;\nattribute float aBirth;\nuniform float uNow;')
+      .replace('#include <beginnormal_vertex>',
+        '#include <beginnormal_vertex>\nfloat mf = clamp((uNow - aBirth) / 0.8, 0.0, 1.0);\nmf = mf * mf * (3.0 - 2.0 * mf);\nobjectNormal = normalize(mix(aCoarseNrm, objectNormal, mf));')
+      .replace('#include <begin_vertex>',
+        '#include <begin_vertex>\ntransformed.y = mix(aCoarseY, transformed.y, mf);')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSitePos = position.xz;\nvViewZ = -mvPosition.z;');
+    shader.uniforms.uRamp = { value: makePaletteRamp() };
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}');
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform sampler2D uRamp;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}')
+      .replace('#include <opaque_fragment>',
+        '#include <opaque_fragment>\n{\n  float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));\n' +
+        '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), 0.5)).rgb;\n' +
+        '  gl_FragColor.rgb = mix(gl_FragColor.rgb, graded, 0.55);\n}');
   };
 
   root = new THREE.Group();
@@ -77,6 +93,33 @@ export function disposeTerrain() {
   queued.clear();
   if (material) { material.dispose(); material = null; }
   root = null;
+}
+
+// The palette ramp — the WoW trick: shading is remapped through ONE
+// hand-authored gradient, so every pixel of the ground lives in the
+// same painting. Shadows cool toward violet-maroon, midtones burn
+// sienna, highlights warm to peach-gold.
+export function makePaletteRamp() {
+  const stops = [
+    [0.00, 0x1a0d12],   // deepest shade: cool maroon-violet
+    [0.18, 0x3a1c1a],
+    [0.38, 0x6b3524],   // burnt sienna body
+    [0.58, 0x9c5a33],
+    [0.78, 0xd18a52],   // sun-warmed dust
+    [0.92, 0xf0b87e],
+    [1.00, 0xffe0b0],   // rim light gold
+  ];
+  const c = document.createElement('canvas');
+  c.width = 256; c.height = 1;
+  const g = c.getContext('2d');
+  const grad = g.createLinearGradient(0, 0, 256, 0);
+  for (const [t, hex] of stops) grad.addColorStop(t, '#' + hex.toString(16).padStart(6, '0'));
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 256, 1);
+  const tex = new THREE.CanvasTexture(c);
+  tex.colorSpace = THREE.SRGBColorSpace;
+  tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  return tex;
 }
 
 // Tileable two-tone grain: value noise + rock speckle, generated once.
@@ -149,11 +192,24 @@ export function updateTerrain(camLocal) {
   const visible = [];
   selectNode(0, 0, 0, camLocal, maxDepth, visible);
 
+  const nowS = performance.now() / 1000;
+  if (material && material.userData.shader) material.userData.shader.uniforms.uNow.value = nowS;
+
   // Swap visibility: mark-and-sweep against last frame
   for (const { mesh } of cache.values()) mesh.visible = false;
   for (const key of visible) {
     const e = cache.get(key);
-    if (e) { e.mesh.visible = true; e.lastUsed = frame; }
+    if (e) {
+      if (!e.mesh.visible && !e.everShown) {
+        // birth stamp on first showing — the morph starts when the
+        // eyes first see it, not when the worker built it
+        const b = e.mesh.geometry.attributes.aBirth;
+        if (b) { b.array.fill(nowS); b.needsUpdate = true; }
+        e.everShown = true;
+      }
+      e.mesh.visible = true;
+      e.lastUsed = frame;
+    }
   }
 
   // Build a few queued chunks per frame, nearest first
@@ -255,6 +311,10 @@ function ensureBuilt(key, { d, i, j }, sync) {
   const nrm = new Float32Array(total * 3);
   const uv = new Float32Array(total * 2);
   const col = new Float32Array(total * 3);
+  const coarseY = new Float32Array(total);
+  const coarseN = new Float32Array(total * 3);
+  const birth = new Float32Array(total);   // stamped on first showing
+  const minLambdaC = minLambda * 2;        // what the parent carried
 
   const spanX = site.maxX - site.minX;
   const spanZ = site.maxZ - site.minZ;
@@ -271,12 +331,22 @@ function ensureBuilt(key, { d, i, j }, sync) {
       // fluted spurs at distance — the relief that sells the scale.
       normalAt(x, z, Math.max(step * 0.5, 1.5), minLambda, n);
       nrm[vi * 3] = n.x; nrm[vi * 3 + 1] = n.y; nrm[vi * 3 + 2] = n.z;
+      coarseY[vi] = d === 0 ? y : heightAt(x, z, minLambdaC);
+      if (d === 0) {
+        coarseN[vi * 3] = n.x; coarseN[vi * 3 + 1] = n.y; coarseN[vi * 3 + 2] = n.z;
+      } else {
+        normalAt(x, z, Math.max(step, 3), minLambdaC, n);
+        coarseN[vi * 3] = n.x; coarseN[vi * 3 + 1] = n.y; coarseN[vi * 3 + 2] = n.z;
+      }
       // Site-global UV into the Viking albedo
       uv[vi * 2] = (x - site.minX) / spanX;
       uv[vi * 2 + 1] = 1 - (z - site.minZ) / spanZ;
-      // Hand tint: darker debris on steep ground, faint speckle
+      // Hand tint: darker debris on steep ground, faint speckle —
+      // then the painter's pass: hollows shade down, crests pick up
       const t = hashTint(x, z, macroSlopeAt(x, z), y);
-      col[vi * 3] = t[0]; col[vi * 3 + 1] = t[1]; col[vi * 3 + 2] = t[2];
+      const cav = cavityAt(x, z, Math.max(step * 1.5, 4), minLambda);
+      const ao = 1 - Math.max(0, cav) * 0.34 + Math.max(0, -cav) * 0.18;
+      col[vi * 3] = t[0] * ao; col[vi * 3 + 1] = t[1] * ao; col[vi * 3 + 2] = t[2] * ao;
     }
   }
 
@@ -303,6 +373,8 @@ function ensureBuilt(key, { d, i, j }, sync) {
     // "up-facing" on a backlit slope reads as a bright dash string.
     normalAt(ox, oz, Math.max(step * 0.5, 1.5), minLambda, n);
     nrm[dst * 3] = n.x; nrm[dst * 3 + 1] = n.y; nrm[dst * 3 + 2] = n.z;
+    coarseY[dst] = pos[dst * 3 + 1];
+    coarseN[dst * 3] = n.x; coarseN[dst * 3 + 1] = n.y; coarseN[dst * 3 + 2] = n.z;
     uv[dst * 2] = (ox - site.minX) / spanX;
     uv[dst * 2 + 1] = 1 - (oz - site.minZ) / spanZ;
     const t = hashTint(ox, oz, macroSlopeAt(ox, oz), pos[src * 3 + 1]);
@@ -332,6 +404,9 @@ function ensureBuilt(key, { d, i, j }, sync) {
   geo.setAttribute('normal', new THREE.BufferAttribute(nrm, 3));
   geo.setAttribute('uv', new THREE.BufferAttribute(uv, 2));
   geo.setAttribute('color', new THREE.BufferAttribute(col, 3));
+  geo.setAttribute('aCoarseY', new THREE.BufferAttribute(coarseY, 1));
+  geo.setAttribute('aCoarseNrm', new THREE.BufferAttribute(coarseN, 3));
+  geo.setAttribute('aBirth', new THREE.BufferAttribute(birth, 1));
   geo.setIndex(idx);
   geo.computeBoundingSphere();
 
