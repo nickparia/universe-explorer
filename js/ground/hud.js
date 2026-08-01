@@ -7,6 +7,7 @@
 // it amber, all of it quiet, none of it a menu.
 
 import * as THREE from 'three';
+import { setMapMount } from './map.js';
 
 const MONO = "'SF Mono','Cascadia Mono','JetBrains Mono',Menlo,Consolas,'Courier New',monospace";
 const AMBER = 'rgba(255,186,100,';
@@ -324,6 +325,7 @@ export function updateGroundHud(dt, s) {
     const roving = s.mode === 'rove';
     const flying = s.mode === 'descent' || s.mode === 'ascent';
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
+    setMapMount(roving);
     if (cockpit) {
       const helm = cockpit.querySelector('#hud-helmet');
       const cab = cockpit.querySelector('#hud-cab');
