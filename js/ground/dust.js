@@ -107,11 +107,11 @@ export function disposeDustField() {
  * @returns gust 0..1 — shared with the wind audio so what you hear is
  * what you see.
  */
-export function updateDustField(dt, camLocal, roverK) {
+export function updateDustField(dt, camLocal, roverK, weatherK = 0.6) {
   if (!points) return 0;
   // Two incommensurate slow sines make an unrepeating gust envelope
   gustT += dt;
-  const gust = Math.max(0, Math.sin(gustT * 0.13) * 0.6 + Math.sin(gustT * 0.047 + 1.7) * 0.4);
+  const gust = Math.max(0, Math.sin(gustT * 0.13) * 0.6 + Math.sin(gustT * 0.047 + 1.7) * 0.4) * (0.4 + weatherK);
   const windSpeed = 2.5 + gust * 9;            // m/s, along the canyon
   const wx = -windSpeed, wz = 0.35 * windSpeed * Math.sin(gustT * 0.021);
 

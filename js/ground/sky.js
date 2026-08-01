@@ -217,7 +217,7 @@ export function updateSky(dt, camLocal) {
     _hazeT += dt;
     _gustCarry += ((_gustNow * 0.8) - _gustCarry) * (1 - Math.exp(-dt / 25));
     const breathe = 1 + 0.20 * Math.sin(_hazeT * 0.013) + 0.10 * Math.sin(_hazeT * 0.031 + 2.1);
-    fog.density = 1.45e-5 * breathe * (1 + 0.35 * _gustCarry);
+    fog.density = 1.45e-5 * breathe * (1 + 0.35 * _gustCarry) * (0.85 + 0.4 * getWeather());
   }
 }
 
@@ -226,3 +226,14 @@ let _gustCarry = 0;
 let _gustNow = 0;
 /** The dust field's gust envelope — the same wind the eyes see. */
 export function setSkyGust(g) { _gustNow = g || 0; }
+
+/**
+ * The weather regime: calm spells and windy spells, drifting over
+ * five to fifteen minutes. One number 0..1 that every air system
+ * shares — gust amplitude, devil census, the haze after a blow.
+ */
+export function getWeather() {
+  const w = 0.5 + 0.5 * Math.sin(_hazeT * 0.0047 + 1.3)
+          + 0.25 * Math.sin(_hazeT * 0.0113 + 4.1);
+  return THREE.MathUtils.clamp(0.15 + w * 0.62, 0.15, 1);
+}

@@ -105,12 +105,14 @@ function spawn(camLocal) {
 }
 
 /** @returns proximity 0..1 of the nearest devil — feeds the wind's ears */
-export function updateDevils(dt, camLocal) {
+export function updateDevils(dt, camLocal, weatherK = 0.6) {
   if (!group) return 0;
-  seedT -= dt;
+  // Windy spells breed devils; calm ones starve them
+  seedT -= dt * (0.4 + weatherK * 1.3);
   if (seedT <= 0) {
     seedT = 25 + Math.random() * 50;
-    if (devils.length < MAX_DEVILS) spawn(camLocal);
+    const cap = Math.max(1, Math.round(MAX_DEVILS * (0.4 + weatherK)));
+    if (devils.length < cap) spawn(camLocal);
   }
   let near = 0;
   for (let i = devils.length - 1; i >= 0; i--) {

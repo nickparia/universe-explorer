@@ -29,6 +29,82 @@ const _e = new THREE.Euler(0, 0, 0, 'YXZ');
 let lastSpeed = 0;
 let cam = null;
 
+// ── Retro plume — the engines answer the ground ──
+const SMOKE_N = 280;
+let smoke = null, smokeMat = null;
+let smokeVel = null, smokeLife = null;
+
+function makeSmokeSprite() {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 0, 32, 32, 32);
+  grad.addColorStop(0, 'rgba(235,225,212,0.85)');
+  grad.addColorStop(0.5, 'rgba(210,195,180,0.35)');
+  grad.addColorStop(1, 'rgba(200,185,170,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+}
+
+function initSmoke(parentGroup) {
+  const posArr = new Float32Array(SMOKE_N * 3).fill(-99999);
+  smokeVel = new Float32Array(SMOKE_N * 3);
+  smokeLife = new Float32Array(SMOKE_N);
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(posArr, 3));
+  smokeMat = new THREE.PointsMaterial({
+    map: makeSmokeSprite(), size: 2.6, sizeAttenuation: true,
+    transparent: true, opacity: 0.5, depthWrite: false, color: 0xd8cfc4,
+  });
+  smoke = new THREE.Points(geo, smokeMat);
+  smoke.frustumCulled = false;
+  parentGroup.add(smoke);
+}
+
+function disposeSmoke() {
+  if (smoke) {
+    smoke.geometry.dispose();
+    smokeMat.map.dispose();
+    smokeMat.dispose();
+    if (smoke.parent) smoke.parent.remove(smoke);
+  }
+  smoke = null; smokeMat = null; smokeVel = null; smokeLife = null;
+}
+
+let _spawnAcc = 0;
+function updateSmoke(dt, intensity, burst = 0) {
+  if (!smoke) return;
+  const arr = smoke.geometry.attributes.position.array;
+  // age and drift
+  for (let i = 0; i < SMOKE_N; i++) {
+    if (smokeLife[i] <= 0) continue;
+    smokeLife[i] -= dt;
+    if (smokeLife[i] <= 0) { arr[i * 3 + 1] = -99999; continue; }
+    arr[i * 3] += smokeVel[i * 3] * dt;
+    arr[i * 3 + 1] += smokeVel[i * 3 + 1] * dt;
+    arr[i * 3 + 2] += smokeVel[i * 3 + 2] * dt;
+    smokeVel[i * 3 + 1] += 2.2 * dt;   // hot exhaust buoyancy
+  }
+  _spawnAcc += dt * (intensity * 150) + burst;
+  let n = Math.floor(_spawnAcc);
+  _spawnAcc -= n;
+  for (let i = 0; i < SMOKE_N && n > 0; i++) {
+    if (smokeLife[i] > 0) continue;
+    n--;
+    smokeLife[i] = 0.9 + Math.random() * 0.9;
+    const a = Math.random() * Math.PI * 2;
+    const r = burst > 0 ? 2 + Math.random() * 6 : 1 + Math.random() * 2.5;
+    arr[i * 3] = pos.x + Math.cos(a) * r;
+    arr[i * 3 + 1] = pos.y - 4 - Math.random() * 3;
+    arr[i * 3 + 2] = pos.z + Math.sin(a) * r;
+    smokeVel[i * 3] = Math.cos(a) * (burst > 0 ? 8 + Math.random() * 8 : 2 + Math.random() * 3);
+    smokeVel[i * 3 + 1] = burst > 0 ? 2 + Math.random() * 4 : 5 + Math.random() * 9;
+    smokeVel[i * 3 + 2] = Math.sin(a) * (burst > 0 ? 8 + Math.random() * 8 : 2 + Math.random() * 3);
+  }
+  smoke.geometry.attributes.position.needsUpdate = true;
+}
+
 function makePlasma() {
   const el = document.createElement('div');
   el.style.cssText =
@@ -41,17 +117,28 @@ function makePlasma() {
 }
 
 export function isDescentActive() { return phase !== null; }
+
+// After touchdown the blast keeps settling while the boots take over —
+// the ground mode ticks this from its active state; it self-disposes.
+let _smokeDecay = 0;
+export function tickSmoke(dt) {
+  if (_smokeDecay <= 0 || !smoke) return;
+  updateSmoke(dt, 0);
+  _smokeDecay -= dt;
+  if (_smokeDecay <= 0) disposeSmoke();
+}
 export function getDescentPos() { return pos; }
 export function getDescentSpeed() { return lastSpeed; }
 
 /** The way down. endLocal is the bootfall point (site frame). */
-export function startDescent(camera, endLocal, yawAtRest, pitchAtRest, onDone) {
+export function startDescent(camera, parentGroup, endLocal, yawAtRest, pitchAtRest, onDone) {
   cam = camera;
+  initSmoke(parentGroup);
   phase = 'descend';
   finalYaw = yawAtRest;
   finalPitch = pitchAtRest;
   doneCb = onDone;
-  T = 44;
+  T = 11;
   t = 0;
   // In from the NORTH, high over the plateau — so the canyon is not
   // seen first, it's REVEALED: the rim passes beneath and four
@@ -70,11 +157,12 @@ export function startDescent(camera, endLocal, yawAtRest, pitchAtRest, onDone) {
 }
 
 /** The way up. fromLocal is wherever the traveler stood. */
-export function startAscent(camera, fromLocal, onDone) {
+export function startAscent(camera, parentGroup, fromLocal, onDone) {
   cam = camera;
+  initSmoke(parentGroup);
   phase = 'ascend';
   doneCb = onDone;
-  T = 17;
+  T = 8;
   t = 0;
   // Climb out SOUTH over the canyon void — the floor drops away fast,
   // the far wall slides under, and the sky takes over.
@@ -119,6 +207,7 @@ export function fadePlasma(seconds = 1.2) {
 
 export function disposeDescent() {
   disarmSkip();
+  disposeSmoke();
   if (plasma && plasma.parentNode) plasma.parentNode.removeChild(plasma);
   plasma = null;
   phase = null;
@@ -185,12 +274,25 @@ export function updateDescent(dt) {
     }
   }
 
+  // The engines answer the ground: retro plume building through the
+  // braking, a dust-and-steam blast at the pad; the climb burns early.
+  if (phase === 'descend') {
+    updateSmoke(dt, THREE.MathUtils.smoothstep(u, 0.45, 0.85) * (0.4 + 0.6 * u));
+  } else {
+    updateSmoke(dt, Math.max(0, 1 - u * 2.2));
+  }
+
   const done = t >= T;
   if (done) {
     disarmSkip();
     const cb = doneCb;
     doneCb = null;
-    if (phase === 'descend') { fadePlasma(0.4); phase = null; }
+    if (phase === 'descend') {
+      updateSmoke(dt, 0, 90);   // touchdown blast
+      fadePlasma(0.4);
+      phase = null;
+      _smokeDecay = 3.0;        // the blast settles behind the bootfall
+    }
     // ascent keeps its plasma up — the teardown happens behind it
     if (cb) cb();
   }

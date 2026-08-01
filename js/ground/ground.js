@@ -17,17 +17,17 @@ import { getBodies } from '../bodies.js';
 import { getPlanetConfig } from '../planetconfig.js';
 import { emit } from '../bus.js';
 import { setZoneOverride } from '../music.js';
-import { setGroundWind } from '../soundscape.js';
+import { setGroundWind, setRoverBed } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
-import { initSky, updateSky, disposeSky, getSunState, debugSky, setSkyGust } from './sky.js';
+import { initSky, updateSky, disposeSky, getSunState, debugSky, setSkyGust, getWeather } from './sky.js';
 import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset, toggleGait } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
 import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
-import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent } from './descent.js';
+import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
 
@@ -173,7 +173,7 @@ export async function enterGround() {
   // Bootfall faces south-southeast over the 3.9 km drop, sun raking.
   const endLocal = new THREE.Vector3(0, heightAt(0, 1250), 1250);
   state = 'descending';
-  startDescent(camera, endLocal, Math.PI + 0.25, -0.15, () => {
+  startDescent(camera, rootGroup, endLocal, Math.PI + 0.25, -0.15, () => {
     initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
     stepCrunch(1.25, true);   // the shelf takes the weight
     const cv2 = document.getElementById('c');
@@ -196,7 +196,7 @@ export function exitGround() {
   from.y = getEyeY();
   const camera = getCamera();
   disposeController();
-  startAscent(camera, from, () => {
+  startAscent(camera, rootGroup, from, () => {
     const scene = getScene();
     disposeDustField();
     disposeLamp();
@@ -241,12 +241,13 @@ export function updateGround(dt) {
     updateTerrain(local);
     updateSky(dt, local);
     if (local.y < 600) updateRocks(local);
-    lastGust = updateDustField(dt, local, 0);
-    updateDevils(dt, local);
+    lastGust = updateDustField(dt, local, 0, getWeather());
+    updateDevils(dt, local, getWeather());
     setSkyGust(lastGust);
     // The air roars out of blackout and calms with the deceleration —
-    // or builds again on the climb
+    // or builds again on the climb — and the retro engines hum under it
     setGroundWind(state === 'descending' ? 2.1 * (1 - d.frac) + 0.5 : 0.4 + 1.9 * d.frac);
+    setRoverBed(state === 'descending' ? Math.max(0.3, d.frac) : Math.max(0.3, 1 - d.frac));
     const cam = getCamera();
     const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
     const heading = ((Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI) + 360) % 360;
@@ -268,14 +269,15 @@ export function updateGround(dt) {
 
   const ctl = updateController(dt) || {};
   const local = getLocalPos();
+  tickSmoke(dt);   // the touchdown blast settles behind the bootfall
 
   updateTerrain(local);
   updateSky(dt, local);
   updateRocks(local);
 
   const roverK = getMode() === 'rove' ? Math.min(1, getGroundSpeed() / 20) : 0;
-  lastGust = updateDustField(dt, local, roverK);
-  const devilNear = updateDevils(dt, local);
+  lastGust = updateDustField(dt, local, roverK, getWeather());
+  const devilNear = updateDevils(dt, local, getWeather());
   setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
 
