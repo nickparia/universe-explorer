@@ -9,7 +9,8 @@
 
 import * as THREE from 'three';
 import { heightAt, macroSlopeAt } from './site.js';
-import { makePaletteRamp } from './terrain.js';
+import { makePaletteRamp, todY } from './terrain.js';
+import { getSunState } from './sky.js';
 
 const TILE = 48;             // m — placement tile
 const RADIUS_TILES = 8;      // stream small rocks within ~380 m
@@ -57,12 +58,14 @@ export function initRocks(parentGroup) {
   // grades the stones too, so ground and rock never disagree.
   mat.onBeforeCompile = (shader) => {
     shader.uniforms.uRamp = { value: makePaletteRamp() };
+    shader.uniforms.uTodY = { value: 0.5 };
+    mat.userData.shader = shader;
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uRamp;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uRamp;\nuniform float uTodY;')
       .replace('#include <opaque_fragment>',
         '#include <opaque_fragment>\n{\n  float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));\n' +
-        '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), 0.5)).rgb;\n' +
-        '  gl_FragColor.rgb = mix(gl_FragColor.rgb, graded, 0.5);\n}');
+        '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), uTodY)).rgb;\n' +
+        '  gl_FragColor.rgb = mix(gl_FragColor.rgb, graded, 0.65);\n}');
   };
   mesh = new THREE.InstancedMesh(geo, mat, MAX_ROCKS);
   mesh.instanceMatrix.setUsage(THREE.DynamicDrawUsage);
@@ -122,6 +125,7 @@ function placeTile(gx, gz, target, isBoulderPass, n, cap) {
 
 export function updateRocks(camLocal) {
   if (!mesh) return;
+  if (mesh.material.userData.shader) mesh.material.userData.shader.uniforms.uTodY.value = todY(getSunState().t);
   const tx = Math.floor(camLocal.x / TILE);
   const tz = Math.floor(camLocal.z / TILE);
   if (tx === curTX && tz === curTZ) return;

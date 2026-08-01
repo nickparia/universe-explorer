@@ -11,6 +11,7 @@
 import * as THREE from 'three';
 import { getConfig } from '../perf.js';
 import { getSite, heightAt, normalAt, macroSlopeAt, cavityAt } from './site.js';
+import { getSunState } from './sky.js';
 import { hashTint } from './palette.js';
 
 const RES = 32;                 // quads per chunk side
@@ -67,13 +68,14 @@ export function initTerrain(parentGroup) {
         '#include <begin_vertex>\ntransformed.y = mix(aCoarseY, transformed.y, mf);')
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSitePos = position.xz;\nvViewZ = -mvPosition.z;');
     shader.uniforms.uRamp = { value: makePaletteRamp() };
+    shader.uniforms.uTodY = { value: 0.5 };
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform sampler2D uRamp;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform sampler2D uRamp;\nuniform float uTodY;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
       .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}')
       .replace('#include <opaque_fragment>',
         '#include <opaque_fragment>\n{\n  float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));\n' +
-        '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), 0.5)).rgb;\n' +
-        '  gl_FragColor.rgb = mix(gl_FragColor.rgb, graded, 0.55);\n}');
+        '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), uTodY)).rgb;\n' +
+        '  gl_FragColor.rgb = mix(gl_FragColor.rgb, graded, 0.72);\n}');
   };
 
   root = new THREE.Group();
@@ -95,31 +97,46 @@ export function disposeTerrain() {
   root = null;
 }
 
-// The palette ramp — the WoW trick: shading is remapped through ONE
-// hand-authored gradient, so every pixel of the ground lives in the
-// same painting. Shadows cool toward violet-maroon, midtones burn
-// sienna, highlights warm to peach-gold.
+// The palette LUT — the WoW zone-light-table trick, but continuous:
+// FOUR hand-authored paintings (night, dawn, noon, dusk) stacked as
+// rows; the sol clock slides between them, so the same hill is a
+// blue-charcoal silhouette at night, rose at dawn, dusty sienna at
+// noon, and embers at dusk. x = shading luminance, y = time of sol.
 export function makePaletteRamp() {
-  const stops = [
-    [0.00, 0x1a0d12],   // deepest shade: cool maroon-violet
-    [0.18, 0x3a1c1a],
-    [0.38, 0x6b3524],   // burnt sienna body
-    [0.58, 0x9c5a33],
-    [0.78, 0xd18a52],   // sun-warmed dust
-    [0.92, 0xf0b87e],
-    [1.00, 0xffe0b0],   // rim light gold
+  const ROWS = [
+    // midnight — starlit, cool, silver highlights
+    [[0.00, 0x030407], [0.25, 0x10141f], [0.55, 0x2c3548], [0.85, 0x6a7690], [1.00, 0xb9c3d6]],
+    // dawn — rose and cold gold
+    [[0.00, 0x120a16], [0.22, 0x3c2034], [0.48, 0x8a4a44], [0.78, 0xd8926e], [1.00, 0xffd2a0]],
+    // noon — dusty, bright, the sienna body
+    [[0.00, 0x241109], [0.25, 0x572e1d], [0.50, 0x96552f], [0.78, 0xd6935a], [1.00, 0xffe2b2]],
+    // dusk — ember world
+    [[0.00, 0x140508], [0.25, 0x4c1a12], [0.52, 0xa93f1e], [0.80, 0xe8843c], [1.00, 0xffb668]],
+    // and back to midnight (the LUT's y wraps the sol linearly)
+    [[0.00, 0x030407], [0.25, 0x10141f], [0.55, 0x2c3548], [0.85, 0x6a7690], [1.00, 0xb9c3d6]],
   ];
   const c = document.createElement('canvas');
-  c.width = 256; c.height = 1;
+  c.width = 256; c.height = ROWS.length;
   const g = c.getContext('2d');
-  const grad = g.createLinearGradient(0, 0, 256, 0);
-  for (const [t, hex] of stops) grad.addColorStop(t, '#' + hex.toString(16).padStart(6, '0'));
-  g.fillStyle = grad;
-  g.fillRect(0, 0, 256, 1);
+  ROWS.forEach((stops, i) => {
+    const grad = g.createLinearGradient(0, 0, 256, 0);
+    for (const [t, hex] of stops) grad.addColorStop(t, '#' + hex.toString(16).padStart(6, '0'));
+    g.fillStyle = grad;
+    g.fillRect(0, i, 256, 1);
+  });
   const tex = new THREE.CanvasTexture(c);
   tex.colorSpace = THREE.SRGBColorSpace;
   tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+  tex.generateMipmaps = false;
+  tex.minFilter = THREE.LinearFilter;
+  tex.magFilter = THREE.LinearFilter;
   return tex;
+}
+
+/** solT (0 midnight → 0.5 noon → 1) → LUT y, row centers respected. */
+export function todY(solT) {
+  const n = 5;
+  return (0.5 + solT * (n - 1)) / n;
 }
 
 // Tileable two-tone grain: value noise + rock speckle, generated once.
@@ -193,7 +210,10 @@ export function updateTerrain(camLocal) {
   selectNode(0, 0, 0, camLocal, maxDepth, visible);
 
   const nowS = performance.now() / 1000;
-  if (material && material.userData.shader) material.userData.shader.uniforms.uNow.value = nowS;
+  if (material && material.userData.shader) {
+    material.userData.shader.uniforms.uNow.value = nowS;
+    material.userData.shader.uniforms.uTodY.value = todY(getSunState().t);
+  }
 
   // Swap visibility: mark-and-sweep against last frame
   for (const { mesh } of cache.values()) mesh.visible = false;
