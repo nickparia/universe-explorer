@@ -106,6 +106,12 @@ function makeDetailTexture() {
         v += (n00 + (n10 - n00) * sx) * (1 - sy) + (n01 + (n11 - n01) * sx) * sy;
       }
       v *= 0.5;
+      // wind ripples: crests run north-south (the canyon wind is E-W),
+      // wandering with the grain noise — sub-meter at close range and,
+      // via the coarser sample scale, reading as mega-ripples farther out
+      const warp = v * 2.4;
+      const ripple = Math.pow(Math.sin((x / S) * Math.PI * 2 * 3 + warp) * 0.5 + 0.5, 1.6);
+      v = v * 0.72 + ripple * 0.28;
       // sparse dark pebbles
       if (h(x * 7 + 3, y * 13 + 1) > 0.985) v *= 0.55;
       const b = Math.round(90 + v * 165);
@@ -269,7 +275,7 @@ function ensureBuilt(key, { d, i, j }, sync) {
       uv[vi * 2] = (x - site.minX) / spanX;
       uv[vi * 2 + 1] = 1 - (z - site.minZ) / spanZ;
       // Hand tint: darker debris on steep ground, faint speckle
-      const t = hashTint(x, z, macroSlopeAt(x, z));
+      const t = hashTint(x, z, macroSlopeAt(x, z), y);
       col[vi * 3] = t[0]; col[vi * 3 + 1] = t[1]; col[vi * 3 + 2] = t[2];
     }
   }
@@ -299,7 +305,7 @@ function ensureBuilt(key, { d, i, j }, sync) {
     nrm[dst * 3] = n.x; nrm[dst * 3 + 1] = n.y; nrm[dst * 3 + 2] = n.z;
     uv[dst * 2] = (ox - site.minX) / spanX;
     uv[dst * 2 + 1] = 1 - (oz - site.minZ) / spanZ;
-    const t = hashTint(ox, oz, macroSlopeAt(ox, oz));
+    const t = hashTint(ox, oz, macroSlopeAt(ox, oz), pos[src * 3 + 1]);
     col[dst * 3] = t[0]; col[dst * 3 + 1] = t[1]; col[dst * 3 + 2] = t[2];
   }
 

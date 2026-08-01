@@ -14,11 +14,18 @@ function h2(ix, iz) {
 
 const out = [1, 1, 1];
 
-/** Per-vertex tint [r,g,b] from position + macro slope. */
-export function hashTint(x, z, slope) {
+/** Per-vertex tint [r,g,b] from position + macro slope + elevation. */
+export function hashTint(x, z, slope, elev = 0) {
   const sK = Math.min(1, slope * 2.0);
   // Steep ground: darker, slightly cooler — exposed rock under debris
   let v = 1.0 - sK * 0.30;
+  // Bedrock strata: on steep ground the wall reads its own layers —
+  // elevation-banded tone changes, band thickness itself varying.
+  if (sK > 0.25) {
+    const bw = 9 + 8 * h2(Math.floor(elev / 130), 7);
+    const band = h2(Math.floor(elev / bw), 13);
+    v *= 1 - (sK - 0.25) * 0.5 * (band - 0.5);
+  }
   // Mineral speckle at ~7 m so close ground isn't airbrushed
   const sp = h2(Math.floor(x / 7), Math.floor(z / 7));
   v *= 0.88 + 0.24 * sp;

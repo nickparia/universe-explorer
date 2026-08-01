@@ -30,16 +30,19 @@ function h32(a, b, c) {
 }
 
 function makeRockGeometry() {
-  const g = new THREE.IcosahedronGeometry(1, 2);
+  // Fractured, not tumbled: displacement quantized to a few levels
+  // carves flat facets, and flat shading keeps the edges hard —
+  // basaltic float rock, the kind every rover image is littered with.
+  let g = new THREE.IcosahedronGeometry(1, 2);
   const p = g.attributes.position;
-  // Crumple the sphere into a stone — displace along the normal by a
-  // hash of the vertex direction so shared vertices stay welded.
   for (let i = 0; i < p.count; i++) {
     const x = p.getX(i), y = p.getY(i), z = p.getZ(i);
-    const k = 0.8 + 0.34 * h32((x * 97) | 0, (y * 89) | 0, (z * 83) | 0);
-    p.setXYZ(i, x * k, y * k * 0.78, z * k);   // squat, sat-in-dust
+    const hraw = h32((x * 97) | 0, (y * 89) | 0, (z * 83) | 0);
+    const k = 0.78 + 0.36 * (Math.floor(hraw * 4) / 3);
+    p.setXYZ(i, x * k, y * k * 0.8, z * k);
   }
-  g.computeVertexNormals();
+  g = g.toNonIndexed();
+  g.computeVertexNormals();   // non-indexed → true flat facets
   return g;
 }
 
@@ -78,12 +81,17 @@ export function updateRocks(camLocal) {
       // Debris gathers where the ground works: more stones on and
       // under slopes, a sparse scatter on the open floor.
       const slope = macroSlopeAt(cx, cz);
-      const density = 5 + Math.min(9, slope * 24) * (1 - Math.min(1, Math.max(0, slope - 0.4) * 3));
+      // Rock fields cluster: kilometer-scale patches of litter and
+      // sweeps of clean dust, on top of the slope-foot debris law
+      const cluster = Math.pow(0.25 + 1.55 * h32(gx >> 2, gz >> 2, 99), 1.6);
+      const density = (5 + Math.min(9, slope * 24) * (1 - Math.min(1, Math.max(0, slope - 0.4) * 3))) * cluster;
       const count = Math.floor(density * (0.35 + 1.3 * h32(gx, gz, 7)));
       for (let i = 0; i < count && n < MAX_ROCKS; i++) {
         const rx = (gx + h32(gx, gz, i * 3 + 1)) * TILE;
         const rz = (gz + h32(gx, gz, i * 3 + 2)) * TILE;
         const u = h32(gx, gz, i * 3 + 3);
+        // The landing pad stays clean — nobody sets down in a boulder
+        if (rx * rx + rz * rz < 24 * 24) continue;
         // Power-law sizes: mostly small, rare boulders
         const s = u < 0.86 ? 0.12 + u * 0.5 : u < 0.985 ? 0.6 + (u - 0.86) * 6 : 2.2 + (u - 0.985) * 160;
         const y = heightAt(rx, rz) + s * 0.22;

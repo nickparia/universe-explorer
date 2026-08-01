@@ -42,11 +42,31 @@ function rnoise(x, z) {
 export async function loadSite() {
   if (site) return site;
   const base = 'locations/mars-valles/';
-  const meta = await (await fetch(base + 'site_v1.json')).json();
+  const meta = await (await fetch(base + 'site_v2.json')).json();
   const buf = await (await fetch(base + meta.files.dem)).arrayBuffer();
   const raw = new Int16Array(buf);
   const dem = new Float32Array(raw.length);
   for (let i = 0; i < raw.length; i++) dem[i] = raw[i];
+
+  // The HiRISE layer: real ONE-METER elevation for the patch around
+  // the bootfall — NASA's stereo terrain where the boots actually
+  // stand. Everything outside it falls back to the 200 m blend.
+  let hi = null;
+  if (meta.files.hidem) {
+    const hbuf = await (await fetch(base + meta.files.hidem)).arrayBuffer();
+    const hraw = new Int16Array(hbuf);
+    const h = meta.hires;
+    const hdem = new Float32Array(hraw.length);
+    // stored as decimeters relative to hires.elevBase to keep int16
+    for (let i = 0; i < hraw.length; i++) hdem[i] = h.elevBase + hraw[i] * 0.1;
+    hi = {
+      dem: hdem, cols: h.cols, rows: h.rows,
+      x0: h.x0, z0: h.z0, mpp: h.mPerPx,
+      x1: h.x0 + (h.cols - 1) * h.mPerPx,
+      z1: h.z0 + (h.rows - 1) * h.mPerPx,
+      feather: 220,
+    };
+  }
 
   const albedo = await new Promise((resolve, reject) => {
     new THREE.TextureLoader().load(base + meta.files.albedo, resolve, undefined, reject);
@@ -60,6 +80,7 @@ export async function loadSite() {
   site = {
     meta,
     dem,
+    hi,
     albedo,
     cols: g.cols,
     rows: g.rows,
@@ -122,12 +143,44 @@ const SLOPE_OCTAVES = [
   [8, 0.5, false],
 ];
 
+// Bilinear over the HiRISE patch; returns weight 0 outside, feathered
+// at the rectangle edge so the 1 m world blends into the 200 m one.
+// (Nodata wedges were pre-blended into the layer at bake time.)
+function hiAt(x, z) {
+  const hi = site.hi;
+  if (!hi) return { h: 0, w: 0 };
+  const ex = Math.min(x - hi.x0, hi.x1 - x);
+  const ez = Math.min(z - hi.z0, hi.z1 - z);
+  if (ex <= 0 || ez <= 0) return { h: 0, w: 0 };
+  const w = Math.min(1, Math.min(ex, ez) / hi.feather);
+  let cx = (x - hi.x0) / hi.mpp;
+  let cz = (z - hi.z0) / hi.mpp;
+  if (cx > hi.cols - 1.001) cx = hi.cols - 1.001;
+  if (cz > hi.rows - 1.001) cz = hi.rows - 1.001;
+  const ix = Math.floor(cx), iz = Math.floor(cz);
+  const fx = cx - ix, fz = cz - iz;
+  const i0 = iz * hi.cols + ix;
+  const a = hi.dem[i0], b = hi.dem[i0 + 1];
+  const c = hi.dem[i0 + hi.cols], d = hi.dem[i0 + hi.cols + 1];
+  const h = (a + (b - a) * fx) * (1 - fz) + (c + (d - c) * fx) * fz
+    - site.landingElev;
+  return { h, w };
+}
+
 /**
  * The height function. minLambda gates octaves for LOD meshing (skip
  * detail finer than ~2 vertex spacings); pass 0 for collision truth.
  */
 export function heightAt(x, z, minLambda = 0) {
   let h = demAt(x, z);
+  // Where NASA measured the ground at one meter, NASA wins — and the
+  // synthetic octaves stand down for every wavelength the real data
+  // already carries.
+  let hiW = 0;
+  if (site.hi) {
+    const s = hiAt(x, z);
+    if (s.w > 0) { h = h * (1 - s.w) + s.h * s.w; hiW = s.w; }
+  }
   const slope = macroSlopeAt(x, z);
   const sK = Math.min(1, slope * 2.2);        // 0 on the floor, 1 on walls
   // Domain warp: sample the octaves through a slowly wandering
@@ -139,14 +192,14 @@ export function heightAt(x, z, minLambda = 0) {
   // stopping: a hard break gave adjacent LOD rings meter-scale height
   // steps that read as dark dash artifacts along every seam.
   for (const [lam, amp, ridged] of FLOOR_OCTAVES) {
-    const k = lodFade(lam, minLambda);
-    if (k <= 0) break;
+    const k = lodFade(lam, minLambda) * (lam > 3.5 ? 1 - hiW * 0.9 : 1);
+    if (k <= 0) continue;
     const n = vnoise(wx / lam, wz / lam);
     h += (n - 0.5) * 2 * amp * k * (1 - sK * 0.55);
   }
   for (const [lam, amp, ridged] of SLOPE_OCTAVES) {
-    const k = lodFade(lam, minLambda);
-    if (k <= 0) break;
+    const k = lodFade(lam, minLambda) * (lam > 3.5 ? 1 - hiW * 0.9 : 1);
+    if (k <= 0) continue;
     const n = ridged ? rnoise(wx / lam, wz / lam) : vnoise(wx / lam, wz / lam);
     h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * k * sK;
   }

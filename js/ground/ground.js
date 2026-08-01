@@ -155,7 +155,7 @@ export async function enterGround() {
   initDustField(rootGroup, new THREE.Vector3(0, 2, 0));
   initLamp(rootGroup);
   initRocks(rootGroup);
-  updateRocks(new THREE.Vector3(0, 0, 1250));
+  updateRocks(new THREE.Vector3(0, 0, 0));
   initDevils(rootGroup);
   initGroundHud(SITE_NAME, { onGait: toggleGait, onLiftoff: () => exitGround() });
 
@@ -169,12 +169,15 @@ export async function enterGround() {
   emit('ground:enter', { name: SITE_NAME });
 
   // Out of blackout twelve kilometers up: the descent corridor flies
-  // the whole canyon down to the shelf, then hands the boots the keys.
-  // Bootfall faces south-southeast over the 3.9 km drop, sun raking.
-  const endLocal = new THREE.Vector3(0, heightAt(0, 1250), 1250);
+  // the whole canyon down to the landing, then hands the boots the
+  // keys. The vista heading/pitch ride in the baked site metadata.
+  const landMeta = getSite().meta.landing || {};
+  const vYaw = landMeta.yaw ?? Math.PI + 0.25;
+  const vPitch = landMeta.pitch ?? -0.15;
+  const endLocal = new THREE.Vector3(0, heightAt(0, 0), 0);
   state = 'descending';
-  startDescent(camera, rootGroup, endLocal, Math.PI + 0.25, -0.15, () => {
-    initController(camera, new THREE.Vector3(0, 0, 1250), Math.PI + 0.25, -0.15);
+  startDescent(camera, rootGroup, endLocal, vYaw, vPitch, () => {
+    initController(camera, new THREE.Vector3(0, 0, 0), vYaw, vPitch);
     stepCrunch(1.25, true);   // the shelf takes the weight
     const cv2 = document.getElementById('c');
     if (cv2) cv2.focus();
