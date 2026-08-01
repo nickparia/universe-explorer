@@ -178,8 +178,16 @@ export function updateGroundHud(dt, s) {
   }
   if (chips.run) setChipLit(chips.run, !!s.run && s.speed > 0.5);
   if (chips.stake) {
-    chips.stake.cap.textContent = s.placing ? 'SET STAKE · ESC CANCELS' : s.inReach ? 'UPROOT' : 'PLANT STAKE';
-    setChipLit(chips.stake, !!s.inReach || !!s.placing);
+    chips.stake.cap.textContent =
+      s.placing
+        ? (s.placeBlocked === 'supply' ? `FABRICATING · ${s.supplyEtaMin} MIN`
+          : s.placeBlocked === 'spacing' ? 'TOO CLOSE · 12 M'
+          : s.placeBlocked === 'ground' ? 'GROUND REFUSES'
+          : `SET STAKE · ×${s.supply}`)
+        : s.inReach ? 'UPROOT'
+        : s.supply > 0 ? `PLANT STAKE · ×${s.supply}`
+        : `FABRICATING · ${s.supplyEtaMin} MIN`;
+    setChipLit(chips.stake, !!s.inReach || (!!s.placing && !s.placeBlocked));
   }
 
   // The stake speaks when you stand beside it

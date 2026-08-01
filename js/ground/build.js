@@ -132,7 +132,9 @@ export function updatePlacement(camLocal, yaw, roving) {
   const cant = (hMax - hMin) / span;               // rise/run across stance
   const seat = THREE.MathUtils.clamp(1 - cant / (def.maxSlope || 0.3), 0, 1);
   const spacing = def.minSpacing ? def.minSpacing(x, z) : 0;
-  const ok = seat > 0.12 && spacing <= 0;
+  const stocked = def.canCommit ? def.canCommit() : true;
+  const ok = seat > 0.12 && spacing <= 0 && stocked;
+  active.blocked = !stocked ? 'supply' : spacing > 0 ? 'spacing' : seat <= 0.12 ? 'ground' : null;
   active.ok = ok;
   active.seat = seat;
 
@@ -165,7 +167,7 @@ export function updatePlacement(camLocal, yaw, roving) {
     m.material.opacity = ok ? 0.9 : 0.45;
   });
 
-  return { ok, seat, spacing };
+  return { ok, seat, spacing, blocked: active.blocked };
 }
 
 /**

@@ -28,7 +28,7 @@ import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
 import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
-import { initStakes, disposeStakes, updateStakes, nearestStake, getStakes, uprootNear, stakeDef } from './stakes.js';
+import { initStakes, disposeStakes, updateStakes, nearestStake, getStakes, uprootNear, stakeDef, getSupply, getSupplyEta } from './stakes.js';
 import { initBuild, disposeBuild, beginPlacement, cancelPlacement, commitPlacement, updatePlacement, isPlacing } from './build.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
@@ -314,11 +314,12 @@ export function updateGround(dt) {
   const devilNear = updateDevils(dt, local, getWeather());
   setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
-  updateStakes(local, getSunState().elevDeg);
+  updateStakes(local, getSunState().elevDeg, dt);
+  let placeStatus = null;
   {
     const cam0 = getCamera();
     const f0 = new THREE.Vector3(0, 0, -1).applyQuaternion(cam0.quaternion);
-    updatePlacement(local, Math.atan2(-f0.x, -f0.z), getMode() === 'rove');
+    placeStatus = updatePlacement(local, Math.atan2(-f0.x, -f0.z), getMode() === 'rove');
   }
 
   // What you hear is what you see: base air + gusts + your own speed —
@@ -355,6 +356,9 @@ export function updateGround(dt) {
       nearStake: (() => { const n = nearestStake(local.x, local.z); return n && n.dist < 8 ? { n: n.stake.n, dist: n.dist, readings: n.stake.readings } : null; })(),
       inReach: (() => { const n = nearestStake(local.x, local.z); return !!(n && n.dist < 3); })(),
       placing: isPlacing(),
+      placeBlocked: placeStatus ? placeStatus.blocked : null,
+      supply: getSupply(),
+      supplyEtaMin: Math.ceil(getSupplyEta() / 60000),
     });
     updateGroundMap(dt, local, heading);
   }

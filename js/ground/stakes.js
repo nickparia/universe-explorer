@@ -22,14 +22,21 @@ import { pushCrewState } from '../crew.js';
 
 const MAX_STAKES = 24;
 const SURVEY_RADIUS = 400;      // m of verified ground per stake
+const MIN_SPACING = 12;         // physical only — circles may overlap
+const SUPPLY_MAX = 6;           // stakes carried; the lander fabricates more
+const REGEN_MS = 5 * 60 * 1000; // one new stake every 5 real minutes
 const KEY = 'solace_stakes_v1';
 const COUNT_KEY = 'solace_stakes_planted_v1';
+const SUPPLY_KEY = 'solace_stake_supply_v1';
 
 let group = null;
 let stakes = [];        // { x, z, t, n, readings, mesh }
 let plantedCount = 0;
 let nightLight = null;
 let pushTimer = null;
+let supply = SUPPLY_MAX;
+let supplyT = Date.now();   // fabrication clock anchor
+let pulses = [];            // shared pool of survey-pulse rings
 
 function h32(a, b, c) {
   let h = (a * 374761393 + b * 668265263 + c * 1274126177) | 0;
@@ -110,6 +117,11 @@ export function initStakes(parentGroup) {
   group.add(nightLight);
 
   try { plantedCount = parseInt(localStorage.getItem(COUNT_KEY) || '0', 10) || 0; } catch (e) {}
+  try {
+    const sv = JSON.parse(localStorage.getItem(SUPPLY_KEY) || 'null');
+    if (sv) { supply = sv.s; supplyT = sv.t; }
+  } catch (e) {}
+  regenSupply();
   let saved = [];
   try { saved = JSON.parse(localStorage.getItem(KEY) || '[]'); } catch (e) {}
   stakes = [];
@@ -145,6 +157,24 @@ export function disposeStakes() {
   nightLight = null;
 }
 
+function regenSupply() {
+  // The lander's fabricator works on the honest clock, here or away
+  const now = Date.now();
+  while (supply < SUPPLY_MAX && now - supplyT >= REGEN_MS) {
+    supply++;
+    supplyT += REGEN_MS;
+  }
+  if (supply >= SUPPLY_MAX) supplyT = now;
+  try { localStorage.setItem(SUPPLY_KEY, JSON.stringify({ s: supply, t: supplyT })); } catch (e) {}
+}
+
+export function getSupply() { regenSupply(); return supply; }
+export function getSupplyEta() {
+  regenSupply();
+  if (supply >= SUPPLY_MAX) return 0;
+  return Math.max(0, REGEN_MS - (Date.now() - supplyT));
+}
+
 function persist() {
   const flat = stakes.map(({ x, z, t, n, readings }) => ({ x, z, t, n, readings }));
   try {
@@ -175,6 +205,8 @@ export function uprootNear(x, z) {
   if (!(near && near.dist < 3)) return null;
   group.remove(near.stake.mesh);
   stakes = stakes.filter((s) => s !== near.stake);
+  supply = Math.min(SUPPLY_MAX, supply + 1);   // recovered, not wasted
+  try { localStorage.setItem(SUPPLY_KEY, JSON.stringify({ s: supply, t: supplyT })); } catch (e) {}
   persist();
   stepCrunch(0.7, false);
   emit('stake:uprooted', { n: near.stake.n });
@@ -183,7 +215,11 @@ export function uprootNear(x, z) {
 
 /** Commit a stake at a surveyed-and-accepted spot (the engine calls this). */
 export function plantAt(x, z) {
-  if (stakes.length >= MAX_STAKES) return null;
+  regenSupply();
+  if (stakes.length >= MAX_STAKES || supply <= 0) return null;
+  if (supply === SUPPLY_MAX) supplyT = Date.now();  // fabricator starts now
+  supply--;
+  try { localStorage.setItem(SUPPLY_KEY, JSON.stringify({ s: supply, t: supplyT })); } catch (e) {}
   const n = ++plantedCount;
   const readings = surveyReadings(x, z);
   const mesh = buildStakeMesh(x, z);
@@ -204,9 +240,12 @@ export function stakeDef() {
     feet: [[0, 0]],
     maxSlope: 0.55,
     minSpacing: (x, z) => {
+      // Physical clearance only — survey circles are ALLOWED to
+      // overlap; the stake supply throttles spamming, not a rule
       const near = nearestStake(x, z);
-      return near && near.dist < SURVEY_RADIUS * 0.35 ? SURVEY_RADIUS * 0.35 - near.dist : 0;
+      return near && near.dist < MIN_SPACING ? MIN_SPACING - near.dist : 0;
     },
+    canCommit: () => getSupply() > 0,
     makeGhost: () => buildStakeMesh(0, 0),
     onCommit: (x, z) => plantAt(x, z),
   };
@@ -216,9 +255,30 @@ export function getStakes() { return stakes; }
 export function getPlantedCount() { return plantedCount; }
 export function getSurveyRadius() { return SURVEY_RADIUS; }
 
-/** Night service: the nearest stake glows for real. */
-export function updateStakes(camLocal, sunElevDeg) {
+// ── The stake LIVES: a survey pulse breathes out of it ───────────────
+const PULSE_SEGS = 26;
+
+function makePulseRing() {
+  const geo = new THREE.BufferGeometry();
+  geo.setAttribute('position', new THREE.BufferAttribute(new Float32Array((PULSE_SEGS + 1) * 2 * 3), 3));
+  const idx = [];
+  for (let i = 0; i < PULSE_SEGS; i++) {
+    const a = i * 2, b = i * 2 + 1, c = (i + 1) * 2, d = (i + 1) * 2 + 1;
+    idx.push(a, b, c, b, d, c);
+  }
+  geo.setIndex(idx);
+  const mesh = new THREE.Mesh(geo, new THREE.MeshBasicMaterial({
+    color: 0xffa050, transparent: true, opacity: 0, side: THREE.DoubleSide, depthWrite: false,
+  }));
+  mesh.frustumCulled = false;
+  group.add(mesh);
+  return { mesh, stake: null, t: 0 };
+}
+
+/** Night service + the living pulse. */
+export function updateStakes(camLocal, sunElevDeg, dt = 0.016) {
   if (!nightLight) return;
+  regenSupply();
   const near = nearestStake(camLocal.x, camLocal.z);
   if (near && near.dist < 30 && sunElevDeg < 2) {
     nightLight.position.set(near.stake.x, heightAt(near.stake.x, near.stake.z) + 1.35, near.stake.z);
@@ -226,4 +286,49 @@ export function updateStakes(camLocal, sunElevDeg) {
   } else {
     nightLight.intensity = 0;
   }
+
+  const now = Date.now();
+  // Heads blink, staggered — each stake keeps its own beat; a fresh
+  // stake (surveying, first 40 s) beats fast
+  for (const st of stakes) {
+    const head = st.mesh.children[1];
+    if (head && head.material) {
+      const fresh = now - st.t < 40000;
+      head.material.emissiveIntensity = fresh
+        ? 1.2 + Math.sin(now * 0.012 + st.n) * 0.9
+        : 1.0 + Math.max(0, Math.sin(now * 0.0021 + st.n * 1.7)) * 0.8;
+    }
+  }
+
+  // Pulse pool serves the three nearest stakes within sight — an
+  // expanding ring that hugs the real terrain, sonar made visible
+  while (pulses.length < 3) pulses.push(makePulseRing());
+  const nearStakes = stakes
+    .map((st) => ({ st, d: Math.hypot(st.x - camLocal.x, st.z - camLocal.z) }))
+    .filter((e) => e.d < 260)
+    .sort((a, b) => a.d - b.d)
+    .slice(0, 3);
+  pulses.forEach((p, i) => {
+    const e = nearStakes[i];
+    if (!e) { p.mesh.material.opacity = 0; p.stake = null; return; }
+    if (p.stake !== e.st) { p.stake = e.st; p.t = 0; }
+    const fresh = now - e.st.t < 40000;
+    const period = fresh ? 1.5 : 6.5;
+    p.t += dt;
+    const ph = (p.t % period) / period;
+    const R = 1.5 + ph * (fresh ? 16 : 11);
+    const pos = p.mesh.geometry.attributes.position.array;
+    for (let k = 0; k <= PULSE_SEGS; k++) {
+      const a = (k / PULSE_SEGS) * Math.PI * 2;
+      const ox = e.st.x + Math.cos(a) * R, oz = e.st.z + Math.sin(a) * R;
+      const oy = heightAt(ox, oz) + 0.12;
+      const inR = R - 0.55;
+      pos[k * 6] = e.st.x + Math.cos(a) * inR;
+      pos[k * 6 + 1] = heightAt(e.st.x + Math.cos(a) * inR, e.st.z + Math.sin(a) * inR) + 0.12;
+      pos[k * 6 + 2] = e.st.z + Math.sin(a) * inR;
+      pos[k * 6 + 3] = ox; pos[k * 6 + 4] = oy; pos[k * 6 + 5] = oz;
+    }
+    p.mesh.geometry.attributes.position.needsUpdate = true;
+    p.mesh.material.opacity = (fresh ? 0.55 : 0.3) * (1 - ph) * (1 - Math.min(1, e.d / 260));
+  });
 }
