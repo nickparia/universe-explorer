@@ -1,6 +1,11 @@
-import { defineConfig } from 'vite';
+import { defineConfig } from 'vite'
+import { execSync } from 'node:child_process'
+
+let build = 'dev'
+try { build = execSync('git rev-parse --short HEAD').toString().trim() } catch (e) {};
 
 export default defineConfig({
+  define: { __SOLACE_BUILD__: JSON.stringify(build) },
   build: {
     target: 'es2022',
     // three.js is intentionally a single vendor chunk (~700KB min) — it's the

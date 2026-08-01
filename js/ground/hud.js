@@ -233,20 +233,20 @@ export function initGroundHud(siteName, actions = {}) {
     '<path fill="rgba(11,8,6,0.97)" d="M1920,0 H1620 L1792,640 Q1860,760 1920,800 Z"/>' +
     '<path fill="none" stroke="rgba(210,195,165,0.14)" stroke-width="2.5" d="M300,0 L128,640 Q60,760 0,800"/>' +
     '<path fill="none" stroke="rgba(210,195,165,0.14)" stroke-width="2.5" d="M1620,0 L1792,640 Q1860,760 1920,800"/>' +
-    '<g transform="rotate(-8 120 340)">' +
-    '<rect x="88" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
-    '<circle cx="100" cy="254" r="2.5" fill="rgba(210,195,165,0.3)"/><circle cx="138" cy="422" r="2.5" fill="rgba(210,195,165,0.3)"/>' +
-    '<circle class="lens" data-c="255,170,80" cx="119" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.75"/>' +
-    '<circle class="lens" data-c="140,220,110" cx="119" cy="324" r="7" fill="rgb(140,220,110)" fill-opacity="0.2"/>' +
-    '<circle class="lens" data-c="200,90,60" cx="119" cy="364" r="7" fill="rgb(200,90,60)" fill-opacity="0.6"/>' +
-    '<circle class="lens" data-c="210,195,165" cx="119" cy="404" r="7" fill="rgb(210,195,165)" fill-opacity="0.15"/>' +
+    '<g transform="rotate(-11 250 340)">' +
+    '<rect x="216" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
+    '<circle cx="228" cy="254" r="2.5" fill="rgba(210,195,165,0.3)"/><circle cx="266" cy="422" r="2.5" fill="rgba(210,195,165,0.3)"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="247" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.75"/>' +
+    '<circle class="lens" data-c="140,220,110" cx="247" cy="324" r="7" fill="rgb(140,220,110)" fill-opacity="0.2"/>' +
+    '<circle class="lens" data-c="200,90,60" cx="247" cy="364" r="7" fill="rgb(200,90,60)" fill-opacity="0.6"/>' +
+    '<circle class="lens" data-c="210,195,165" cx="247" cy="404" r="7" fill="rgb(210,195,165)" fill-opacity="0.15"/>' +
     '</g>' +
-    '<g transform="rotate(8 1800 340)">' +
-    '<rect x="1770" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
-    '<circle class="lens" data-c="255,170,80" cx="1801" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.3"/>' +
-    '<circle class="lens" data-c="120,170,220" cx="1801" cy="324" r="7" fill="rgb(120,170,220)" fill-opacity="0.7"/>' +
-    '<circle class="lens" data-c="140,220,110" cx="1801" cy="364" r="7" fill="rgb(140,220,110)" fill-opacity="0.65"/>' +
-    '<circle class="lens" data-c="255,170,80" cx="1801" cy="404" r="7" fill="rgb(255,170,80)" fill-opacity="0.12"/>' +
+    '<g transform="rotate(11 1670 340)">' +
+    '<rect x="1642" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="1673" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.3"/>' +
+    '<circle class="lens" data-c="120,170,220" cx="1673" cy="324" r="7" fill="rgb(120,170,220)" fill-opacity="0.7"/>' +
+    '<circle class="lens" data-c="140,220,110" cx="1673" cy="364" r="7" fill="rgb(140,220,110)" fill-opacity="0.65"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="1673" cy="404" r="7" fill="rgb(255,170,80)" fill-opacity="0.12"/>' +
     '</g>' +
     '<path fill="url(#hazard)" d="M0,800 Q60,760 128,640 L164,640 Q104,780 0,854 Z"/>' +
     '<path fill="url(#hazard)" d="M1920,800 Q1860,760 1792,640 L1756,640 Q1816,780 1920,854 Z"/>' +
@@ -326,7 +326,7 @@ export function initGroundHud(siteName, actions = {}) {
     '<rect x="976" y="842" width="276" height="172" rx="12" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
     '<g id="crt-sys">' +
     '<rect x="992" y="856" width="244" height="142" rx="8" fill="rgba(8,5,3,0.99)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
-    '<text x="1008" y="882" font-size="12" letter-spacing="2" fill="rgba(255,186,100,0.45)">MU-TH // SYSTEMS</text>' +
+    `<text x="1008" y="882" font-size="12" letter-spacing="2" fill="rgba(255,186,100,0.45)">MU-TH // SYS &#183; R:${typeof __SOLACE_BUILD__ !== 'undefined' ? __SOLACE_BUILD__ : 'dev'}</text>` +
     '<g filter="url(#phos)">' +
     '<text id="sys-l1" x="1008" y="910" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.85)">GAIT</text>' +
     '<text id="sys-l2" x="1008" y="936" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.75)">STK</text>' +
@@ -424,8 +424,8 @@ export function initGroundHud(siteName, actions = {}) {
       keyRow(300, 140, 10, 22, 5) + keyRow(1370, 140, 10, 22, 9));
     // Dash flanks: dense fields where the metal was bare
     gen('#gen-left',
-      frame(44, 856, 300, 118) + dotField(56, 866, 22, 8, 12.5, 71, 0.5) +
-      frame(44, 986, 300, 84) + barBank(64, 1002, 18, 83));
+      frame(214, 856, 140, 118) + dotField(224, 866, 10, 8, 12.5, 71, 0.5) +
+      frame(214, 986, 140, 84) + barBank(226, 1002, 9, 83));
     gen('#gen-right',
       frame(1612, 856, 268, 214) + dotField(1624, 868, 20, 10, 12.5, 97, 0.55) +
       barBank(1636, 1006, 16, 113));
