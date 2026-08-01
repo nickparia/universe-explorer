@@ -93,6 +93,33 @@ the fidelity bar of the orbital locations.
   materials, materials by depth one notch shallower. Ground challenge
   feeds back into the ship loop.
 
+## The survey law — ask before you build
+
+The FIRST act on any world is planting a survey stake. A stake answers
+the ground it stands in: slope, real sun-hours against the real
+horizon, mineral signature, atmosphere — and its circle of VERIFIED
+ground appears on the charts. The orbital map always shows everything
+(no fog of war — the ship chose this site from orbit), but only
+surveyed ground is *known*: readings, hazards and resources live
+inside the circles. Exploration is converting orbital estimate into
+ground truth, circle by circle — and each world varies what makes
+that hard (a toxic atmosphere is answered in the lab; a radiation
+window is answered with timing; distance is answered with the rover).
+Information is the gate: what a stake reports decides what you can —
+and must — build next.
+
+## The ten-times law — chores become blueprints
+
+Every manual act is counted. Around the tenth repetition of anything
+(stakes planted, loads hauled, cores drilled), the ship does NOT do it
+for you — it makes the automation *researchable*: the survey drone
+blueprint unlocks because you have earned the right to stop doing
+surveys by hand, and you still have to build the drone. The chore's
+ending is itself a thing you construct. The lineage scales: hand
+stake → site survey drone → orbital survey pass → drones dispatched
+to worlds you have never landed on. Automation is the reward for
+repetition, never a substitute for the first ten times.
+
 ## Outposts — solve once, own forever (the keystone)
 
 The quest of a site is to **establish and grow refining

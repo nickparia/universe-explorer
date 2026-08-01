@@ -212,7 +212,7 @@ async function handleCrewGet(request, env) {
   if (!name) return json({ error: 'unauthorized' }, 401);
   const rec = await env.CREW.get('crew:' + name, 'json');
   if (!rec) return json({ error: 'unauthorized' }, 401);
-  return json({ name, notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {} });
+  return json({ name, notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {}, stakes: rec.stakes || [] });
 }
 
 async function handleCrewPost(request, env) {
@@ -234,7 +234,16 @@ async function handleCrewPost(request, env) {
     const p = rec.prefs || {};
     if (typeof body.prefs.music === 'boolean') p.music = body.prefs.music;
     if (typeof body.prefs.vol === 'number' && body.prefs.vol >= 0.05 && body.prefs.vol <= 1) p.vol = body.prefs.vol;
+    if (typeof body.prefs.lookInvert === 'boolean') p.lookInvert = body.prefs.lookInvert;
     rec.prefs = p;
+  }
+  if (Array.isArray(body.stakes)) {
+    // Survey stakes: the first persistent marks a traveler leaves on a
+    // world. Bounded and validated — the record is small on purpose.
+    rec.stakes = body.stakes.slice(0, 32).filter((st) =>
+      st && typeof st.x === 'number' && typeof st.z === 'number' &&
+      typeof st.t === 'number' && Math.abs(st.x) < 2e5 && Math.abs(st.z) < 2e5
+    ).map((st) => ({ x: Math.round(st.x * 10) / 10, z: Math.round(st.z * 10) / 10, t: st.t, n: st.n || 0 }));
   }
   if (body.places && typeof body.places === 'object') {
     // Merge, newest timestamp wins — visits accumulate across devices

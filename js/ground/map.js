@@ -10,6 +10,7 @@
 
 import * as THREE from 'three';
 import { getSite } from './site.js';
+import { getStakes, getSurveyRadius } from './stakes.js';
 
 const MONO = "'SF Mono','Cascadia Mono','JetBrains Mono',Menlo,Consolas,'Courier New',monospace";
 
@@ -161,6 +162,21 @@ export function updateGroundMap(dt, local, heading) {
   // dark phosphor glass over it
   mctx.fillStyle = 'rgba(10,5,2,0.25)';
   mctx.fillRect(0, 0, S, S);
+  // surveyed ground: verified circles glow faintly on the glass
+  const pxPerM = (S / spanPx) * b.sx;
+  for (const st of getStakes()) {
+    const sb = worldToBase(st.x, st.z);
+    const sx = S / 2 + (sb.x - b.x) * (S / spanPx);
+    const sy = S / 2 + (sb.y - b.y) * (S / spanPx);
+    const rr = getSurveyRadius() * pxPerM;
+    mctx.fillStyle = 'rgba(255,186,100,0.07)';
+    mctx.beginPath(); mctx.arc(sx, sy, rr, 0, Math.PI * 2); mctx.fill();
+    mctx.strokeStyle = 'rgba(255,186,100,0.35)';
+    mctx.lineWidth = 1;
+    mctx.beginPath(); mctx.arc(sx, sy, rr, 0, Math.PI * 2); mctx.stroke();
+    mctx.fillStyle = 'rgba(255,196,120,0.9)';
+    mctx.fillRect(sx - 1.5, sy - 1.5, 3, 3);
+  }
   // the pad
   const pad = worldToBase(0, 0);
   const px = S / 2 + (pad.x - b.x) * (S / spanPx);
@@ -210,6 +226,20 @@ export function updateGroundMap(dt, local, heading) {
       sctx.setLineDash([]);
       sctx.fillStyle = 'rgba(180,220,255,0.5)';
       sctx.fillText('1M SURVEY', a.x + 4, a.y - 5);
+    }
+    // surveyed ground on the sheet
+    const rPx = getSurveyRadius() / mPerPxX;
+    for (const st of getStakes()) {
+      const sp = worldToBase(st.x, st.z);
+      sctx.fillStyle = 'rgba(255,186,100,0.08)';
+      sctx.beginPath(); sctx.arc(sp.x, sp.y, rPx, 0, Math.PI * 2); sctx.fill();
+      sctx.strokeStyle = 'rgba(255,186,100,0.4)';
+      sctx.lineWidth = 1;
+      sctx.beginPath(); sctx.arc(sp.x, sp.y, rPx, 0, Math.PI * 2); sctx.stroke();
+      sctx.fillStyle = 'rgba(255,206,130,0.95)';
+      sctx.save(); sctx.translate(sp.x, sp.y); sctx.rotate(Math.PI / 4); sctx.fillRect(-2.5, -2.5, 5, 5); sctx.restore();
+      sctx.fillStyle = 'rgba(255,186,100,0.75)';
+      sctx.fillText('S' + st.n, sp.x + 7, sp.y + 4);
     }
     // pad + player
     const pd = worldToBase(0, 0);

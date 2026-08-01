@@ -28,6 +28,7 @@ import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
 import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
+import { initStakes, disposeStakes, updateStakes, plantOrUproot, nearestStake, getStakes } from './stakes.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
@@ -99,8 +100,13 @@ export function initGround() {
 
   window.addEventListener('keydown', (e) => {
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-      if (!(e.code === 'KeyL' && !e.target.value)) return;  // empty line yields
+      if (!((e.code === 'KeyL' || e.code === 'KeyE') && !e.target.value)) return;  // empty line yields
       e.target.blur();
+    }
+    if (e.code === 'KeyE' && state === 'active') {
+      const p = getLocalPos();
+      plantOrUproot(p.x, p.z);
+      return;
     }
     if (e.code !== 'KeyL') return;
     if (state === 'active') exitGround();
@@ -158,8 +164,13 @@ export async function enterGround() {
   initRocks(rootGroup);
   updateRocks(new THREE.Vector3(0, 0, 0));
   initDevils(rootGroup);
-  initGroundHud(SITE_NAME, { onGait: toggleGait, onLiftoff: () => exitGround() });
+  initGroundHud(SITE_NAME, {
+    onGait: toggleGait,
+    onLiftoff: () => exitGround(),
+    onStake: () => { const p2 = getLocalPos(); plantOrUproot(p2.x, p2.z); },
+  });
   initGroundMap();
+  initStakes(rootGroup);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -212,6 +223,7 @@ export function exitGround() {
     disposeDevils();
     disposeGroundHud();
     disposeGroundMap();
+    disposeStakes();
     disposeSky(scene);
     disposeTerrain();
     if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -291,6 +303,7 @@ export function updateGround(dt) {
   const devilNear = updateDevils(dt, local, getWeather());
   setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
+  updateStakes(local, getSunState().elevDeg);
 
   // What you hear is what you see: base air + gusts + your own speed —
   // and a dust devil passing close roars over all of it
@@ -315,6 +328,16 @@ export function updateGround(dt) {
       mode: getMode(),
       run: !!ctl.run,
       gust: lastGust,
+      pitchDeg: Math.asin(Math.max(-1, Math.min(1, fwd.y))) * 180 / Math.PI,
+      marks: (() => {
+        const out = [{ bearing: ((Math.atan2(0 - local.x, -(0 - local.z)) * 180 / Math.PI) + 360) % 360, pad: true }];
+        for (const st of getStakes()) {
+          out.push({ bearing: ((Math.atan2(st.x - local.x, -(st.z - local.z)) * 180 / Math.PI) + 360) % 360 });
+        }
+        return out;
+      })(),
+      nearStake: (() => { const n = nearestStake(local.x, local.z); return n && n.dist < 8 ? { n: n.stake.n, dist: n.dist, readings: n.stake.readings } : null; })(),
+      inReach: (() => { const n = nearestStake(local.x, local.z); return !!(n && n.dist < 3); })(),
     });
     updateGroundMap(dt, local, heading);
   }

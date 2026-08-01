@@ -78,7 +78,7 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       // An EMPTY terminal line yields to the boots: after talking to
       // Sol the input keeps focus, and without this every W went into
       // the chat — "movement doesn't work." Mid-sentence, typing wins.
-      if (!e.target.value && /^(Key[WASDV]|Space|Shift(Left|Right)|Arrow)/.test(e.code)) {
+      if (!e.target.value && /^(Key[WASDVE]|Space|Shift(Left|Right)|Arrow)/.test(e.code)) {
         e.target.blur();
         if (canvas) canvas.focus();
       } else {

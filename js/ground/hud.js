@@ -18,6 +18,8 @@ let strip = null;
 let chips = {};      // key → {el, cap}
 let lastGait = null;
 let cockpit = null;  // the rover's cab framing
+let survey = null;   // the readings panel beside a stake
+let lastHeading = 0, parX = 0, parY = 0;
 
 const HELMET_BG =
   'radial-gradient(ellipse 75% 66% at 50% 46%, transparent 58%, rgba(12,7,4,0.34) 100%)';
@@ -127,15 +129,27 @@ export function initGroundHud(siteName, actions = {}) {
   chips.gait = makeChip('V', 'ROVER', actions.onGait);
   chips.run = makeChip('SHIFT', 'RUN');
   chips.hop = makeChip('SPACE', 'HOP');
+  chips.stake = makeChip('E', 'PLANT STAKE', actions.onStake);
   chips.lift = makeChip('L', 'LIFT OFF', actions.onLiftoff);
-  for (const k of ['gait', 'run', 'hop', 'lift']) strip.appendChild(chips[k].el);
+  for (const k of ['gait', 'run', 'hop', 'stake', 'lift']) strip.appendChild(chips[k].el);
   document.body.appendChild(strip);
+
+  // Survey readings — the stake answers, on the glass beside it
+  survey = document.createElement('div');
+  survey.style.cssText =
+    `position:fixed;top:206px;right:22px;z-index:46;pointer-events:none;` +
+    `font-family:${MONO};font-size:10px;letter-spacing:2px;color:${AMBER}0.66);` +
+    'text-align:right;opacity:0;transition:opacity 0.5s;' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 8px rgba(255,150,60,0.2);' +
+    '-webkit-mask-image:repeating-linear-gradient(0deg,#000 0 2px,rgba(0,0,0,0.65) 2px 3px);' +
+    'mask-image:repeating-linear-gradient(0deg,#000 0 2px,rgba(0,0,0,0.65) 2px 3px);';
+  document.body.appendChild(survey);
   lastGait = null;
 }
 
 export function disposeGroundHud() {
-  for (const el of [vignette, compass, panel, strip, cockpit]) if (el && el.parentNode) el.parentNode.removeChild(el);
-  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; cockpit = null;
+  for (const el of [vignette, compass, panel, strip, cockpit, survey]) if (el && el.parentNode) el.parentNode.removeChild(el);
+  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; cockpit = null; survey = null;
 }
 
 const CARDINALS = [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']];
@@ -163,6 +177,39 @@ export function updateGroundHud(dt, s) {
     if (chips.hop) chips.hop.el.style.opacity = roving ? '0' : '1';
   }
   if (chips.run) setChipLit(chips.run, !!s.run && s.speed > 0.5);
+  if (chips.stake) {
+    chips.stake.cap.textContent = s.inReach ? 'UPROOT' : 'PLANT STAKE';
+    setChipLit(chips.stake, !!s.inReach);
+  }
+
+  // The stake speaks when you stand beside it
+  if (survey) {
+    if (s.nearStake) {
+      const r = s.nearStake.readings;
+      survey.innerHTML =
+        `<div style="color:${AMBER}0.85);letter-spacing:4px;margin-bottom:4px;">SURVEY S${s.nearStake.n}</div>` +
+        `SLOPE ${r.slopePct}% · ${r.roughness}<br>` +
+        `SUN ${r.sunHours} H/SOL<br>` +
+        `FE-OX ${r.feox}% · SIO₂ ${r.sio2}%${r.ice > 0 ? ' · ICE TR ' + r.ice + '%' : ''}<br>` +
+        `<span style="color:${AMBER}0.45);">${r.atmos}</span>`;
+      survey.style.opacity = '1';
+    } else {
+      survey.style.opacity = '0';
+    }
+  }
+
+  // Cockpit parallax — the cab is a THING you sit in: it lags the
+  // gaze a few pixels, the Subnautica trick at CSS prices
+  {
+    let dh = s.heading - lastHeading;
+    if (dh > 180) dh -= 360; else if (dh < -180) dh += 360;
+    lastHeading = s.heading;
+    parX += (THREE.MathUtils.clamp(-dh * 2.2, -26, 26) - parX) * Math.min(1, dt * 6);
+    const pitchOff = THREE.MathUtils.clamp((s.pitchDeg || 0) * 0.55, -18, 18);
+    parY += (pitchOff - parY) * Math.min(1, dt * 6);
+    if (cockpit) cockpit.style.transform = `translate(${parX.toFixed(1)}px, ${parY.toFixed(1)}px) scale(1.06)`;
+    if (vignette) vignette.style.transform = `translate(${(parX * 0.35).toFixed(1)}px, ${(parY * 0.35).toFixed(1)}px) scale(1.04)`;
+  }
   const W = 460, H = 34;
   cctx.clearRect(0, 0, W, H);
   const degSpan = 90;                       // visible arc
@@ -192,6 +239,22 @@ export function updateGroundHud(dt, s) {
       const x = W / 2 + d * pxPerDeg;
       cctx.fillStyle = AMBER + (label.length === 1 ? '0.95)' : '0.55)');
       cctx.fillText(label, x, 12);
+    }
+  }
+  // marks: stakes and the pad ride the ribbon as diamonds
+  if (s.marks) {
+    for (const mk of s.marks) {
+      for (const wrap of [-360, 0, 360]) {
+        const d = mk.bearing + wrap - h;
+        if (Math.abs(d) > degSpan / 2) continue;
+        const x = W / 2 + d * pxPerDeg;
+        cctx.save();
+        cctx.translate(x, H - 24);
+        cctx.rotate(Math.PI / 4);
+        cctx.fillStyle = mk.pad ? AMBER + '0.9)' : AMBER + '0.6)';
+        cctx.fillRect(-3, -3, 6, 6);
+        cctx.restore();
+      }
     }
   }
   // center lubber line

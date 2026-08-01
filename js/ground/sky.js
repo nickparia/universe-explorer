@@ -15,23 +15,40 @@ import * as THREE from 'three';
 
 const DOME_R = 180000;
 
-// The compressed sol: bootfall at late afternoon, sunset in about
-// twenty real minutes, a long indigo twilight, then the light returns.
-// Feel-first for Phase 0 — the real Mars clock can arrive with Phase 1.
-const SOL_SECONDS = 8600;          // full cycle ≈ 2.4 h real
-const START_T = 0.645;             // late afternoon, sun low in the west
+// The site's OWN clock: sol time is a pure function of real UTC —
+// identical for every visit and every device, never reset by landing.
+// Daylight lingers (~64 real minutes), the dark hurries (~25), and
+// when you make landfall you arrive at whatever hour it truly is.
+// Things happen logically now: an extractor working "while you're
+// away" needs a world where time actually passes.
+const DAY_REAL = 64 * 60;          // s of real time above the horizon
+const NIGHT_REAL = 25 * 60;        // s below
+const CYCLE = DAY_REAL + NIGHT_REAL;
+const SUNRISE_T = 0.2874, SUNSET_T = 0.7126;   // where elev crosses 0
+
+function clockSolT(nowMs) {
+  const u = ((nowMs / 1000) % CYCLE + CYCLE) % CYCLE;
+  if (u < DAY_REAL) {
+    return SUNRISE_T + (u / DAY_REAL) * (SUNSET_T - SUNRISE_T);
+  }
+  const v = (u - DAY_REAL) / NIGHT_REAL;
+  return (SUNSET_T + v * (1 - SUNSET_T + SUNRISE_T)) % 1;
+}
 
 let dome = null, mat = null;
 let sunLight = null, hemi = null, fill = null;
 let fog = null;
-// Dev: /?solt=0.70 starts the sol at a chosen phase (sunset ≈ 0.707)
-let solT = (() => {
+// Dev override (?solt=) works on localhost ONLY — the deployed world
+// keeps one honest clock for everyone.
+const _solOverride = (() => {
   try {
+    if (location.hostname !== 'localhost') return null;
     const p = new URLSearchParams(location.search).get('solt');
     if (p !== null) { const v = parseFloat(p); if (v >= 0 && v < 1) return v; }
   } catch (e) { /* non-browser */ }
-  return START_T;
+  return null;
 })();
+let solT = _solOverride ?? clockSolT(Date.now());
 const sunDir = new THREE.Vector3(0, 1, 0);
 let sunElevDeg = 30;
 
@@ -145,11 +162,26 @@ export function disposeSky(scene) {
   dome = null; mat = null; sunLight = null; hemi = null; fill = null;
   scene.fog = null;
   fog = null;
-  solT = START_T;
 }
 
 export function getSunState() {
   return { elevDeg: sunElevDeg, dir: sunDir, t: solT };
+}
+
+/** Pure sun geometry for any sol phase — the survey math uses this to
+ *  integrate real sun-hours against the real horizon. */
+export function sunDirFor(t) {
+  const phase = t * Math.PI * 2;
+  const dayCurve = Math.max(0, -Math.cos(phase));
+  const elev = -14 + 52 * Math.pow(dayCurve, 0.9);
+  const elevR = THREE.MathUtils.degToRad(elev);
+  const azim = Math.PI - phase;
+  return {
+    elevDeg: elev,
+    x: Math.cos(elevR) * Math.sin(azim),
+    y: Math.sin(elevR),
+    z: -Math.cos(elevR) * Math.cos(azim),
+  };
 }
 
 export function debugSky() {
@@ -166,11 +198,8 @@ export function debugSky() {
 
 export function updateSky(dt, camLocal) {
   if (!dome) return;
-  // Asymmetric clock: the authored sol lingers in daylight and hurries
-  // through the dark — night is an event (stars, the lamp, the cold),
-  // not an 80-minute wall. Roughly 64 min of day, ~25 of night.
-  const rate = sunElevDeg < 0 ? 3.0 : 0.9;
-  solT = (solT + (dt * rate) / SOL_SECONDS) % 1;
+  // The world's clock, not the session's: read it, never accumulate it
+  solT = _solOverride ?? clockSolT(Date.now());
 
   // Sun arc: a cosine day-curve — noon peaks at 38° toward the north
   // (we stand at 13°S), night bottoms at -14°. Azimuth runs east at
@@ -214,7 +243,7 @@ export function updateSky(dt, camLocal) {
     fog.color.copy(COL.fogNight).lerp(COL.fogDay, day);
     // The haze breathes: dust loads and settles over minutes, and a
     // gusty spell leaves the air thicker for a while after.
-    _hazeT += dt;
+    _hazeT = (Date.now() / 1000) % 604800;   // the weather is the world's
     _gustCarry += ((_gustNow * 0.8) - _gustCarry) * (1 - Math.exp(-dt / 25));
     const breathe = 1 + 0.20 * Math.sin(_hazeT * 0.013) + 0.10 * Math.sin(_hazeT * 0.031 + 2.1);
     fog.density = 1.45e-5 * breathe * (1 + 0.35 * _gustCarry) * (0.85 + 0.4 * getWeather());
