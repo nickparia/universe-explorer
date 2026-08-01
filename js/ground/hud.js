@@ -103,21 +103,51 @@ export function initGroundHud(siteName, actions = {}) {
   }
   document.body.appendChild(panel);
 
-  // The rover cab: A-pillars and a console shadow — you sit IN it
+  // The frames you live inside — DRAWN, not implied. The helmet is an
+  // aperture with a rim, a brow, a chin console (the switch strip's
+  // home); the cab has real pillars, a header, and a dashboard with a
+  // console hump. SVG, painted in the ship's own light.
   cockpit = document.createElement('div');
   cockpit.style.cssText =
-    'position:fixed;inset:0;pointer-events:none;z-index:45;opacity:0;transition:opacity 0.6s ease;';
+    'position:fixed;inset:0;pointer-events:none;z-index:45;';
   cockpit.innerHTML =
-    '<div style="position:absolute;left:0;top:0;bottom:0;width:11vw;' +
-    'background:linear-gradient(105deg, rgba(8,5,3,0.92) 0%, rgba(8,5,3,0.55) 45%, transparent 100%);"></div>' +
-    '<div style="position:absolute;right:0;top:0;bottom:0;width:11vw;' +
-    'background:linear-gradient(-105deg, rgba(8,5,3,0.92) 0%, rgba(8,5,3,0.55) 45%, transparent 100%);"></div>' +
-    '<div style="position:absolute;left:0;right:0;bottom:0;height:13vh;' +
-    'background:linear-gradient(to top, rgba(8,5,3,0.9) 0%, rgba(8,5,3,0.45) 55%, transparent 100%);"></div>' +
-    '<div style="position:absolute;left:14vw;right:14vw;bottom:10.5vh;height:1px;' +
-    'background:linear-gradient(90deg, transparent, rgba(255,170,80,0.35), transparent);"></div>' +
-    '<div style="position:absolute;left:0;right:0;top:0;height:5vh;' +
-    'background:linear-gradient(to bottom, rgba(8,5,3,0.75), transparent);"></div>';
+    // ── HELMET ──
+    '<svg id="hud-helmet" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" ' +
+    'style="position:absolute;inset:0;width:100%;height:100%;opacity:1;transition:opacity 0.6s;">' +
+    '<defs><filter id="hblur"><feGaussianBlur stdDeviation="14"/></filter></defs>' +
+    // shell outside the visor aperture
+    '<path fill-rule="evenodd" fill="rgba(9,6,4,0.88)" d="M0,0 H1920 V1080 H0 Z ' +
+    'M960,42 C1450,42 1878,180 1878,540 C1878,900 1450,1038 960,1038 C470,1038 42,900 42,540 C42,180 470,42 960,42 Z"/>' +
+    // visor rim: a hard edge and a faint inner catch-light
+    '<path fill="none" stroke="rgba(150,140,128,0.34)" stroke-width="3" d="M960,42 C1450,42 1878,180 1878,540 C1878,900 1450,1038 960,1038 C470,1038 42,900 42,540 C42,180 470,42 960,42 Z"/>' +
+    '<path fill="none" stroke="rgba(255,186,100,0.10)" stroke-width="9" d="M960,52 C1444,52 1868,186 1868,540 C1868,894 1444,1028 960,1028 C476,1028 52,894 52,540 C52,186 476,52 960,52 Z"/>' +
+    // glass: two soft reflection streaks, upper left
+    '<g filter="url(#hblur)" opacity="0.05">' +
+    '<rect x="240" y="120" width="520" height="46" fill="#fff" transform="rotate(-16 240 120)"/>' +
+    '<rect x="180" y="230" width="330" height="26" fill="#fff" transform="rotate(-16 180 230)"/></g>' +
+    // brow plate (the compass mounts here)
+    '<path fill="rgba(11,7,5,0.85)" d="M560,0 H1360 L1330,64 Q960,86 590,64 Z"/>' +
+    // chin console (the switch strip mounts here)
+    '<path fill="rgba(12,8,6,0.92)" d="M620,1080 L672,1006 Q960,978 1248,1006 L1300,1080 Z"/>' +
+    '<path fill="none" stroke="rgba(255,170,80,0.28)" stroke-width="2" d="M672,1006 Q960,978 1248,1006"/>' +
+    '</svg>' +
+    // ── CAB ──
+    '<svg id="hud-cab" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" ' +
+    'style="position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 0.6s;">' +
+    // header
+    '<path fill="rgba(9,6,4,0.94)" d="M0,0 H1920 V56 Q960,96 0,56 Z"/>' +
+    // A-pillars, structural
+    '<path fill="rgba(9,6,4,0.96)" d="M0,0 H300 L128,640 Q60,760 0,800 Z"/>' +
+    '<path fill="rgba(9,6,4,0.96)" d="M1920,0 H1620 L1792,640 Q1860,760 1920,800 Z"/>' +
+    '<path fill="none" stroke="rgba(255,170,80,0.16)" stroke-width="2.5" d="M300,0 L128,640 Q60,760 0,800"/>' +
+    '<path fill="none" stroke="rgba(255,170,80,0.16)" stroke-width="2.5" d="M1620,0 L1792,640 Q1860,760 1920,800"/>' +
+    // dashboard with console hump
+    '<path fill="rgba(10,7,5,0.95)" d="M0,1080 V908 Q430,856 700,846 L760,806 H1160 L1220,846 Q1490,856 1920,908 V1080 Z"/>' +
+    '<path fill="none" stroke="rgba(255,170,80,0.30)" stroke-width="2" d="M0,908 Q430,856 700,846 L760,806 H1160 L1220,846 Q1490,856 1920,908"/>' +
+    // console instruments: two dim live-looking glows
+    '<rect x="840" y="836" width="104" height="20" rx="4" fill="rgba(255,170,80,0.13)"/>' +
+    '<rect x="976" y="836" width="104" height="20" rx="4" fill="rgba(140,190,255,0.08)"/>' +
+    '</svg>';
   document.body.appendChild(cockpit);
 
   // The switch strip — the suit labels its own controls, like every
@@ -167,7 +197,12 @@ export function updateGroundHud(dt, s) {
     const roving = s.mode === 'rove';
     const flying = s.mode === 'descent' || s.mode === 'ascent';
     if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
-    if (cockpit) cockpit.style.opacity = roving ? '1' : '0';
+    if (cockpit) {
+      const helm = cockpit.querySelector('#hud-helmet');
+      const cab = cockpit.querySelector('#hud-cab');
+      if (helm) helm.style.opacity = roving ? '0' : flying ? '0.55' : '1';
+      if (cab) cab.style.opacity = roving ? '1' : '0';
+    }
     if (strip) strip.style.opacity = flying ? '0' : '1';   // no switches mid-air
     if (chips.gait) {
       chips.gait.cap.textContent = roving ? 'DISMOUNT' : 'ROVER';
