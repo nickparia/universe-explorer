@@ -133,8 +133,13 @@ let musicStarted  = false;
 let paused        = false;
 let zoneCheckAccum = 0;
 let lastFrameTime  = 0;
-let usingSynth     = false;
+// ── FULLY GENERATIVE (2026-08-01): the ship scores its own sky. ──
+// The mp3 library is retired; the procedural engine below is the only
+// performer. The Audio-element machinery stays dormant beneath it.
+const GENERATIVE   = true;
+let usingSynth     = GENERATIVE;
 let audioFailed    = false;
+let _gestureOk     = false;
 let failCount      = 0;
 let _currentTrackPath = null;  // track path for landmark/warp zones (for replay)
 
@@ -168,8 +173,11 @@ function prettyTrack(path) {
 
 export function isMusicWanted() { return musicWanted; }
 export function getNowPlaying() {
+  if (usingSynth && musicWanted && synthStarted) {
+    const label = (currentZone || synthZone || 'deep').toLowerCase().replace(/-/g, ' ');
+    return 'the ship\'s own improvisation \u00b7 ' + label;
+  }
   const active = getActiveEl();
-  if (usingSynth && musicWanted) return 'the ship\'s own hum';
   if (!active || active.paused || !active.src) return null;
   return prettyTrack(decodeURIComponent(active.src));
 }
@@ -218,8 +226,10 @@ export function musicCommand(action, hint) {
   musicWanted = true;
   persistPrefs();
   if (usingSynth) {
+    if (!synthStarted && _gestureOk) startSynth();
     if (AC && AC.state === 'suspended') AC.resume();
-    return 'you woke the ship\'s own hum — the library is unreachable out here';
+    return 'the ship improvises now — no library, its own hands on its own keys' +
+      (hint ? ' (it heard "' + hint + '" and will let the sky decide)' : '');
   }
   let track = null;
   if (hint) {
@@ -457,8 +467,8 @@ export function initMusic() {
   return {
     start() {
       musicStarted = true;
+      _gestureOk = true;
       lastFrameTime = performance.now();
-      // Try Moonlight Sonata first; synth is the fallback
     }
   };
 }
@@ -475,6 +485,10 @@ export function updateMusic(camPos, allBodies) {
   const now = performance.now();
   const dt  = (now - lastFrameTime) / 1000;
   lastFrameTime = now;
+
+  // The improviser wakes the first time it is both wanted and allowed
+  if (usingSynth && !synthStarted && _gestureOk) startSynth();
+  if (usingSynth && synthStarted && AC && AC.state === 'suspended' && musicWanted) AC.resume();
 
   zoneCheckAccum += dt;
   if (zoneCheckAccum < 2) return;
@@ -644,7 +658,42 @@ const PROGRESSIONS = {
     [43.65, 87.3, 117, 175, 262],   // Fsus4
     [41.2, 82.4, 110, 165, 247],    // Esus4
   ],
+  // Galaxies — grand, slow, resolved: maj7/9 voicings, wide
+  galaxy: [
+    [41.2, 82.4, 123.5, 208, 311],  // Emaj7-ish
+    [55, 110, 165, 262, 415],       // Amaj9-ish
+    [36.7, 73.4, 110, 185, 277],    // Dmaj7-ish
+    [49, 98, 147, 247, 370],        // Gmaj7-ish
+  ],
 };
+
+// Every place plays the family progression in its OWN key — a landmark
+// name hashes to a transposition, so the Crab and the Carina share a
+// harmonic language but never a root.
+const LM_MAP = [
+  [/MAGNETAR|BLACK HOLE|SAGITTARIUS/, 'blackhole'],
+  [/ANDROMEDA|SOMBRERO|MILKY/, 'galaxy'],
+  [/UY SCUTI|ETA CARINAE/, 'sun'],
+  [/PILLARS|CRAB|CARINA|HORSEHEAD|RING|NEBULA/, 'nebula'],
+  [/BOOTES/, 'deep'],
+];
+let synthTranspose = 1;
+let synthSilent = false;
+
+function synthKeyFor(name) {
+  if (!name) return 'deep';
+  if (PROGRESSIONS[name]) return name;
+  const n = name.toUpperCase();
+  for (const [re, k] of LM_MAP) if (re.test(n)) return k;
+  return 'deep';
+}
+
+function transposeFor(name) {
+  let h = 0;
+  for (let i = 0; i < (name || '').length; i++) h = (h * 31 + name.charCodeAt(i)) | 0;
+  const semis = ((h % 7) + 7) % 7 - 3;   // -3..+3
+  return Math.pow(2, semis / 12);
+}
 
 const CHORD_DUR = 18;     // seconds per chord
 const ARPEG_INTERVAL = 3; // seconds between arpeggiated notes
@@ -653,6 +702,7 @@ let synthZone = 'deep';
 let chordIndex = 0;
 
 function schedMusic(from, chordCount) {
+  if (synthSilent) return;
   const prog = PROGRESSIONS[synthZone] || PROGRESSIONS.deep;
 
   for (let c = 0; c < chordCount; c++) {
@@ -662,7 +712,7 @@ function schedMusic(from, chordCount) {
 
     // Play each note of the chord as a staggered arpeggio
     for (let n = 0; n < chord.length; n++) {
-      const freq = chord[n];
+      const freq = chord[n] * synthTranspose;
       const noteTime = chordStart + n * ARPEG_INTERVAL;
       const noteDur = CHORD_DUR - n * ARPEG_INTERVAL + 4; // overlap into next chord
       const isLow = freq < 100;
@@ -679,7 +729,7 @@ function schedMusic(from, chordCount) {
 
     // Occasional high harmonic — a single note ringing out alone
     if (Math.random() > 0.4) {
-      const harmonic = chord[chord.length - 1] * 2; // octave above highest
+      const harmonic = chord[chord.length - 1] * 2 * synthTranspose; // octave above highest
       const hTime = chordStart + 6 + Math.random() * 8;
       playNote(harmonic, hTime, 12, 0.015, 3000, 0.95);
     }
@@ -702,24 +752,31 @@ function startSynth() {
   dryGain.connect(masterGain);
   masterGain.connect(AC.destination);
   schedAhead = AC.currentTime;
-  schedMusic(schedAhead, 4);
-  schedAhead += 4 * CHORD_DUR;
+  schedMusic(schedAhead, 2);
+  schedAhead += 2 * CHORD_DUR;
   synthStarted = true;
 }
 
 // Refill buffer periodically
 setInterval(() => {
-  if (!AC || !synthStarted || paused) return;
-  if (AC.currentTime + 40 > schedAhead) {
-    schedMusic(schedAhead, 4);
-    schedAhead += 4 * CHORD_DUR;
+  if (!AC || !synthStarted || paused || !musicWanted) return;
+  // Short horizon: a zone crossed mid-piece takes over within a chord
+  if (AC.currentTime + 22 > schedAhead) {
+    schedMusic(Math.max(schedAhead, AC.currentTime + 0.5), 2);
+    schedAhead = Math.max(schedAhead, AC.currentTime + 0.5) + 2 * CHORD_DUR;
   }
-}, 10000);
+}, 6000);
 
 function updateSynthZone(zone) {
-  if (zone && zone !== synthZone) {
-    synthZone = zone;
-    chordIndex = 0; // reset to start of new progression
+  if (!zone) return;
+  // On the ground the place is the music — the improviser rests.
+  synthSilent = zone === 'ground-mars';
+  const key = synthKeyFor(zone);
+  const tr = PROGRESSIONS[zone] ? 1 : transposeFor(zone);
+  if (key !== synthZone || tr !== synthTranspose) {
+    synthZone = key;
+    synthTranspose = tr;
+    chordIndex = 0;
   }
 }
 
