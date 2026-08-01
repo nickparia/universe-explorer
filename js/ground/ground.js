@@ -124,6 +124,16 @@ export async function enterGround() {
   if (state !== 'idle') return;
   state = 'entering';
 
+  // The suit seals: landfall takes the whole screen. In fullscreen,
+  // Chrome merges its pointer-capture notice into one bubble per
+  // session instead of one per drag. Esc hands the screen back and
+  // we never force it again until the next landfall.
+  try {
+    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
+      document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
+    }
+  } catch (e) { /* not offered — fine */ }
+
   // The veil falls first — the site loads behind it
   overlay.style.transition = 'opacity 1.6s ease';
   overlay.style.opacity = '1';
