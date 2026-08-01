@@ -14,8 +14,53 @@ const AMBER = 'rgba(255,186,100,';
 let vignette = null, compass = null, cctx = null, panel = null;
 let lines = {};
 let textTimer = 0;
+let strip = null;
+let chips = {};      // key → {el, cap}
+let lastGait = null;
 
-export function initGroundHud(siteName) {
+const HELMET_BG =
+  'radial-gradient(ellipse 75% 66% at 50% 46%, transparent 58%, rgba(12,7,4,0.34) 100%)';
+const ROVER_BG =
+  'linear-gradient(to top, rgba(8,5,3,0.55) 0%, transparent 16%),' +
+  'linear-gradient(to bottom, rgba(8,5,3,0.30) 0%, transparent 8%),' +
+  'radial-gradient(ellipse 92% 58% at 50% 40%, transparent 52%, rgba(8,5,3,0.48) 96%)';
+
+function makeChip(keyLabel, caption, onClick) {
+  const el = document.createElement('div');
+  el.style.cssText =
+    'display:flex;align-items:center;gap:6px;cursor:pointer;pointer-events:auto;' +
+    'transition:opacity 0.4s;';
+  const key = document.createElement('span');
+  key.textContent = keyLabel;
+  key.style.cssText =
+    `font-family:${MONO};font-size:9.5px;letter-spacing:1px;color:${AMBER}0.75);` +
+    `border:1px solid ${AMBER}0.4);border-radius:3px;padding:1.5px 6px;` +
+    'text-shadow:0 1px 3px rgba(0,0,0,0.9);transition:all 0.25s;';
+  const cap = document.createElement('span');
+  cap.textContent = caption;
+  cap.style.cssText =
+    `font-family:${MONO};font-size:9px;letter-spacing:2.5px;color:${AMBER}0.5);` +
+    'text-shadow:0 1px 3px rgba(0,0,0,0.9);transition:color 0.25s;';
+  el.appendChild(key);
+  el.appendChild(cap);
+  if (onClick) {
+    el.addEventListener('click', (e) => { e.stopPropagation(); onClick(); });
+    el.addEventListener('mousedown', (e) => e.stopPropagation());
+  }
+  return { el, key, cap };
+}
+
+function setChipLit(chip, lit) {
+  chip.key.style.background = lit ? AMBER + '0.18)' : 'transparent';
+  chip.key.style.color = lit ? AMBER + '1)' : AMBER + '0.75)';
+  chip.key.style.borderColor = lit ? AMBER + '0.8)' : AMBER + '0.4)';
+  chip.key.style.textShadow = lit
+    ? '0 1px 3px rgba(0,0,0,0.9),0 0 8px rgba(255,170,80,0.5)'
+    : '0 1px 3px rgba(0,0,0,0.9)';
+  chip.cap.style.color = lit ? AMBER + '0.85)' : AMBER + '0.5)';
+}
+
+export function initGroundHud(siteName, actions = {}) {
   // The visor's edge — barely there, but the frame makes the world a view
   vignette = document.createElement('div');
   vignette.style.cssText =
@@ -54,20 +99,49 @@ export function initGroundHud(siteName) {
     lines[key] = el;
   }
   document.body.appendChild(panel);
+
+  // The switch strip — the suit labels its own controls, like every
+  // console aboard. Clickable switches, lit when engaged.
+  strip = document.createElement('div');
+  strip.style.cssText =
+    'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);' +
+    'display:flex;gap:22px;align-items:center;z-index:46;pointer-events:none;';
+  chips.gait = makeChip('V', 'ROVER', actions.onGait);
+  chips.run = makeChip('SHIFT', 'RUN');
+  chips.hop = makeChip('SPACE', 'HOP');
+  chips.lift = makeChip('L', 'LIFT OFF', actions.onLiftoff);
+  for (const k of ['gait', 'run', 'hop', 'lift']) strip.appendChild(chips[k].el);
+  document.body.appendChild(strip);
+  lastGait = null;
 }
 
 export function disposeGroundHud() {
-  for (const el of [vignette, compass, panel]) if (el && el.parentNode) el.parentNode.removeChild(el);
-  vignette = null; compass = null; cctx = null; panel = null; lines = {};
+  for (const el of [vignette, compass, panel, strip]) if (el && el.parentNode) el.parentNode.removeChild(el);
+  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {};
 }
 
 const CARDINALS = [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']];
 
 /**
- * @param s {heading, elevMsl, tempC, sunElev, speed, mode, gust}
+ * @param s {heading, elevMsl, tempC, sunElev, speed, mode, run, gust}
  */
 export function updateGroundHud(dt, s) {
   if (!cctx) return;
+
+  // The glass changes with the gait: helmet bubble on foot, a wider
+  // windshield with a dashboard shadow in the rover.
+  if (s.mode !== lastGait) {
+    lastGait = s.mode;
+    const roving = s.mode === 'rove';
+    if (vignette) vignette.style.background = roving ? ROVER_BG : HELMET_BG;
+    if (chips.gait) {
+      chips.gait.cap.textContent = roving ? 'DISMOUNT' : 'ROVER';
+      setChipLit(chips.gait, roving);
+    }
+    if (chips.run) chips.run.cap.textContent = roving ? 'BOOST' : 'RUN';
+    if (chips.hop) chips.hop.el.style.opacity = roving ? '0' : '1';
+  }
+  if (chips.run) setChipLit(chips.run, !!s.run && s.speed > 0.5);
   const W = 460, H = 34;
   cctx.clearRect(0, 0, W, H);
   const degSpan = 90;                       // visible arc

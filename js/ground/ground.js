@@ -21,7 +21,7 @@ import { setGroundWind } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
 import { initSky, updateSky, disposeSky, getSunState, debugSky, setSkyGust } from './sky.js';
-import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset } from './controller.js';
+import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset, toggleGait } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
 import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
@@ -151,7 +151,7 @@ export async function enterGround() {
   initRocks(rootGroup);
   updateRocks(new THREE.Vector3(0, 0, 1250));
   initDevils(rootGroup);
-  initGroundHud(SITE_NAME);
+  initGroundHud(SITE_NAME, { onGait: toggleGait, onLiftoff: () => exitGround() });
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -218,7 +218,7 @@ export async function exitGround() {
 export function updateGround(dt) {
   if (state !== 'active' && state !== 'exiting') return null;
 
-  const ctl = updateController(dt);
+  const ctl = updateController(dt) || {};
   const local = getLocalPos();
 
   updateTerrain(local);
@@ -252,6 +252,7 @@ export function updateGround(dt) {
       sunElev: sun.elevDeg,
       speed: getGroundSpeed(),
       mode: getMode(),
+      run: !!ctl.run,
       gust: lastGust,
     });
   }

@@ -95,10 +95,7 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
       window.__ctlKey = c.join(',');
     }
     if (e.code === 'Space' || e.code.startsWith('Arrow')) e.preventDefault();
-    if (e.code === 'KeyV') {
-      mode = (mode === 'walk') ? 'rove' : 'walk';
-      if (mode === 'rove') vehYaw = yaw;   // mount facing where you look
-    }
+    if (e.code === 'KeyV') toggleGait();
   });
   addL(window, 'keyup', (e) => {
     keys[e.code] = false;
@@ -145,6 +142,15 @@ export function disposeController() {
 /** Lateral bob offset — visual sway only, never part of the physics. */
 export function getVisOffset() { return { x: visX, z: visZ }; }
 
+/** Swap boots and wheels — key V or the visor switch. */
+export function toggleGait() {
+  mode = (mode === 'walk') ? 'rove' : 'walk';
+  if (mode === 'rove') vehYaw = yaw;   // mount facing where you look
+  // Mounting/dismounting has weight: a dip in the knees and a thunk
+  landVel -= 0.45;
+  stepCrunch(0.9, true);
+}
+
 export function getLocalPos() { return pos; }
 export function getHeldKeys() { return Object.keys(keys).filter((k) => keys[k]).join('+') || '-'; }
 export function getMode() { return mode; }
@@ -183,6 +189,12 @@ export function updateController(dt) {
     steer = ((keys['KeyA'] || keys['ArrowLeft']) ? 1 : 0) - ((keys['KeyD'] || keys['ArrowRight']) ? 1 : 0);
     const sp0 = Math.hypot(vel.x, vel.z);
     vehYaw += steer * 1.35 * Math.min(1, 0.22 + sp0 / 9) * dt;
+    // MMORPG law: holding the look drag STEERS the rover — the wheels
+    // chase the gaze with a vehicle's lag, never a neck's snap.
+    if (rightDown) {
+      const dsteer = ((yaw - vehYaw + Math.PI) % (Math.PI * 2) + Math.PI * 2) % (Math.PI * 2) - Math.PI;
+      vehYaw += dsteer * (1 - Math.exp(-dt / 0.45));
+    }
     if (throttle !== 0) {
       const sgn = Math.sign(throttle);
       ax = -Math.sin(vehYaw) * sgn;
@@ -336,6 +348,7 @@ export function updateController(dt) {
   return {
     mode,
     grounded,
+    run,
     speed: sp,
     airborne: !grounded,
     camY: lastEyeY,
