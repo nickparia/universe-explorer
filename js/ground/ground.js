@@ -20,11 +20,13 @@ import { setZoneOverride } from '../music.js';
 import { setGroundWind } from '../soundscape.js';
 import { loadSite, getSite } from './site.js';
 import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terrain.js';
-import { initSky, updateSky, disposeSky, getSunState, debugSky } from './sky.js';
+import { initSky, updateSky, disposeSky, getSunState, debugSky, setSkyGust } from './sky.js';
 import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
 import { initLamp, updateLamp, disposeLamp } from './lamp.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
+import { initDevils, updateDevils, disposeDevils } from './devils.js';
+import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
 
 const POCKET = new THREE.Vector3(0, 6e8, 0);  // far above the galactic plane
 const SITE_NAME = 'COPRATES CHASMA';
@@ -35,7 +37,6 @@ let hiddenChildren = null;     // [obj, wasVisible][]
 let savedPose = null;          // { pos, quat, orbitName }
 let overlay = null;
 let hintEl = null;
-let hudTimer = 0;
 let lastGust = 0;
 const _worldCam = new THREE.Vector3();
 
@@ -149,6 +150,8 @@ export async function enterGround() {
   initLamp(rootGroup);
   initRocks(rootGroup);
   updateRocks(new THREE.Vector3(0, 0, 1250));
+  initDevils(rootGroup);
+  initGroundHud(SITE_NAME);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -181,6 +184,8 @@ export async function exitGround() {
   disposeDustField();
   disposeLamp();
   disposeRocks();
+  disposeDevils();
+  disposeGroundHud();
   disposeSky(scene);
   disposeTerrain();
   if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -222,14 +227,34 @@ export function updateGround(dt) {
 
   const roverK = getMode() === 'rove' ? Math.min(1, getGroundSpeed() / 20) : 0;
   lastGust = updateDustField(dt, local, roverK);
+  const devilNear = updateDevils(dt, local);
+  setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
 
-  // What you hear is what you see: base air + gusts + your own speed
-  setGroundWind(0.35 + lastGust * 0.65 + roverK * 0.5 +
+  // What you hear is what you see: base air + gusts + your own speed —
+  // and a dust devil passing close roars over all of it
+  setGroundWind(0.35 + lastGust * 0.65 + roverK * 0.5 + devilNear * 1.3 +
     (getMode() === 'walk' ? Math.min(0.25, getGroundSpeed() * 0.05) : 0));
 
-  hudTimer -= dt;
-  if (hudTimer <= 0) { hudTimer = 0.25; refreshHud(); }
+  // The suit's glass — compass every frame, text at its own cadence
+  {
+    const cam = getCamera();
+    const fwd = new THREE.Vector3(0, 0, -1).applyQuaternion(cam.quaternion);
+    const heading = ((Math.atan2(fwd.x, -fwd.z) * 180 / Math.PI) + 360) % 360;
+    const site = getSite();
+    const sun = getSunState();
+    const cfg = getPlanetConfig('MARS');
+    const baseT = (cfg && cfg.surface && cfg.surface.temperature) ? cfg.surface.temperature.value : -63;
+    updateGroundHud(dt, {
+      heading,
+      elevMsl: site.landingElev + (local.y - 1.65),
+      tempC: Math.round(baseT - 40 + 55 * Math.max(0, Math.sin(THREE.MathUtils.degToRad(sun.elevDeg)))),
+      sunElev: sun.elevDeg,
+      speed: getGroundSpeed(),
+      mode: getMode(),
+      gust: lastGust,
+    });
+  }
 
   // Dev probe — written to the DOM (dataset survives script-world
   // isolation, which window properties do not under some extensions)
@@ -266,15 +291,7 @@ function swapHud(onGround) {
       const el = document.getElementById(id);
       if (el) { hudPrev[id] = el.style.display; el.style.display = 'none'; }
     }
-    const s = document.getElementById('surface-hud');
-    if (s) {
-      s.style.display = 'block';
-      const name = document.getElementById('surface-planet');
-      if (name) {
-        name.textContent = SITE_NAME;
-        name.style.color = 'rgba(255,180,110,0.75)';
-      }
-    }
+    // the dormant #surface-hud stays dormant — the suit has its own glass now
   } else {
     for (const id of HUD_IDS_HIDE) {
       const el = document.getElementById(id);
@@ -284,27 +301,6 @@ function swapHud(onGround) {
     if (s) s.style.display = 'none';
     hudPrev = null;
   }
-}
-
-function refreshHud() {
-  const site = getSite();
-  const local = getLocalPos();
-  const elevMsl = site.landingElev + (local.y - 1.65);
-  const sun = getSunState();
-  const cfg = getPlanetConfig('MARS');
-  const set = (id, text) => {
-    const el = document.getElementById(id);
-    if (el) el.textContent = text;
-  };
-  const spd = getGroundSpeed();
-  set('surface-alt', `ELEV ${(elevMsl / 1000).toFixed(2)} KM · ${getMode() === 'rove' ? 'ROVER' : 'ON FOOT'}${spd > 0.2 ? ` · ${spd.toFixed(1)} M/S` : ''}`);
-  const east = (local.x / 1000).toFixed(1), south = (local.z / 1000).toFixed(1);
-  set('surface-coords', `SITE +E ${east} KM · +S ${south} KM`);
-  const t = cfg && cfg.surface && cfg.surface.temperature;
-  // Cold that follows the sun down
-  const temp = t ? Math.round(t.value - 40 + 55 * Math.max(0, Math.sin(THREE.MathUtils.degToRad(sun.elevDeg)))) : null;
-  set('surface-temp', temp !== null ? `${temp} °C` : '');
-  set('surface-pressure', `SUN ${sun.elevDeg > 0 ? '+' : ''}${sun.elevDeg.toFixed(0)}° · 6 mbar`);
 }
 
 function wait(ms) { return new Promise((r) => setTimeout(r, ms)); }

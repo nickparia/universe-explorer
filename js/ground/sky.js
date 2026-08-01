@@ -212,5 +212,17 @@ export function updateSky(dt, camLocal) {
 
   if (fog) {
     fog.color.copy(COL.fogNight).lerp(COL.fogDay, day);
+    // The haze breathes: dust loads and settles over minutes, and a
+    // gusty spell leaves the air thicker for a while after.
+    _hazeT += dt;
+    _gustCarry += ((_gustNow * 0.8) - _gustCarry) * (1 - Math.exp(-dt / 25));
+    const breathe = 1 + 0.20 * Math.sin(_hazeT * 0.013) + 0.10 * Math.sin(_hazeT * 0.031 + 2.1);
+    fog.density = 1.45e-5 * breathe * (1 + 0.35 * _gustCarry);
   }
 }
+
+let _hazeT = 0;
+let _gustCarry = 0;
+let _gustNow = 0;
+/** The dust field's gust envelope — the same wind the eyes see. */
+export function setSkyGust(g) { _gustNow = g || 0; }
