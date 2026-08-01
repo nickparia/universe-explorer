@@ -23,6 +23,7 @@ let cockpit = null;  // the rover's cab framing
 let survey = null;   // the readings panel beside a stake
 let lastHeading = 0, parX = 0, parY = 0;
 let _crtT = 0, _btnT = 0;
+let _bobAng = 0, _bobVel = 0, _bobPrevSpd = 0;
 let guidance = null, guideList = null;
 let _gT = 0, _gEvents = null;
 
@@ -190,53 +191,99 @@ export function initGroundHud(siteName, actions = {}) {
     '<text x="960" y="1069" text-anchor="middle" font-family="SF Mono,Menlo,monospace" font-size="12" letter-spacing="6" fill="rgba(200,180,150,0.28)">EVA-1 · SOLACE</text>' +
     '<g fill="rgba(160,145,125,0.3)"><circle cx="700" cy="1052" r="3.5"/><circle cx="1220" cy="1052" r="3.5"/></g>' +
     '</svg>' +
-    // ── CAB — Alien-1 for real: density, bone metal, glowing banks ──
+    // ── CAB — a truck someone LIVES in: depth, wells, switches, and
+    // the crew's own junk on the shelf ──
     '<svg id="hud-cab" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" ' +
     'font-family="SF Mono,Menlo,monospace" ' +
     'style="position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 0.6s;">' +
     '<defs>' +
     '<filter id="grime"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/>' +
-    '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.06 0"/>' +
+    '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.05 0"/>' +
     '<feComposite in2="SourceGraphic" operator="atop"/></filter>' +
     '<filter id="phos"><feGaussianBlur stdDeviation="2.2" result="b"/><feMerge>' +
     '<feMergeNode in="b"/><feMergeNode in="SourceGraphic"/></feMerge></filter>' +
+    '<filter id="soft"><feGaussianBlur stdDeviation="5"/></filter>' +
     '<pattern id="scan" width="4" height="5" patternUnits="userSpaceOnUse">' +
     '<rect width="4" height="2.4" fill="rgba(0,0,0,0.42)"/></pattern>' +
     '<pattern id="hazard" width="28" height="28" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
     '<rect width="14" height="28" fill="rgba(190,150,45,0.30)"/><rect x="14" width="14" height="28" fill="rgba(20,14,8,0.55)"/></pattern>' +
     '<radialGradient id="crtglass" cx="0.5" cy="0.42" r="0.75">' +
     '<stop offset="0%" stop-color="rgba(255,255,255,0.07)"/><stop offset="55%" stop-color="rgba(255,255,255,0.015)"/><stop offset="100%" stop-color="rgba(0,0,0,0.25)"/></radialGradient>' +
+    '<linearGradient id="gShelf" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="#3a3128"/><stop offset="45%" stop-color="#2a2219"/><stop offset="100%" stop-color="#17110c"/></linearGradient>' +
+    '<linearGradient id="gFace" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="#221b14"/><stop offset="100%" stop-color="#0b0806"/></linearGradient>' +
+    '<linearGradient id="gWell" x1="0" y1="0" x2="0" y2="1">' +
+    '<stop offset="0%" stop-color="#050403"/><stop offset="100%" stop-color="#140f0a"/></linearGradient>' +
+    '<linearGradient id="gMug" x1="0" y1="0" x2="1" y2="0">' +
+    '<stop offset="0%" stop-color="#5a4636"/><stop offset="35%" stop-color="#8a7258"/><stop offset="70%" stop-color="#4c3a2c"/><stop offset="100%" stop-color="#2e2318"/></linearGradient>' +
     '</defs>' +
-    // header + stencil + rivet row
+    // header + rivets
     '<path fill="rgba(12,9,7,0.95)" d="M0,0 H1920 V56 Q960,96 0,56 Z"/>' +
     '<text x="960" y="38" text-anchor="middle" font-size="15" letter-spacing="8" fill="rgba(210,195,165,0.30)">MRV-01 &#183; SOLACE EXPEDITIONARY</text>' +
-    '<g fill="rgba(210,195,165,0.16)"><circle cx="80" cy="30" r="3"/><circle cx="400" cy="42" r="3"/><circle cx="1520" cy="42" r="3"/><circle cx="1840" cy="30" r="3"/></g>' +
-    // A-pillars with inner-edge BUTTON STRIPS
+    // A-pillars with mounted switch PLATES (angled with the pillar)
     '<path fill="rgba(11,8,6,0.97)" d="M0,0 H300 L128,640 Q60,760 0,800 Z"/>' +
     '<path fill="rgba(11,8,6,0.97)" d="M1920,0 H1620 L1792,640 Q1860,760 1920,800 Z"/>' +
     '<path fill="none" stroke="rgba(210,195,165,0.14)" stroke-width="2.5" d="M300,0 L128,640 Q60,760 0,800"/>' +
     '<path fill="none" stroke="rgba(210,195,165,0.14)" stroke-width="2.5" d="M1620,0 L1792,640 Q1860,760 1920,800"/>' +
-    '<g id="pillar-btns-l"></g><g id="pillar-btns-r"></g>' +
+    '<g transform="rotate(-8 120 340)">' +
+    '<rect x="88" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
+    '<circle cx="100" cy="254" r="2.5" fill="rgba(210,195,165,0.3)"/><circle cx="138" cy="422" r="2.5" fill="rgba(210,195,165,0.3)"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="119" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.75"/>' +
+    '<circle class="lens" data-c="140,220,110" cx="119" cy="324" r="7" fill="rgb(140,220,110)" fill-opacity="0.2"/>' +
+    '<circle class="lens" data-c="200,90,60" cx="119" cy="364" r="7" fill="rgb(200,90,60)" fill-opacity="0.6"/>' +
+    '<circle class="lens" data-c="210,195,165" cx="119" cy="404" r="7" fill="rgb(210,195,165)" fill-opacity="0.15"/>' +
+    '</g>' +
+    '<g transform="rotate(8 1800 340)">' +
+    '<rect x="1770" y="240" width="62" height="196" rx="7" fill="#161009" stroke="rgba(210,195,165,0.25)" stroke-width="2.5"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="1801" cy="284" r="7" fill="rgb(255,170,80)" fill-opacity="0.3"/>' +
+    '<circle class="lens" data-c="120,170,220" cx="1801" cy="324" r="7" fill="rgb(120,170,220)" fill-opacity="0.7"/>' +
+    '<circle class="lens" data-c="140,220,110" cx="1801" cy="364" r="7" fill="rgb(140,220,110)" fill-opacity="0.65"/>' +
+    '<circle class="lens" data-c="255,170,80" cx="1801" cy="404" r="7" fill="rgb(255,170,80)" fill-opacity="0.12"/>' +
+    '</g>' +
     '<path fill="url(#hazard)" d="M0,800 Q60,760 128,640 L164,640 Q104,780 0,854 Z"/>' +
     '<path fill="url(#hazard)" d="M1920,800 Q1860,760 1792,640 L1756,640 Q1816,780 1920,854 Z"/>' +
-    // ── DASH: paneled, seamed, bone-edged, dense ──
-    '<path fill="rgba(13,10,8,0.97)" filter="url(#grime)" d="M0,1080 V852 Q430,808 620,796 L680,742 H1240 L1300,796 Q1490,808 1920,852 V1080 Z"/>' +
-    '<path fill="none" stroke="rgba(210,195,165,0.30)" stroke-width="2.5" d="M0,852 Q430,808 620,796 L680,742 H1240 L1300,796 Q1490,808 1920,852"/>' +
-    // panel seams + screws
-    '<g stroke="rgba(0,0,0,0.5)" stroke-width="1.5">' +
-    '<path d="M330,1080 L348,846"/><path d="M660,1080 L660,800"/><path d="M1260,1080 L1260,800"/><path d="M1590,1080 L1572,846"/></g>' +
-    '<g fill="rgba(210,195,165,0.22)">' +
-    '<circle cx="342" cy="860" r="3.5"/><circle cx="666" cy="812" r="3.5"/><circle cx="1254" cy="812" r="3.5"/><circle cx="1578" cy="860" r="3.5"/>' +
-    '<circle cx="40" cy="880" r="3.5"/><circle cx="1880" cy="880" r="3.5"/><circle cx="960" cy="1058" r="3.5"/></g>' +
-    // placards + tape
-    '<text x="352" y="836" font-size="10" letter-spacing="2" fill="rgba(210,195,165,0.35)">ENV/02</text>' +
-    '<text x="1210" y="836" font-size="10" letter-spacing="2" fill="rgba(210,195,165,0.35)">BUS-A</text>' +
-    '<rect x="70" y="960" width="150" height="34" rx="3" fill="url(#hazard)" opacity="0.7"/>' +
-    '<text x="145" y="1015" text-anchor="middle" font-size="9" letter-spacing="2" fill="rgba(210,195,165,0.4)">NO STEP &#183; SVC PNL 4</text>' +
-    '<rect x="1650" y="930" width="120" height="22" fill="rgba(210,195,165,0.10)" transform="rotate(-3 1650 930)"/>' +
-    // ── VEL GAUGE, bone bezel ──
+    // ── THE SHELF: a lit top surface — depth begins here ──
+    '<path fill="url(#gShelf)" filter="url(#grime)" d="M0,796 Q430,748 660,740 L1260,740 Q1490,748 1920,796 L1920,876 Q1490,838 1260,830 L660,830 Q430,838 0,876 Z"/>' +
+    '<path fill="none" stroke="rgba(255,220,170,0.20)" stroke-width="2" d="M0,796 Q430,748 660,740 L1260,740 Q1490,748 1920,796"/>' +
+    // ── THE FACE, falling away darker below the shelf lip ──
+    '<path fill="url(#gFace)" filter="url(#grime)" d="M0,876 Q430,838 660,830 L1260,830 Q1490,838 1920,876 V1080 H0 Z"/>' +
+    '<path fill="none" stroke="rgba(0,0,0,0.55)" stroke-width="3" d="M0,878 Q430,840 660,832 L1260,832 Q1490,840 1920,878"/>' +
+    // panel seams + screws + placards
+    '<g stroke="rgba(0,0,0,0.5)" stroke-width="1.5"><path d="M340,1080 L354,846"/><path d="M1580,1080 L1566,846"/></g>' +
+    '<g fill="rgba(210,195,165,0.2)"><circle cx="348" cy="866" r="3.5"/><circle cx="1572" cy="866" r="3.5"/><circle cx="40" cy="900" r="3.5"/><circle cx="1880" cy="900" r="3.5"/></g>' +
+    '<text x="356" y="1052" font-size="10" letter-spacing="2" fill="rgba(210,195,165,0.32)">ENV/02</text>' +
+    '<rect x="64" y="988" width="150" height="32" rx="3" fill="url(#hazard)" opacity="0.65"/>' +
+    '<text x="139" y="1040" text-anchor="middle" font-size="9" letter-spacing="2" fill="rgba(210,195,165,0.4)">NO STEP &#183; SVC PNL 4</text>' +
+    // ── BOBBLEHEAD on the shelf, left — it rides the suspension ──
+    '<g id="bobble">' +
+    '<ellipse cx="256" cy="795" rx="26" ry="7" fill="rgba(0,0,0,0.5)" filter="url(#soft)"/>' +
+    '<path d="M240,792 Q256,780 272,792 L268,776 Q256,768 244,776 Z" fill="#463a2c"/>' +
+    '<path id="bobble-spring" d="M256,774 l-5,-5 l10,-5 l-10,-5 l10,-5 l-5,-5" stroke="rgba(210,195,165,0.5)" stroke-width="2.5" fill="none"/>' +
+    '<g id="bobble-head">' +
+    '<circle cx="256" cy="726" r="22" fill="#c9b8a0"/>' +
+    '<circle cx="256" cy="726" r="22" fill="none" stroke="rgba(0,0,0,0.35)" stroke-width="2"/>' +
+    '<path d="M240,726 a16,13 0 0 1 32,0 a16,10 0 0 1 -32,0" fill="#2a2622"/>' +
+    '<circle cx="262" cy="720" r="4" fill="rgba(255,255,255,0.25)"/>' +
+    '</g></g>' +
+    // ── COFFEE MUG in its holder, right shelf — steam and all ──
+    '<g id="mug">' +
+    '<ellipse cx="1478" cy="798" rx="34" ry="9" fill="rgba(0,0,0,0.5)" filter="url(#soft)"/>' +
+    '<ellipse cx="1478" cy="792" rx="30" ry="8" fill="#241c14" stroke="rgba(210,195,165,0.3)" stroke-width="2"/>' +
+    '<path d="M1456,790 V736 a22,7 0 0 1 44,0 V790 Z" fill="url(#gMug)"/>' +
+    '<ellipse cx="1478" cy="736" rx="22" ry="7" fill="#1c130c"/>' +
+    '<ellipse cx="1478" cy="737" rx="17" ry="5" fill="#30201159"/>' +
+    '<ellipse cx="1478" cy="737.5" rx="17" ry="5" fill="#3a2412"/>' +
+    '<path d="M1500,748 q16,4 12,20 q-3,12 -14,12" stroke="#6a5540" stroke-width="6" fill="none"/>' +
+    '<path d="M1471,722 q-5,-12 2,-20" stroke="rgba(220,220,220,0.0)" stroke-width="3" fill="none" stroke-linecap="round">' +
+    '<animate attributeName="stroke" values="rgba(220,220,220,0);rgba(220,220,220,0.22);rgba(220,220,220,0)" dur="3.4s" repeatCount="indefinite"/></path>' +
+    '<path d="M1484,720 q6,-14 -1,-24" stroke="rgba(220,220,220,0.0)" stroke-width="3" fill="none" stroke-linecap="round">' +
+    '<animate attributeName="stroke" values="rgba(220,220,220,0);rgba(220,220,220,0.18);rgba(220,220,220,0)" dur="4.1s" begin="1.6s" repeatCount="indefinite"/></path>' +
+    '</g>' +
+    // ── VEL GAUGE in a recessed well ──
+    '<rect x="366" y="852" width="208" height="200" rx="14" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
+    '<path d="M370,856 h200" stroke="rgba(255,220,170,0.10)" stroke-width="2"/>' +
     '<g id="gauge-vel">' +
-    '<circle cx="470" cy="948" r="88" fill="rgba(24,20,16,0.9)"/>' +
     '<circle cx="470" cy="948" r="82" fill="rgba(6,5,4,0.98)" stroke="rgba(210,195,165,0.45)" stroke-width="6"/>' +
     '<g id="vel-ticks" stroke="rgba(255,186,100,0.55)" stroke-width="2"></g>' +
     '<line id="vel-needle" x1="470" y1="948" x2="470" y2="884" stroke="rgba(255,110,45,0.95)" stroke-width="3.5" stroke-linecap="round"/>' +
@@ -244,52 +291,70 @@ export function initGroundHud(siteName, actions = {}) {
     '<text x="470" y="992" text-anchor="middle" font-size="12" letter-spacing="3" fill="rgba(255,186,100,0.5)">GND VEL</text>' +
     '<text id="vel-digits" x="470" y="926" text-anchor="middle" font-size="18" fill="rgba(255,200,130,0.85)">0.0</text>' +
     '</g>' +
-    // ── INCLINOMETER — the bank angle is REAL ──
+    // ── INCLINOMETER, its own small well ──
+    '<rect x="592" y="952" width="116" height="116" rx="12" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
     '<g id="gauge-incl">' +
-    '<circle cx="600" cy="1006" r="46" fill="rgba(6,5,4,0.98)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
-    '<path d="M566,1006 H634" stroke="rgba(255,186,100,0.3)" stroke-width="1.5"/>' +
-    '<g id="incl-marks" stroke="rgba(255,186,100,0.4)" stroke-width="1.5">' +
-    '<path d="M600,968 V978"/><path d="M576,974 L580,983"/><path d="M624,974 L620,983"/></g>' +
-    '<line id="incl-needle" x1="600" y1="1006" x2="600" y2="972" stroke="rgba(140,220,110,0.85)" stroke-width="3" stroke-linecap="round"/>' +
-    '<circle cx="600" cy="1006" r="5" fill="rgba(210,195,165,0.5)"/>' +
-    '<text x="600" y="1044" text-anchor="middle" font-size="10" letter-spacing="2" fill="rgba(255,186,100,0.45)">BANK</text>' +
+    '<circle cx="650" cy="1006" r="46" fill="rgba(6,5,4,0.98)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
+    '<path d="M616,1006 H684" stroke="rgba(255,186,100,0.3)" stroke-width="1.5"/>' +
+    '<line id="incl-needle" x1="650" y1="1006" x2="650" y2="972" stroke="rgba(140,220,110,0.85)" stroke-width="3" stroke-linecap="round"/>' +
+    '<circle cx="650" cy="1006" r="5" fill="rgba(210,195,165,0.5)"/>' +
+    '<text x="650" y="1044" text-anchor="middle" font-size="10" letter-spacing="2" fill="rgba(255,186,100,0.45)">BANK</text>' +
     '</g>' +
-    // ── ENV CRT: bulged glass, leader dots, cursor ──
+    // ── CRTs, recessed ──
+    '<rect x="688" y="842" width="276" height="172" rx="12" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
     '<g id="crt-env">' +
-    '<rect x="700" y="790" width="252" height="150" rx="10" fill="rgba(26,22,18,0.95)"/>' +
-    '<rect x="708" y="798" width="236" height="134" rx="7" fill="rgba(4,7,4,0.99)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
-    '<text x="722" y="822" font-size="12" letter-spacing="2" fill="rgba(140,230,120,0.45)">ECU-5 // ENVIRON</text>' +
+    '<rect x="704" y="856" width="244" height="142" rx="8" fill="rgba(4,7,4,0.99)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
+    '<text x="720" y="882" font-size="12" letter-spacing="2" fill="rgba(140,230,120,0.45)">ECU-5 // ENVIRON</text>' +
     '<g filter="url(#phos)">' +
-    '<text id="crt-l1" x="722" y="850" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.8)">ELEV</text>' +
-    '<text id="crt-l2" x="722" y="876" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.8)">TEMP</text>' +
-    '<text id="crt-l3" x="722" y="902" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.68)">WIND</text>' +
-    '<text id="crt-cur" x="722" y="924" font-size="16" fill="rgba(140,230,120,0.8)">&#9646;</text></g>' +
-    '<rect x="708" y="798" width="236" height="134" rx="7" fill="url(#scan)"/>' +
-    '<rect x="708" y="798" width="236" height="134" rx="7" fill="url(#crtglass)"/>' +
+    '<text id="crt-l1" x="720" y="910" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.8)">ELEV</text>' +
+    '<text id="crt-l2" x="720" y="936" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.8)">TEMP</text>' +
+    '<text id="crt-l3" x="720" y="962" font-size="18" letter-spacing="1" fill="rgba(140,230,120,0.68)">WIND</text>' +
+    '<text id="crt-cur" x="720" y="984" font-size="16" fill="rgba(140,230,120,0.8)">&#9646;</text></g>' +
+    '<rect x="704" y="856" width="244" height="142" rx="8" fill="url(#scan)"/>' +
+    '<rect x="704" y="856" width="244" height="142" rx="8" fill="url(#crtglass)"/>' +
     '</g>' +
-    // ── SYS CRT, amber ──
+    '<rect x="976" y="842" width="276" height="172" rx="12" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
     '<g id="crt-sys">' +
-    '<rect x="962" y="790" width="252" height="150" rx="10" fill="rgba(26,22,18,0.95)"/>' +
-    '<rect x="970" y="798" width="236" height="134" rx="7" fill="rgba(8,5,3,0.99)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
-    '<text x="984" y="822" font-size="12" letter-spacing="2" fill="rgba(255,186,100,0.45)">MU-TH // SYSTEMS</text>' +
+    '<rect x="992" y="856" width="244" height="142" rx="8" fill="rgba(8,5,3,0.99)" stroke="rgba(210,195,165,0.4)" stroke-width="4"/>' +
+    '<text x="1008" y="882" font-size="12" letter-spacing="2" fill="rgba(255,186,100,0.45)">MU-TH // SYSTEMS</text>' +
     '<g filter="url(#phos)">' +
-    '<text id="sys-l1" x="984" y="850" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.85)">GAIT</text>' +
-    '<text id="sys-l2" x="984" y="876" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.75)">STK</text>' +
-    '<text id="sys-l3" x="984" y="902" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.6)">HDG</text></g>' +
-    '<rect x="970" y="798" width="236" height="134" rx="7" fill="url(#scan)"/>' +
-    '<rect x="970" y="798" width="236" height="134" rx="7" fill="url(#crtglass)"/>' +
+    '<text id="sys-l1" x="1008" y="910" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.85)">GAIT</text>' +
+    '<text id="sys-l2" x="1008" y="936" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.75)">STK</text>' +
+    '<text id="sys-l3" x="1008" y="962" font-size="18" letter-spacing="1" fill="rgba(255,186,100,0.6)">HDG</text></g>' +
+    '<rect x="992" y="856" width="244" height="142" rx="8" fill="url(#scan)"/>' +
+    '<rect x="992" y="856" width="244" height="142" rx="8" fill="url(#crtglass)"/>' +
     '</g>' +
-    // ── BUTTON BANKS: the wall of lights ──
-    '<g id="btn-bank-main"></g>' +
-    '<g id="lamps" font-size="10" letter-spacing="1">' +
-    '<rect x="1276" y="796" width="304" height="60" rx="5" fill="rgba(7,5,4,0.97)" stroke="rgba(210,195,165,0.35)" stroke-width="3"/>' +
-    '<circle id="lp-lamp" cx="1304" cy="820" r="7" fill="rgba(60,40,25,0.9)"/><text x="1318" y="824" fill="rgba(210,195,165,0.4)">LAMP</text>' +
-    '<circle id="lp-boost" cx="1304" cy="842" r="7" fill="rgba(60,40,25,0.9)"/><text x="1318" y="846" fill="rgba(210,195,165,0.4)">BOOST</text>' +
-    '<circle id="lp-srv" cx="1414" cy="820" r="7" fill="rgba(60,40,25,0.9)"/><text x="1428" y="824" fill="rgba(210,195,165,0.4)">SRV</text>' +
-    '<circle id="lp-pwr" cx="1414" cy="842" r="7" fill="rgba(140,220,110,0.7)"/><text x="1428" y="846" fill="rgba(210,195,165,0.4)">PWR</text>' +
-    '<circle id="lp-o2" cx="1508" cy="820" r="7" fill="rgba(140,220,110,0.55)"/><text x="1522" y="824" fill="rgba(210,195,165,0.4)">O2</text>' +
-    '<circle id="lp-com" cx="1508" cy="842" r="7" fill="rgba(255,186,100,0.4)"/><text x="1522" y="846" fill="rgba(210,195,165,0.4)">COM</text>' +
+    // ── SWITCHGEAR: lenses in wells, bat toggles, one guarded ──
+    '<rect x="1280" y="852" width="316" height="200" rx="14" fill="url(#gWell)" stroke="rgba(0,0,0,0.6)" stroke-width="3"/>' +
+    '<path d="M1284,856 h308" stroke="rgba(255,220,170,0.10)" stroke-width="2"/>' +
+    '<g font-size="10" letter-spacing="1">' +
+    '<g id="st-lamp"><circle cx="1318" cy="890" r="11" fill="#080604" stroke="rgba(210,195,165,0.35)" stroke-width="2.5"/>' +
+    '<circle id="lp-lamp" cx="1318" cy="890" r="6.5" fill="rgb(255,190,90)" fill-opacity="0.12"/>' +
+    '<text x="1336" y="894" fill="rgba(210,195,165,0.42)">LAMP</text></g>' +
+    '<g id="st-boost"><circle cx="1318" cy="922" r="11" fill="#080604" stroke="rgba(210,195,165,0.35)" stroke-width="2.5"/>' +
+    '<circle id="lp-boost" cx="1318" cy="922" r="6.5" fill="rgb(255,140,60)" fill-opacity="0.12"/>' +
+    '<text x="1336" y="926" fill="rgba(210,195,165,0.42)">BOOST</text></g>' +
+    '<g id="st-srv"><circle cx="1432" cy="890" r="11" fill="#080604" stroke="rgba(210,195,165,0.35)" stroke-width="2.5"/>' +
+    '<circle id="lp-srv" cx="1432" cy="890" r="6.5" fill="rgb(140,220,110)" fill-opacity="0.12"/>' +
+    '<text x="1450" y="894" fill="rgba(210,195,165,0.42)">SRV</text></g>' +
+    '<g id="st-pwr"><circle cx="1432" cy="922" r="11" fill="#080604" stroke="rgba(210,195,165,0.35)" stroke-width="2.5"/>' +
+    '<circle id="lp-pwr" cx="1432" cy="922" r="6.5" fill="rgb(140,220,110)" fill-opacity="0.75"/>' +
+    '<text x="1450" y="926" fill="rgba(210,195,165,0.42)">PWR</text></g>' +
+    '<circle class="lens" data-c="255,170,80" cx="1538" cy="890" r="6.5" fill="rgb(255,170,80)" fill-opacity="0.5"/>' +
+    '<circle class="lens" data-c="120,170,220" cx="1538" cy="922" r="6.5" fill="rgb(120,170,220)" fill-opacity="0.25"/>' +
     '</g>' +
+    // bat toggles: bases + levers (two up, one down) + one guarded
+    '<g stroke-linecap="round">' +
+    '<g class="tog"><rect x="1306" y="964" width="26" height="14" rx="4" fill="#241d15" stroke="rgba(210,195,165,0.3)" stroke-width="2"/>' +
+    '<line x1="1319" y1="971" x2="1319" y2="950" stroke="#b8a488" stroke-width="6"/><circle cx="1319" cy="948" r="4.5" fill="#d6c4a8"/></g>' +
+    '<g class="tog"><rect x="1356" y="964" width="26" height="14" rx="4" fill="#241d15" stroke="rgba(210,195,165,0.3)" stroke-width="2"/>' +
+    '<line x1="1369" y1="971" x2="1369" y2="992" stroke="#b8a488" stroke-width="6"/><circle cx="1369" cy="994" r="4.5" fill="#8a7a62"/></g>' +
+    '<g class="tog"><rect x="1406" y="964" width="26" height="14" rx="4" fill="#241d15" stroke="rgba(210,195,165,0.3)" stroke-width="2"/>' +
+    '<line x1="1419" y1="971" x2="1419" y2="950" stroke="#b8a488" stroke-width="6"/><circle cx="1419" cy="948" r="4.5" fill="#d6c4a8"/></g>' +
+    '</g>' +
+    '<g id="guard"><rect x="1470" y="952" width="44" height="52" rx="6" fill="#33150f" stroke="rgba(210,180,120,0.4)" stroke-width="2.5"/>' +
+    '<path d="M1470,958 h44" stroke="rgba(255,200,120,0.25)" stroke-width="2"/>' +
+    '<text x="1492" y="1022" text-anchor="middle" font-size="9" letter-spacing="1" fill="rgba(210,180,140,0.45)">ARM</text></g>' +
     '</svg>';
   document.body.appendChild(cockpit);
 
@@ -309,29 +374,6 @@ export function initGroundHud(siteName, actions = {}) {
     }
   }
 
-  // The wall of lights: banks of tiny backlit buttons, most steady,
-  // a few alive. Deterministic layout, per-session character.
-  {
-    const COLS = ['rgba(255,186,100,', 'rgba(210,195,165,', 'rgba(140,220,110,', 'rgba(200,90,60,', 'rgba(120,170,220,'];
-    const mk = (gid, x0, y0, cols, rows, w, h, gapx, gapy) => {
-      const g = cockpit.querySelector(gid);
-      if (!g) return;
-      let out = '';
-      for (let r = 0; r < rows; r++) {
-        for (let c = 0; c < cols; c++) {
-          const rr = Math.sin(r * 7.3 + c * 13.7 + x0) * 0.5 + 0.5;
-          const col = COLS[Math.floor(rr * COLS.length) % COLS.length];
-          const lit = rr > 0.45;
-          out += `<rect class="bt" x="${x0 + c * (w + gapx)}" y="${y0 + r * (h + gapy)}" width="${w}" height="${h}" rx="2" ` +
-            `fill="${col}${lit ? (0.2 + rr * 0.45).toFixed(2) : '0.07'})"/>`;
-        }
-      }
-      g.innerHTML = out;
-    };
-    mk('#btn-bank-main', 1276, 874, 13, 3, 17, 11, 6.4, 7);   // under the lamp cluster
-    mk('#pillar-btns-l', 176, 460, 2, 7, 15, 10, 6, 8);
-    mk('#pillar-btns-r', 1706, 460, 2, 7, 15, 10, 6, 8);
-  }
 
   // The switch strip — the suit labels its own controls, like every
   // console aboard. Clickable switches, lit when engaged.
@@ -455,7 +497,7 @@ export function updateGroundHud(dt, s) {
       needle.setAttribute('transform', `rotate(${ang.toFixed(1)} 470 948)`);
     }
     const incl = q('#incl-needle');
-    if (incl) incl.setAttribute('transform', `rotate(${THREE.MathUtils.clamp((s.rollDeg || 0) * 2.2, -55, 55).toFixed(1)} 600 1006)`);
+    if (incl) incl.setAttribute('transform', `rotate(${THREE.MathUtils.clamp((s.rollDeg || 0) * 2.2, -55, 55).toFixed(1)} 650 1006)`);
     _crtT += dt;
     const cur = q('#crt-cur');
     if (cur) cur.style.opacity = Math.floor(_crtT / 0.53) % 2 ? '0' : '1';
@@ -464,13 +506,26 @@ export function updateGroundHud(dt, s) {
       const el = q(gid);
       if (el) el.style.opacity = (Math.sin(_crtT * 1.7 + (gid.length)) > 0.997) ? '0.72' : '1';
     }
-    if (_crtT - _btnT > 1.7) {
+    if (_crtT - _btnT > 1.9) {
       _btnT = _crtT;
-      const bts = cockpit.querySelectorAll('.bt');
-      if (bts.length) {
-        const el = bts[Math.floor(Math.random() * bts.length)];
-        el.style.opacity = el.style.opacity === '0.25' ? '1' : '0.25';
+      const lens = cockpit.querySelectorAll('.lens');
+      if (lens.length) {
+        const el = lens[Math.floor(Math.random() * lens.length)];
+        const cur = parseFloat(el.getAttribute('fill-opacity') || '0.3');
+        el.setAttribute('fill-opacity', cur > 0.4 ? '0.14' : '0.72');
       }
+    }
+    // The bobblehead rides the suspension — spring physics off the
+    // real roll and the real speed changes
+    {
+      const spd = s.speed || 0;
+      const impulse = (spd - _bobPrevSpd) * 3.2 + (s.rollDeg || 0) * 0.25;
+      _bobPrevSpd = spd;
+      _bobVel += (-14 * _bobAng - 4.2 * _bobVel + impulse) * dt * 8;
+      _bobAng += _bobVel * dt * 8;
+      _bobAng = THREE.MathUtils.clamp(_bobAng, -24, 24);
+      const head = q('#bobble-head');
+      if (head) head.setAttribute('transform', `rotate(${_bobAng.toFixed(1)} 256 750)`);
     }
     if (textTimer <= 0.01) {   // ride the same 4 Hz cadence as the text
       const dots = (label, val, w = 16) => label + ' ' + '.'.repeat(Math.max(1, w - label.length - String(val).length)) + ' ' + val;
@@ -481,10 +536,10 @@ export function updateGroundHud(dt, s) {
       const s1 = q('#sys-l1'); if (s1) s1.textContent = dots('GAIT', s.run ? 'ROVER+B' : 'ROVER');
       const s2 = q('#sys-l2'); if (s2) s2.textContent = dots('STK', '×' + (s.supply ?? '-'));
       const s3 = q('#sys-l3'); if (s3) s3.textContent = dots('HDG', String(Math.round(s.heading)).padStart(3, '0'));
-      const lit = (id, on, col) => { const el = q(id); if (el) el.setAttribute('fill', on ? col : 'rgba(60,40,25,0.9)'); };
-      lit('#lp-lamp', s.sunElev < 1.5, 'rgba(255,190,90,0.95)');
-      lit('#lp-boost', !!s.run && s.speed > 1, 'rgba(255,140,60,0.95)');
-      lit('#lp-srv', !!s.nearStake, 'rgba(140,220,110,0.9)');
+      const lit = (id, on) => { const el = q(id); if (el) el.setAttribute('fill-opacity', on ? '0.92' : '0.12'); };
+      lit('#lp-lamp', s.sunElev < 1.5);
+      lit('#lp-boost', !!s.run && s.speed > 1);
+      lit('#lp-srv', !!s.nearStake);
     }
   }
   // In the cab, the console is the only source — the visor text yields
