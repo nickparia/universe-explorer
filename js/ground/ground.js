@@ -71,9 +71,12 @@ export function initGround() {
     'opacity:0;transition:opacity 1.6s ease;';
   document.body.appendChild(overlay);
 
+  // Top-center: the bottom band belongs to field notes, the info panel
+  // and the time scale — the greeting toast was landing on this line.
+  // Up here it reads as an approach annunciator, alone in its airspace.
   hintEl = document.createElement('div');
   hintEl.style.cssText =
-    'position:fixed;bottom:96px;left:50%;transform:translateX(-50%);' +
+    'position:fixed;top:88px;left:50%;transform:translateX(-50%);' +
     'font-family:inherit;font-size:11px;letter-spacing:4px;' +
     'color:rgba(255,180,110,0.55);z-index:60;opacity:0;' +
     'transition:opacity 1.8s ease;pointer-events:none;text-align:center;';
