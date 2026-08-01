@@ -130,25 +130,90 @@ export function initGroundHud(siteName, actions = {}) {
     // chin console (the switch strip mounts here)
     '<path fill="rgba(12,8,6,0.92)" d="M620,1080 L672,1006 Q960,978 1248,1006 L1300,1080 Z"/>' +
     '<path fill="none" stroke="rgba(255,170,80,0.28)" stroke-width="2" d="M672,1006 Q960,978 1248,1006"/>' +
+    '<text x="960" y="1069" text-anchor="middle" font-family="SF Mono,Menlo,monospace" font-size="12" letter-spacing="6" fill="rgba(200,180,150,0.28)">EVA-1 · SOLACE</text>' +
+    '<g fill="rgba(160,145,125,0.3)"><circle cx="700" cy="1052" r="3.5"/><circle cx="1220" cy="1052" r="3.5"/></g>' +
     '</svg>' +
-    // ── CAB ──
+    // ── CAB — the Nostromo school: worn metal, live instruments ──
     '<svg id="hud-cab" viewBox="0 0 1920 1080" preserveAspectRatio="xMidYMid slice" ' +
+    'font-family="SF Mono,Menlo,monospace" ' +
     'style="position:absolute;inset:0;width:100%;height:100%;opacity:0;transition:opacity 0.6s;">' +
-    // header
+    '<defs>' +
+    '<filter id="grime"><feTurbulence type="fractalNoise" baseFrequency="0.9" numOctaves="2" result="n"/>' +
+    '<feColorMatrix in="n" type="matrix" values="0 0 0 0 0.55 0 0 0 0 0.45 0 0 0 0 0.35 0 0 0 0.05 0"/>' +
+    '<feComposite in2="SourceGraphic" operator="atop"/></filter>' +
+    '<pattern id="scan" width="4" height="4" patternUnits="userSpaceOnUse">' +
+    '<rect width="4" height="2" fill="rgba(0,0,0,0.35)"/></pattern>' +
+    '<pattern id="hazard" width="28" height="28" patternTransform="rotate(45)" patternUnits="userSpaceOnUse">' +
+    '<rect width="14" height="28" fill="rgba(180,140,40,0.24)"/><rect x="14" width="14" height="28" fill="rgba(20,14,8,0.5)"/></pattern>' +
+    '</defs>' +
+    // header + stencil
     '<path fill="rgba(9,6,4,0.94)" d="M0,0 H1920 V56 Q960,96 0,56 Z"/>' +
-    // A-pillars, structural
+    '<text x="960" y="40" text-anchor="middle" font-size="17" letter-spacing="8" fill="rgba(200,180,150,0.30)">MRV-01 · SOLACE EXPEDITIONARY</text>' +
+    // A-pillars + rivets + hazard chevrons at their feet
     '<path fill="rgba(9,6,4,0.96)" d="M0,0 H300 L128,640 Q60,760 0,800 Z"/>' +
     '<path fill="rgba(9,6,4,0.96)" d="M1920,0 H1620 L1792,640 Q1860,760 1920,800 Z"/>' +
     '<path fill="none" stroke="rgba(255,170,80,0.16)" stroke-width="2.5" d="M300,0 L128,640 Q60,760 0,800"/>' +
     '<path fill="none" stroke="rgba(255,170,80,0.16)" stroke-width="2.5" d="M1620,0 L1792,640 Q1860,760 1920,800"/>' +
-    // dashboard with console hump
-    '<path fill="rgba(10,7,5,0.95)" d="M0,1080 V908 Q430,856 700,846 L760,806 H1160 L1220,846 Q1490,856 1920,908 V1080 Z"/>' +
-    '<path fill="none" stroke="rgba(255,170,80,0.30)" stroke-width="2" d="M0,908 Q430,856 700,846 L760,806 H1160 L1220,846 Q1490,856 1920,908"/>' +
-    // console instruments: two dim live-looking glows
-    '<rect x="840" y="836" width="104" height="20" rx="4" fill="rgba(255,170,80,0.13)"/>' +
-    '<rect x="976" y="836" width="104" height="20" rx="4" fill="rgba(140,190,255,0.08)"/>' +
+    '<g fill="rgba(160,145,125,0.25)">' +
+    '<circle cx="262" cy="80" r="4"/><circle cx="238" cy="170" r="4"/><circle cx="214" cy="260" r="4"/><circle cx="190" cy="350" r="4"/><circle cx="166" cy="440" r="4"/>' +
+    '<circle cx="1658" cy="80" r="4"/><circle cx="1682" cy="170" r="4"/><circle cx="1706" cy="260" r="4"/><circle cx="1730" cy="350" r="4"/><circle cx="1754" cy="440" r="4"/></g>' +
+    '<path fill="url(#hazard)" d="M0,800 Q60,760 128,640 L160,640 Q100,780 0,850 Z"/>' +
+    '<path fill="url(#hazard)" d="M1920,800 Q1860,760 1792,640 L1760,640 Q1820,780 1920,850 Z"/>' +
+    // dashboard body
+    '<path fill="rgba(11,8,6,0.96)" filter="url(#grime)" d="M0,1080 V888 Q430,846 620,836 L680,782 H1240 L1300,836 Q1490,846 1920,888 V1080 Z"/>' +
+    '<path fill="none" stroke="rgba(255,170,80,0.30)" stroke-width="2" d="M0,888 Q430,846 620,836 L680,782 H1240 L1300,836 Q1490,846 1920,888"/>' +
+    // ── VELOCITY GAUGE (left of console) ──
+    '<g id="gauge-vel">' +
+    '<circle cx="560" cy="960" r="86" fill="rgba(6,5,4,0.98)" stroke="rgba(150,135,115,0.4)" stroke-width="5"/>' +
+    '<circle cx="560" cy="960" r="78" fill="none" stroke="rgba(255,170,80,0.12)" stroke-width="1"/>' +
+    '<g id="vel-ticks" stroke="rgba(255,186,100,0.55)" stroke-width="2"></g>' +
+    '<line id="vel-needle" x1="560" y1="960" x2="560" y2="894" stroke="rgba(255,120,50,0.95)" stroke-width="3.5" stroke-linecap="round"/>' +
+    '<circle cx="560" cy="960" r="7" fill="rgba(200,180,150,0.6)"/>' +
+    '<text x="560" y="1006" text-anchor="middle" font-size="13" letter-spacing="3" fill="rgba(255,186,100,0.5)">GND VEL</text>' +
+    '<text id="vel-digits" x="560" y="936" text-anchor="middle" font-size="19" fill="rgba(255,200,130,0.85)">0.0</text>' +
+    '</g>' +
+    // ── ENV CRT (console center-left) ──
+    '<g id="crt-env">' +
+    '<rect x="716" y="806" width="238" height="126" rx="8" fill="rgba(5,7,4,0.98)" stroke="rgba(150,135,115,0.45)" stroke-width="5"/>' +
+    '<text id="crt-l1" x="734" y="842" font-size="19" letter-spacing="2" fill="rgba(140,230,120,0.75)">ELEV</text>' +
+    '<text id="crt-l2" x="734" y="870" font-size="19" letter-spacing="2" fill="rgba(140,230,120,0.75)">TEMP</text>' +
+    '<text id="crt-l3" x="734" y="898" font-size="19" letter-spacing="2" fill="rgba(140,230,120,0.62)">WIND</text>' +
+    '<rect x="716" y="806" width="238" height="126" rx="8" fill="url(#scan)"/>' +
+    '</g>' +
+    // ── SYS CRT (console center-right, amber) ──
+    '<g id="crt-sys">' +
+    '<rect x="966" y="806" width="238" height="126" rx="8" fill="rgba(8,5,3,0.98)" stroke="rgba(150,135,115,0.45)" stroke-width="5"/>' +
+    '<text id="sys-l1" x="984" y="842" font-size="19" letter-spacing="2" fill="rgba(255,186,100,0.8)">GAIT ROVER</text>' +
+    '<text id="sys-l2" x="984" y="870" font-size="19" letter-spacing="2" fill="rgba(255,186,100,0.7)">STK ×6</text>' +
+    '<text id="sys-l3" x="984" y="898" font-size="19" letter-spacing="2" fill="rgba(255,186,100,0.55)">HDG 000</text>' +
+    '<rect x="966" y="806" width="238" height="126" rx="8" fill="url(#scan)"/>' +
+    '</g>' +
+    // ── LAMP CLUSTER (right) — stencil labels, lit states ──
+    '<g id="lamps" font-size="11" letter-spacing="1">' +
+    '<rect x="1256" y="850" width="200" height="88" rx="6" fill="rgba(7,5,4,0.97)" stroke="rgba(150,135,115,0.4)" stroke-width="4"/>' +
+    '<circle id="lp-lamp" cx="1288" cy="878" r="8" fill="rgba(60,40,25,0.9)"/><text x="1304" y="883" fill="rgba(200,180,150,0.45)">LAMP</text>' +
+    '<circle id="lp-boost" cx="1288" cy="912" r="8" fill="rgba(60,40,25,0.9)"/><text x="1304" y="917" fill="rgba(200,180,150,0.45)">BOOST</text>' +
+    '<circle id="lp-srv" cx="1382" cy="878" r="8" fill="rgba(60,40,25,0.9)"/><text x="1398" y="883" fill="rgba(200,180,150,0.45)">SRV</text>' +
+    '<circle id="lp-pwr" cx="1382" cy="912" r="8" fill="rgba(140,220,110,0.7)"/><text x="1398" y="917" fill="rgba(200,180,150,0.45)">PWR</text>' +
+    '</g>' +
     '</svg>';
   document.body.appendChild(cockpit);
+
+  // Gauge ticks: 0–40 m/s over a 240° sweep, majors every 10
+  {
+    const g = cockpit.querySelector('#vel-ticks');
+    if (g) {
+      let ticks = '';
+      for (let v = 0; v <= 40; v += 5) {
+        const a = (-210 + (v / 40) * 240) * Math.PI / 180;
+        const major = v % 10 === 0;
+        const r1 = major ? 62 : 68, r2 = 76;
+        ticks += `<line x1="${560 + Math.cos(a) * r1}" y1="${960 + Math.sin(a) * r1}" x2="${560 + Math.cos(a) * r2}" y2="${960 + Math.sin(a) * r2}" stroke-width="${major ? 3 : 1.5}"/>`;
+        if (major) ticks += `<text x="${560 + Math.cos(a) * 48}" y="${960 + Math.sin(a) * 48 + 5}" text-anchor="middle" font-size="12" fill="rgba(255,186,100,0.5)" stroke="none">${v}</text>`;
+      }
+      g.innerHTML = ticks;
+    }
+  }
 
   // The switch strip — the suit labels its own controls, like every
   // console aboard. Clickable switches, lit when engaged.
@@ -238,6 +303,29 @@ export function updateGroundHud(dt, s) {
       survey.style.opacity = '1';
     } else {
       survey.style.opacity = '0';
+    }
+  }
+
+  // ── The console lives: needle, CRTs, lamps ──
+  if (cockpit && s.mode === 'rove') {
+    const needle = cockpit.querySelector('#vel-needle');
+    if (needle) {
+      const ang = -210 + (THREE.MathUtils.clamp(s.speed, 0, 40) / 40) * 240 + 90;
+      needle.setAttribute('transform', `rotate(${ang.toFixed(1)} 560 960)`);
+    }
+    if (textTimer <= 0.01) {   // ride the same 4 Hz cadence as the text
+      const q = (id) => cockpit.querySelector(id);
+      const vd = q('#vel-digits'); if (vd) vd.textContent = s.speed.toFixed(1);
+      const l1 = q('#crt-l1'); if (l1) l1.textContent = `ELEV ${(s.elevMsl / 1000).toFixed(2)} KM`;
+      const l2 = q('#crt-l2'); if (l2) l2.textContent = `TMP ${s.tempC}C SUN${s.sunElev > 0 ? '+' : ''}${s.sunElev.toFixed(0)}`;
+      const l3 = q('#crt-l3'); if (l3) l3.textContent = `WIND ${'▮'.repeat(Math.round(THREE.MathUtils.clamp(s.gust, 0, 1) * 6))}`;
+      const s1 = q('#sys-l1'); if (s1) s1.textContent = s.run ? 'GAIT ROVER · BOOST' : 'GAIT ROVER';
+      const s2 = q('#sys-l2'); if (s2) s2.textContent = `STK ×${s.supply ?? '-'}`;
+      const s3 = q('#sys-l3'); if (s3) s3.textContent = `HDG ${String(Math.round(s.heading)).padStart(3, '0')}`;
+      const lit = (id, on, col) => { const el = q(id); if (el) el.setAttribute('fill', on ? col : 'rgba(60,40,25,0.9)'); };
+      lit('#lp-lamp', s.sunElev < 1.5, 'rgba(255,190,90,0.95)');
+      lit('#lp-boost', !!s.run && s.speed > 1, 'rgba(255,140,60,0.95)');
+      lit('#lp-srv', !!s.nearStake, 'rgba(140,220,110,0.9)');
     }
   }
 
