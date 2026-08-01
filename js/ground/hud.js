@@ -218,9 +218,16 @@ export function initGroundHud(siteName, actions = {}) {
     '<linearGradient id="gMug" x1="0" y1="0" x2="1" y2="0">' +
     '<stop offset="0%" stop-color="#5a4636"/><stop offset="35%" stop-color="#8a7258"/><stop offset="70%" stop-color="#4c3a2c"/><stop offset="100%" stop-color="#2e2318"/></linearGradient>' +
     '</defs>' +
-    // header + rivets
-    '<path fill="rgba(12,9,7,0.95)" d="M0,0 H1920 V56 Q960,96 0,56 Z"/>' +
-    '<text x="960" y="38" text-anchor="middle" font-size="15" letter-spacing="8" fill="rgba(210,195,165,0.30)">MRV-01 &#183; SOLACE EXPEDITIONARY</text>' +
+    // ── OVERHEAD CONSOLE — the ceiling is instruments too ──
+    '<path fill="rgba(8,6,4,0.97)" d="M0,0 H1920 V96 Q1500,148 1160,152 L760,152 Q420,148 0,96 Z"/>' +
+    '<path fill="none" stroke="rgba(210,195,165,0.14)" stroke-width="2" d="M0,96 Q420,148 760,152 L1160,152 Q1500,148 1920,96"/>' +
+    '<g id="gen-ovh"></g>' +
+    '<text x="960" y="24" text-anchor="middle" font-size="12" letter-spacing="7" fill="rgba(210,195,165,0.22)">MRV-01 &#183; SOLACE EXPEDITIONARY</text>' +
+    // conduit runs where ceiling meets pillar
+    '<path d="M300,10 q-40,180 -150,320" stroke="#0a0705" stroke-width="13" fill="none"/>' +
+    '<path d="M300,10 q-40,180 -150,320" stroke="rgba(210,195,165,0.10)" stroke-width="2" fill="none"/>' +
+    '<path d="M1620,10 q40,180 150,320" stroke="#0a0705" stroke-width="13" fill="none"/>' +
+    '<path d="M1620,10 q40,180 150,320" stroke="rgba(210,195,165,0.10)" stroke-width="2" fill="none"/>' +
     // A-pillars with mounted switch PLATES (angled with the pillar)
     '<path fill="rgba(11,8,6,0.97)" d="M0,0 H300 L128,640 Q60,760 0,800 Z"/>' +
     '<path fill="rgba(11,8,6,0.97)" d="M1920,0 H1620 L1792,640 Q1860,760 1920,800 Z"/>' +
@@ -252,7 +259,10 @@ export function initGroundHud(siteName, actions = {}) {
     // panel seams + screws + placards
     '<g stroke="rgba(0,0,0,0.5)" stroke-width="1.5"><path d="M340,1080 L354,846"/><path d="M1580,1080 L1566,846"/></g>' +
     '<g fill="rgba(210,195,165,0.2)"><circle cx="348" cy="866" r="3.5"/><circle cx="1572" cy="866" r="3.5"/><circle cx="40" cy="900" r="3.5"/><circle cx="1880" cy="900" r="3.5"/></g>' +
-    '<text x="356" y="1052" font-size="10" letter-spacing="2" fill="rgba(210,195,165,0.32)">ENV/02</text>' +
+    '<text x="356" y="1072" font-size="10" letter-spacing="2" fill="rgba(210,195,165,0.32)">ENV/02</text>' +
+    '<g id="gen-left"></g>' +
+    '<g id="gen-right"></g>' +
+    '<g id="gen-keys"></g>' +
     '<rect x="64" y="988" width="150" height="32" rx="3" fill="url(#hazard)" opacity="0.65"/>' +
     '<text x="139" y="1040" text-anchor="middle" font-size="9" letter-spacing="2" fill="rgba(210,195,165,0.4)">NO STEP &#183; SVC PNL 4</text>' +
     // ── BOBBLEHEAD on the shelf, left — it rides the suspension ──
@@ -357,6 +367,73 @@ export function initGroundHud(siteName, actions = {}) {
     '<text x="1492" y="1022" text-anchor="middle" font-size="9" letter-spacing="1" fill="rgba(210,180,140,0.45)">ARM</text></g>' +
     '</svg>';
   document.body.appendChild(cockpit);
+
+  // ── PANEL GENERATORS: the Nostromo look is DENSITY — fields of
+  // tiny lights, bar-meter banks, breakers, keys — programmatic,
+  // deterministic, each module framed and glowing as a pool ──
+  {
+    const rnd = (seed) => { let t = seed; return () => (t = (t * 1103515245 + 12345) & 0x7fffffff) / 0x7fffffff; };
+    const CHOICES = [
+      ['255,170,80'], ['255,170,80'], ['255,170,80'], ['255,150,55'], ['255,150,55'],
+      ['255,190,110'], ['255,170,80'], ['140,220,110'], ['200,90,60'], ['120,170,220'],
+    ];
+    const frame = (x, y, w, h) =>
+      `<rect x="${x}" y="${y}" width="${w}" height="${h}" rx="6" fill="#0a0705" stroke="rgba(210,195,165,0.20)" stroke-width="2"/>` +
+      `<circle cx="${x + 8}" cy="${y + 8}" r="2" fill="rgba(210,195,165,0.25)"/>` +
+      `<circle cx="${x + w - 8}" cy="${y + h - 8}" r="2" fill="rgba(210,195,165,0.25)"/>`;
+    const dotField = (x, y, cols, rows, pitch, seed, litFrac) => {
+      const r = rnd(seed);
+      let out = `<rect x="${x - 4}" y="${y - 4}" width="${cols * pitch + 8}" height="${rows * pitch + 8}" fill="rgba(255,150,60,0.05)" filter="url(#soft)"/>`;
+      for (let j = 0; j < rows; j++) {
+        for (let i = 0; i < cols; i++) {
+          const [c] = CHOICES[Math.floor(r() * CHOICES.length)];
+          const lit = r() < litFrac;
+          out += `<circle class="mdot" data-c="${c}" cx="${x + i * pitch + pitch / 2}" cy="${y + j * pitch + pitch / 2}" r="${pitch * 0.30}" ` +
+            `fill="rgb(${c})" fill-opacity="${lit ? (0.45 + r() * 0.5).toFixed(2) : '0.07'}"/>`;
+        }
+      }
+      return out;
+    };
+    const barBank = (x, y, n, seed) => {
+      const r = rnd(seed);
+      let out = `<rect x="${x - 5}" y="${y - 6}" width="${n * 13 + 10}" height="66" fill="rgba(255,150,60,0.05)" filter="url(#soft)"/>`;
+      for (let i = 0; i < n; i++) {
+        const hgt = 12 + Math.floor(r() * 42);
+        out += `<rect x="${x + i * 13}" y="${y}" width="6" height="54" rx="2" fill="#050403"/>` +
+          `<rect class="mbar" x="${x + i * 13}" y="${y + 54 - hgt}" width="6" height="${hgt}" rx="2" fill="rgb(255,170,80)" fill-opacity="0.6"/>`;
+      }
+      return out;
+    };
+    const keyRow = (x, y, n, w, seed) => {
+      const r = rnd(seed);
+      let out = '';
+      for (let i = 0; i < n; i++) {
+        out += `<rect x="${x + i * (w + 3)}" y="${y}" width="${w}" height="13" rx="2.5" fill="#1a1510" ` +
+          `stroke="rgba(0,0,0,0.6)" stroke-width="1"/>` +
+          (r() > 0.85 ? `<rect x="${x + i * (w + 3) + 2}" y="${y + 2}" width="${w - 4}" height="2.5" fill="rgba(255,170,80,0.5)"/>` : '');
+      }
+      return out;
+    };
+    const gen = (gid, html) => { const g = cockpit.querySelector(gid); if (g) g.innerHTML = html; };
+
+    // The ceiling: three light-field modules + a switch course
+    gen('#gen-ovh',
+      frame(390, 14, 320, 116) + dotField(402, 24, 24, 8, 12.5, 11, 0.55) +
+      frame(760, 22, 400, 122) + dotField(774, 32, 22, 5, 12.5, 23, 0.5) + barBank(790, 116 - 30, 14, 31) +
+      frame(1210, 14, 320, 116) + dotField(1222, 24, 24, 8, 12.5, 47, 0.6) +
+      keyRow(300, 140, 10, 22, 5) + keyRow(1370, 140, 10, 22, 9));
+    // Dash flanks: dense fields where the metal was bare
+    gen('#gen-left',
+      frame(44, 856, 300, 118) + dotField(56, 866, 22, 8, 12.5, 71, 0.5) +
+      frame(44, 986, 300, 84) + barBank(64, 1002, 18, 83));
+    gen('#gen-right',
+      frame(1612, 856, 268, 214) + dotField(1624, 868, 20, 10, 12.5, 97, 0.55) +
+      barBank(1636, 1006, 16, 113));
+    // The keyboard course under the CRTs
+    gen('#gen-keys',
+      keyRow(692, 1022, 16, 30, 121) + keyRow(692, 1040, 16, 30, 131) +
+      keyRow(986, 1022, 14, 30, 141) + keyRow(986, 1040, 14, 30, 151));
+  }
 
   // Gauge ticks: 0–40 m/s over a 240° sweep, majors every 10
   {
@@ -508,11 +585,21 @@ export function updateGroundHud(dt, s) {
     }
     if (_crtT - _btnT > 1.9) {
       _btnT = _crtT;
-      const lens = cockpit.querySelectorAll('.lens');
-      if (lens.length) {
-        const el = lens[Math.floor(Math.random() * lens.length)];
+      const pool = cockpit.querySelectorAll('.lens, .mdot');
+      for (let k = 0; k < 4; k++) {
+        const el = pool[Math.floor(Math.random() * pool.length)];
+        if (!el) continue;
         const cur = parseFloat(el.getAttribute('fill-opacity') || '0.3');
-        el.setAttribute('fill-opacity', cur > 0.4 ? '0.14' : '0.72');
+        el.setAttribute('fill-opacity', cur > 0.4 ? '0.07' : (0.5 + Math.random() * 0.45).toFixed(2));
+      }
+      // a bar meter breathes somewhere
+      const bars = cockpit.querySelectorAll('.mbar');
+      const b = bars[Math.floor(Math.random() * bars.length)];
+      if (b) {
+        const hgt = 12 + Math.floor(Math.random() * 42);
+        const y0 = parseFloat(b.previousElementSibling ? b.previousElementSibling.getAttribute('y') : b.getAttribute('y'));
+        b.setAttribute('height', hgt);
+        b.setAttribute('y', (y0 + 54 - hgt).toFixed(0));
       }
     }
     // The bobblehead rides the suspension — spring physics off the
