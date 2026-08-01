@@ -86,17 +86,20 @@ function bondSignals() {
 export function setChatSurface(mode) {
   if (!wrap) return;
   if (mode === 'cab') {
-    wrap.style.right = '26px';
-    wrap.style.bottom = '332px';
+    // PROJECTED on the windshield, not bolted beside it: a thin
+    // bracketed frame and a breath of glass tint — the window owns it.
+    wrap.style.right = '30px';
+    wrap.style.bottom = '330px';
     wrap.style.width = '300px';
-    wrap.style.padding = '0 10px 8px';
-    wrap.style.background = 'linear-gradient(rgba(8,6,4,0.88), rgba(10,7,5,0.92))';
-    wrap.style.borderRadius = '9px';
+    wrap.style.padding = '2px 10px 6px';
+    wrap.style.background = 'rgba(255,160,70,0.025)';
+    wrap.style.borderRadius = '2px';
     wrap.style.boxShadow =
-      '0 0 0 5px rgba(26,22,18,0.95), 0 0 0 7px rgba(210,195,165,0.4), ' +
-      'inset 0 0 26px rgba(0,0,0,0.55), 0 8px 22px rgba(0,0,0,0.6)';
+      'inset 0 0 0 1px rgba(255,186,100,0.22), ' +
+      '-6px 0 0 -4px rgba(255,186,100,0.45), 6px 0 0 -4px rgba(255,186,100,0.45)';
     chatHeader.style.display = 'block';
-    chatHeader.textContent = 'SOL // CAB COMMS · CH 2';
+    chatHeader.style.borderBottom = '1px solid rgba(255,186,100,0.14)';
+    chatHeader.textContent = 'SOL // GLASS PROJECTION · CH 2';
   } else if (mode === 'visor') {
     wrap.style.right = '24px';
     wrap.style.bottom = '64px';

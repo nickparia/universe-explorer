@@ -129,11 +129,7 @@ export async function enterGround() {
   // Chrome merges its pointer-capture notice into one bubble per
   // session instead of one per drag. Esc hands the screen back and
   // we never force it again until the next landfall.
-  try {
-    if (!document.fullscreenElement && document.documentElement.requestFullscreen) {
-      document.documentElement.requestFullscreen({ navigationUI: 'hide' }).catch(() => {});
-    }
-  } catch (e) { /* not offered — fine */ }
+  if (window.solaceFullscreen) window.solaceFullscreen();
 
   // The veil falls first — the site loads behind it
   overlay.style.transition = 'opacity 1.6s ease';
@@ -308,6 +304,7 @@ export function updateGround(dt) {
       mode: state === 'descending' ? 'descent' : 'ascent',
       run: false,
       gust: lastGust,
+      progress: d.frac,
     });
     updateGroundMap(dt, local, heading);
     return null;

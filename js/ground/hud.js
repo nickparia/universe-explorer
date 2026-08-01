@@ -23,6 +23,8 @@ let cockpit = null;  // the rover's cab framing
 let survey = null;   // the readings panel beside a stake
 let lastHeading = 0, parX = 0, parY = 0;
 let _crtT = 0, _btnT = 0;
+let guidance = null, guideList = null;
+let _gT = 0, _gEvents = null;
 
 const HELMET_BG =
   'radial-gradient(ellipse 75% 66% at 50% 46%, transparent 58%, rgba(12,7,4,0.34) 100%)';
@@ -345,6 +347,23 @@ export function initGroundHud(siteName, actions = {}) {
   for (const k of ['gait', 'run', 'hop', 'stake', 'lift']) strip.appendChild(chips[k].el);
   document.body.appendChild(strip);
 
+  // The lander's guidance feed: telemetry scrolling up the glass
+  // during descent and ascent — the landing computer thinking aloud.
+  guidance = document.createElement('div');
+  guidance.style.cssText =
+    `position:fixed;left:5vw;top:30vh;width:270px;z-index:46;pointer-events:none;` +
+    `font-family:${MONO};font-size:12px;letter-spacing:1.5px;line-height:1.75;` +
+    'color:rgba(140,230,120,0.75);opacity:0;transition:opacity 0.6s;' +
+    'text-shadow:0 0 6px rgba(80,200,80,0.35),0 1px 3px rgba(0,0,0,0.9);' +
+    '-webkit-mask-image:linear-gradient(to bottom,transparent 0,#000 26%);' +
+    'mask-image:linear-gradient(to bottom,transparent 0,#000 26%);';
+  guidance.innerHTML =
+    '<div style="font-size:10px;letter-spacing:4px;color:rgba(140,230,120,0.45);' +
+    'border-bottom:1px solid rgba(140,230,120,0.2);padding-bottom:4px;margin-bottom:6px;">LDR // GUIDANCE</div>' +
+    '<div id="guide-list"></div>';
+  document.body.appendChild(guidance);
+  guideList = guidance.querySelector('#guide-list');
+
   // Survey readings — the stake answers, on the glass beside it
   survey = document.createElement('div');
   survey.style.cssText =
@@ -359,8 +378,9 @@ export function initGroundHud(siteName, actions = {}) {
 }
 
 export function disposeGroundHud() {
-  for (const el of [vignette, compass, panel, strip, cockpit, survey]) if (el && el.parentNode) el.parentNode.removeChild(el);
+  for (const el of [vignette, compass, panel, strip, cockpit, survey, guidance]) if (el && el.parentNode) el.parentNode.removeChild(el);
   vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; cockpit = null; survey = null;
+  guidance = null; guideList = null; _gEvents = null;
 }
 
 const CARDINALS = [[0, 'N'], [45, 'NE'], [90, 'E'], [135, 'SE'], [180, 'S'], [225, 'SW'], [270, 'W'], [315, 'NW']];
@@ -468,7 +488,43 @@ export function updateGroundHud(dt, s) {
     }
   }
   // In the cab, the console is the only source — the visor text yields
-  if (panel) panel.style.opacity = s.mode === 'rove' ? '0' : '1';
+  const flyingNow = s.mode === 'descent' || s.mode === 'ascent';
+  if (panel) panel.style.opacity = (s.mode === 'rove' || flyingNow) ? '0' : '1';
+
+  // The guidance feed thinks aloud on the way down (and up)
+  if (guidance) {
+    guidance.style.opacity = flyingNow ? '1' : '0';
+    if (flyingNow && guideList) {
+      if (!_gEvents) {
+        _gEvents = s.mode === 'descent'
+          ? [[0.03, 'BLACKOUT EXIT · SIGNAL REACQ'], [0.2, 'PLASMA CLEAR'],
+             [0.32, 'TGT: COPRATES CHASMA'], [0.45, 'GUIDANCE CONVERGED'],
+             [0.58, 'RETRO IGNITION'], [0.8, 'TERRAIN LOCK · 1M SURVEY'], [0.93, 'GEAR DOWN']]
+          : [[0.04, 'THROTTLE UP'], [0.3, 'MAX Q'], [0.62, 'CANYON RIM CLEARED'], [0.82, 'PLASMA ONSET']];
+        guideList.innerHTML = '';
+        _gT = 0;
+      }
+      _gT += dt;
+      let line = null;
+      while (_gEvents.length && (s.progress || 0) >= _gEvents[0][0]) {
+        line = '&gt;&gt; ' + _gEvents.shift()[1];
+        _gT = 0.4;
+      }
+      if (!line && _gT >= 0.62) {
+        _gT = 0;
+        line = `ALT ${(Math.max(0, s.elevMsl + 2717) / 1000).toFixed(2)}KM · VEL ${Math.round(s.speed)}`;
+      }
+      if (line) {
+        const d2 = document.createElement('div');
+        d2.innerHTML = line;
+        if (line.startsWith('&gt;')) d2.style.color = 'rgba(200,255,170,0.95)';
+        guideList.appendChild(d2);
+        while (guideList.children.length > 11) guideList.removeChild(guideList.firstChild);
+      }
+    } else if (!flyingNow && _gEvents) {
+      _gEvents = null;
+    }
+  }
 
   // Cockpit parallax — the cab is a THING you sit in: it lags the
   // gaze a few pixels, the Subnautica trick at CSS prices

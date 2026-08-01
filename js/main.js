@@ -149,6 +149,29 @@ async function boot() {
   const canvas = document.getElementById('c');
   if (canvas) canvas.focus();
 
+  // The glass takes the whole screen at the FIRST gesture — there is
+  // no reason to show the browser around a spaceship. Esc is respected:
+  // once the traveler exits, we never force it again this session.
+  let fsDeclined = false;
+  let fsRequested = false;
+  document.addEventListener('fullscreenchange', () => {
+    if (!document.fullscreenElement && fsRequested) fsDeclined = true;
+  });
+  window.solaceFullscreen = () => {
+    if (fsDeclined || document.fullscreenElement) return;
+    try {
+      const pr = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
+      if (pr && pr.then) pr.then(() => { fsRequested = true; }).catch(() => {});
+    } catch (e) { /* not offered */ }
+  };
+  function fsOnGesture() {
+    window.solaceFullscreen();
+    window.removeEventListener('click', fsOnGesture);
+    window.removeEventListener('keydown', fsOnGesture);
+  }
+  window.addEventListener('click', fsOnGesture);
+  window.addEventListener('keydown', fsOnGesture);
+
   // Defer music start until first user interaction (browser requires gesture for audio)
   function startMusicOnGesture() {
     music.start();
