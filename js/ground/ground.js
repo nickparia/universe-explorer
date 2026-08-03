@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { getScene, getCamera, setWorldPos } from '../engine.js';
+import { getAltitude } from '../altitude.js';
 import { setFlightSuppressed, restorePose, getCamPos, getCamQuat, getOrbitBodyName } from '../flight.js';
 import { getBodies } from '../bodies.js';
 import { getPlanetConfig } from '../planetconfig.js';
@@ -24,13 +25,15 @@ import { initTerrain, updateTerrain, disposeTerrain, debugTerrain } from './terr
 import { initSky, updateSky, disposeSky, getSunState, debugSky, setSkyGust, getWeather } from './sky.js';
 import { initController, updateController, disposeController, getLocalPos, getMode, getGroundSpeed, getEyeY, getHeldKeys, getVisOffset, toggleGait } from './controller.js';
 import { initDustField, updateDustField, disposeDustField } from './dust.js';
-import { initLamp, updateLamp, disposeLamp } from './lamp.js';
+import { initLamp, updateLamp, disposeLamp, toggleLamp, isLampOn } from './lamp.js';
+import { initTelemetry, updateTelemetry, disposeTelemetry } from './telemetry.js';
 import { initRocks, updateRocks, disposeRocks } from './rocks.js';
 import { initDevils, updateDevils, disposeDevils } from './devils.js';
 import { initGroundHud, updateGroundHud, disposeGroundHud } from './hud.js';
 import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
 import { initStakes, disposeStakes, updateStakes, nearestStake, getStakes, uprootNear, stakeDef, getSupply, getSupplyEta } from './stakes.js';
-import { initBuild, disposeBuild, beginPlacement, cancelPlacement, commitPlacement, updatePlacement, isPlacing } from './build.js';
+import { initBuild, disposeBuild, beginPlacement, cancelPlacement, commitPlacement, updatePlacement, isPlacing, activeDef } from './build.js';
+import { initOutposts, disposeOutposts, updateOutposts, nearestOutpost, collectHopper, hopperOf, stageOf, etaHours, extractorDef, isExtractorUnlocked, surveysUntilUnlock, getOutposts } from './outposts.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
@@ -94,28 +97,138 @@ export function initGround() {
   hintEl.textContent = 'L — MAKE LANDFALL · COPRATES CHASMA';
   document.body.appendChild(hintEl);
 
+  // The offer is PROXIMITY, not paperwork: any approach to Mars —
+  // manual stick, autopilot, or a formal orbit — brings the landfall
+  // line up. Within six radii the planet fills enough of the window
+  // that the invitation reads as belonging to it.
+  const nearMars = () => {
+    const a = getAltitude();
+    return a.nearestBody === 'MARS' && a.altitudeNorm < 6;
+  };
+
   // The affordance breathes on its own clock — no per-frame main.js tax
   setInterval(() => {
-    const offer = state === 'idle' && getOrbitBodyName() === 'MARS';
+    const offer = state === 'idle' && nearMars();
     hintEl.style.opacity = offer ? '1' : '0';
   }, 700);
 
   window.addEventListener('keydown', (e) => {
-    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-      if (!((e.code === 'KeyL' || e.code === 'KeyE') && !e.target.value)) return;  // empty line yields
-      e.target.blur();
-    }
+    // An open terminal line owns every key — L and E are letters first.
+    if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) return;
     if (e.code === 'KeyE' && state === 'active') {
       const p = getLocalPos();
       if (isPlacing()) { commitPlacement(); return; }
+      // A full hopper within reach empties before anything else plants
+      const nearO = nearestOutpost(p.x, p.z);
+      if (nearO && nearO.dist < 6 && hopperOf(nearO.outpost) > 0) {
+        collectHopper(nearO.outpost);
+        return;
+      }
       if (uprootNear(p.x, p.z)) return;
       beginPlacement(stakeDef());
       return;
     }
-    if (e.code === 'Escape' && isPlacing()) { cancelPlacement(); return; }
-    if (e.code !== 'KeyL') return;
-    if (state === 'active') exitGround();
-    else if (state === 'idle' && getOrbitBodyName() === 'MARS') enterGround();
+    // B — BUILD: the extractor kit, once the surveys have earned it
+    if (e.code === 'KeyB' && state === 'active' && !isPlacing() && isExtractorUnlocked()) {
+      beginPlacement(extractorDef());
+      return;
+    }
+    if (e.code === 'Escape' && isPlacing()) {
+      // Cancelling a placement consumes Esc entirely — the systems
+      // menu shares this window and registration order isn't enough.
+      e.stopImmediatePropagation();
+      window.__solaceEscClaimed = performance.now();
+      cancelPlacement();
+      return;
+    }
+    // Groundside L is the LIGHT — the lamp switch on the suit and the
+    // rover's headlight bar. Lifting off moved to O (return to Orbit):
+    // a light you toggle a dozen times a night can't share a key with
+    // leaving the planet.
+    if (e.code === 'KeyL') {
+      if (state === 'active') {
+        const on = toggleLamp();
+        emit('lamp:switched', { on });
+      } else if (state === 'idle' && nearMars()) {
+        enterGround();
+      }
+      return;
+    }
+    if (e.code === 'KeyO' && state === 'active') exitGround();
+  });
+}
+
+// The plunge: on L the helm NOSES OVER and falls at the planet — the
+// world grows to meet the window while the buffet builds (canvas
+// shake), the plasma closes in from the edges, and the roar rises.
+// The dive drives the REAL space camera (restorePose each frame, the
+// same door flight uses), so this is genuine approach, not effects on
+// a parked view; the orbit pose was already saved for the liftoff.
+function entryBuffet(seconds) {
+  const cv = document.getElementById('c');
+  const glow = document.getElementById('reentry-glow');
+  const alt = getAltitude();
+  const diveBody = alt.nearestBody === 'MARS' ? alt.body : null;
+  const t0 = performance.now();
+  let last = t0;
+  const _q = new THREE.Quaternion();
+  const _m = new THREE.Matrix4();
+  const _dir = new THREE.Vector3();
+  return new Promise((resolve) => {
+    const tick = () => {
+      if (state !== 'entering') { cleanup(); resolve(); return; }
+      const now = performance.now();
+      const dt = Math.min(0.05, (now - last) / 1000);
+      last = now;
+      const t = (now - t0) / (seconds * 1000);
+      if (t >= 1) {
+        if (cv) cv.style.transform = '';
+        // The glow holds while the plasma sheath covers it, then lets go
+        setTimeout(() => { if (glow) glow.style.opacity = '0'; }, 1600);
+        resolve();
+        return;
+      }
+      const k = t * t;                    // the air thickens quadratically
+
+      // The scream toward the surface: chase the gap down, faster
+      // every frame, holding just off the deck for the sheath to cut.
+      if (diveBody && diveBody.g) {
+        const center = diveBody.g.userData._worldPos || diveBody.g.position;
+        const cur = getCamPos();
+        _dir.copy(center).sub(cur);
+        const gap = _dir.length() - diveBody.r * 1.08;
+        _dir.normalize();
+        if (gap > 0) {
+          const step = Math.min(gap * 0.5, gap * dt * (0.25 + 2.4 * k));
+          _m.lookAt(cur, center, THREE.Object3D.DEFAULT_UP);
+          _q.setFromRotationMatrix(_m);
+          const cq = getCamQuat().clone().slerp(_q, Math.min(1, 0.05 + k * 0.14));
+          restorePose(
+            { px: cur.x + _dir.x * step, py: cur.y + _dir.y * step, pz: cur.z + _dir.z * step },
+            { qx: cq.x, qy: cq.y, qz: cq.z, qw: cq.w },
+            null
+          );
+        }
+      }
+
+      const amp = k * 16;                 // px of buffet at full fury
+      if (cv) {
+        cv.style.transform =
+          `translate(${((Math.random() - 0.5) * amp).toFixed(1)}px,` +
+          `${((Math.random() - 0.5) * amp).toFixed(1)}px) ` +
+          `rotate(${((Math.random() - 0.5) * k * 0.9).toFixed(2)}deg) ` +
+          `scale(${(1 + k * 0.05).toFixed(3)})`;
+      }
+      if (glow) glow.style.opacity = String(Math.min(1, k * 1.5));
+      setGroundWind(0.3 + k * 2.3);       // the roar rises with the shake
+      requestAnimationFrame(tick);
+    };
+    const cleanup = () => {
+      if (cv) cv.style.transform = '';
+      if (glow) glow.style.opacity = '0';
+      setGroundWind(0);
+    };
+    tick();
   });
 }
 
@@ -131,30 +244,47 @@ export async function enterGround() {
   // we never force it again until the next landfall.
   if (window.solaceFullscreen) window.solaceFullscreen();
 
-  // The veil falls first — the site loads behind it
-  overlay.style.transition = 'opacity 1.6s ease';
+  // The helm is saved BEFORE the dive: liftoff returns you to the
+  // orbit you left, not to wherever the plunge dragged the camera.
+  {
+    const p = getCamPos(), q = getCamQuat();
+    savedPose = {
+      pos: { px: p.x, py: p.y, pz: p.z },
+      quat: { qx: q.x, qy: q.y, qz: q.z, qw: q.w },
+      orbitName: getOrbitBodyName(),
+    };
+  }
+
+  // THE PLUNGE: the site loads behind the dive — the camera screams
+  // down at the surface, and the cut is PLASMA, not a polite black:
+  // the sheath whites out at the peak and the canyon resolves out of
+  // the descent corridor's own blackout on the far side.
+  const siteLoad = loadSite();
+  await entryBuffet(3.2);
+  overlay.style.background =
+    'radial-gradient(ellipse at 50% 62%, #ffe0b0 0%, #ff9540 34%, #c4470f 68%, #3a0d02 100%)';
+  overlay.style.transition = 'opacity 0.45s ease';
   overlay.style.opacity = '1';
 
   try {
-    await loadSite();
+    await siteLoad;
   } catch (err) {
     console.error('[ground] site load failed', err);
     overlay.style.opacity = '0';
+    setTimeout(() => { overlay.style.background = '#000'; }, 1000);
+    const glow = document.getElementById('reentry-glow');
+    if (glow) glow.style.opacity = '0';
+    setGroundWind(0);
+    savedPose = null;
     state = 'idle';
     return;
   }
-  await wait(900);    // a breath of black — the blackout is the cut
+  await wait(700);    // a breath inside the fire — the sheath is the cut
 
   const scene = getScene();
   const camera = getCamera();
 
-  // Save the helm exactly as it stands
-  const p = getCamPos(), q = getCamQuat();
-  savedPose = {
-    pos: { px: p.x, py: p.y, pz: p.z },
-    quat: { qx: q.x, qy: q.y, qz: q.z, qw: q.w },
-    orbitName: getOrbitBodyName(),
-  };
+  // (The helm was saved before the dive.)
   setFlightSuppressed(true);
 
   // The space scene sleeps — lights and all
@@ -178,6 +308,10 @@ export async function enterGround() {
   initGroundHud(SITE_NAME, {
     onGait: toggleGait,
     onLiftoff: () => exitGround(),
+    onLamp: () => emit('lamp:switched', { on: toggleLamp() }),
+    onBuild: () => {
+      if (!isPlacing() && isExtractorUnlocked()) beginPlacement(extractorDef());
+    },
     onStake: () => {
       const p2 = getLocalPos();
       if (isPlacing()) { commitPlacement(); return; }
@@ -186,8 +320,10 @@ export async function enterGround() {
     },
   });
   initGroundMap();
+  initTelemetry();
   initStakes(rootGroup);
   initBuild(rootGroup);
+  initOutposts(rootGroup);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -219,6 +355,9 @@ export async function enterGround() {
   });
   overlay.style.transition = 'opacity 0.7s ease';
   overlay.style.opacity = '0';
+  // The sheath burns off; the veil goes back to being a plain blackout
+  // for whoever needs it next.
+  setTimeout(() => { overlay.style.background = '#000'; }, 1200);
 }
 
 // ── Exit ─────────────────────────────────────────────────────────────
@@ -241,8 +380,10 @@ export function exitGround() {
     disposeDevils();
     disposeGroundHud();
     disposeGroundMap();
+    disposeTelemetry();
     disposeStakes();
     disposeBuild();
+    disposeOutposts();
     disposeSky(scene);
     disposeTerrain();
     if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -325,6 +466,7 @@ export function updateGround(dt) {
   setSkyGust(lastGust);
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
   updateStakes(local, getSunState().elevDeg, dt);
+  updateOutposts(dt);
   let placeStatus = null;
   {
     const cam0 = getCamera();
@@ -346,7 +488,7 @@ export function updateGround(dt) {
     const sun = getSunState();
     const cfg = getPlanetConfig('MARS');
     const baseT = (cfg && cfg.surface && cfg.surface.temperature) ? cfg.surface.temperature.value : -63;
-    updateGroundHud(dt, {
+    const s = {
       heading,
       elevMsl: site.landingElev + (local.y - 1.65),
       tempC: Math.round(baseT - 40 + 55 * Math.max(0, Math.sin(THREE.MathUtils.degToRad(sun.elevDeg)))),
@@ -367,10 +509,28 @@ export function updateGround(dt) {
       nearStake: (() => { const n = nearestStake(local.x, local.z); return n && n.dist < 8 ? { n: n.stake.n, dist: n.dist, readings: n.stake.readings } : null; })(),
       inReach: (() => { const n = nearestStake(local.x, local.z); return !!(n && n.dist < 3); })(),
       placing: isPlacing(),
+      placeKind: isPlacing() && activeDef() ? activeDef().key : null,
       placeBlocked: placeStatus ? placeStatus.blocked : null,
       supply: getSupply(),
       supplyEtaMin: Math.ceil(getSupplyEta() / 60000),
-    });
+      lamp: isLampOn(),
+      devil: devilNear,
+      buildUnlocked: isExtractorUnlocked(),
+      surveysToGo: surveysUntilUnlock(),
+      worksCount: getOutposts().length,
+      nearOutpost: (() => {
+        const n = nearestOutpost(local.x, local.z);
+        if (!n || n.dist > 40) return null;
+        const st = stageOf(n.outpost);
+        return {
+          n: n.outpost.n, dist: n.dist, rate: n.outpost.rate,
+          stage: st.label, frac: st.frac,
+          etaH: etaHours(n.outpost), hopper: hopperOf(n.outpost),
+        };
+      })(),
+    };
+    updateGroundHud(dt, s);
+    updateTelemetry(dt, s);
     updateGroundMap(dt, local, heading);
   }
 

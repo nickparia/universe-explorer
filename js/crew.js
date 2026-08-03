@@ -16,11 +16,26 @@ import { on, emit } from './bus.js';
 const TOKEN_KEY = 'solace_crew_token_v1';
 const NAME_KEY = 'solace_crew_name_v1';
 
+// ?newhire=1 — the recruiting-office door: identity lives in
+// sessionStorage for this TAB only, so the first-boot wake, enlistment
+// and a fresh record can be walked end-to-end without touching the
+// machine's real crew token. Close the tab, the simulation evaporates.
+export const NEWHIRE_SIM = typeof location !== 'undefined' &&
+  new URLSearchParams(location.search).has('newhire');
+const store = NEWHIRE_SIM ? sessionStorage : localStorage;
+
 let token = null;
 let crewName = null;
 try {
-  token = localStorage.getItem(TOKEN_KEY) || null;
-  crewName = localStorage.getItem(NAME_KEY) || null;
+  if (NEWHIRE_SIM) {
+    // COLD every load: sessionStorage outlives reloads within a tab,
+    // and a simulation that remembers its last hire isn't simulating
+    // a new one. Every visit to ?newhire=1 is a stranger in the pod.
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(NAME_KEY);
+  }
+  token = store.getItem(TOKEN_KEY) || null;
+  crewName = store.getItem(NAME_KEY) || null;
 } catch (e) { /* private mode — guest voyage */ }
 
 let pushTimer = null;
@@ -39,10 +54,17 @@ export function adoptSignon(data) {
   token = data.token;
   crewName = data.name;
   try {
-    localStorage.setItem(TOKEN_KEY, token);
-    localStorage.setItem(NAME_KEY, crewName);
+    store.setItem(TOKEN_KEY, token);
+    store.setItem(NAME_KEY, crewName);
   } catch (e) { /* private mode — signed on for this session only */ }
   emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {}, prefs: data.prefs || {} });
+}
+
+/** Called by the employee module after a redesignation is filed. */
+export function adoptRename(name) {
+  crewName = name;
+  try { store.setItem(NAME_KEY, name); } catch (e) { /* fine */ }
+  emit('crew:renamed', { name });
 }
 
 /** Sign off — the record stays in the registry; this ship forgets. */
@@ -50,8 +72,8 @@ export function signOff() {
   token = null;
   crewName = null;
   try {
-    localStorage.removeItem(TOKEN_KEY);
-    localStorage.removeItem(NAME_KEY);
+    store.removeItem(TOKEN_KEY);
+    store.removeItem(NAME_KEY);
   } catch (e) { /* fine */ }
   emit('crew:signed-off');
 }
@@ -77,7 +99,16 @@ export function initCrew() {
       .then((r) => (r.ok ? r.json() : Promise.reject(r.status)))
       .then((data) => {
         crewName = data.name;
-        emit('crew:signed-on', { name: data.name, notes: data.notes || '', places: data.places || {}, prefs: data.prefs || {} });
+        emit('crew:signed-on', {
+          name: data.name, notes: data.notes || '', places: data.places || {},
+          prefs: data.prefs || {}, stakes: data.stakes || [],
+          outposts: data.outposts || [],
+          credits: data.credits || 0, woPaid: data.woPaid || [],
+          createdAt: data.createdAt || 0, assigned: !!data.assigned,
+          // Days since the last shift touched the record — for the
+          // resumption card. lastSeen predates this boot's own GET.
+          lastShiftDays: data.lastSeen ? (Date.now() - data.lastSeen) / 86400000 : null,
+        });
       })
       .catch((status) => {
         // 401 = the token aged out of the registry; quietly become a

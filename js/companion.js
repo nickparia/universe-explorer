@@ -16,6 +16,7 @@ import { setCompanionState, getCompanionState } from './companion-mark.js';
 import { companionSay, getTravelerNotes } from './shipchat.js';
 import { getCrewName, crewHeaders } from './crew.js';
 import { isMusicWanted } from './music.js';
+import { readOutpostRecords, onlineAtMs } from './ground/outposts.js';
 
 // ── Line pools — the HAL register: measured, courteous, a little too
 // attentive. {place} is replaced with the location name. ──────────────
@@ -147,7 +148,7 @@ function murmur(key, place) {
 // The brain composes the line from real context (place, absence, the
 // ship's log on the traveler); the canned pools are only the offline
 // fallback. `fallbackKey` null means: if the brain is silent, so are we.
-async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
+async function brainMurmur(event, name, gapMs, fallbackKey, from, via, extra) {
   lastMurmurAt = tSec; // reserve the slot — no doubled murmurs while we wait
   // The thought is visible before the words: while the brain composes,
   // the trace twists into its quiet tangle, then unwinds into speech.
@@ -165,7 +166,7 @@ async function brainMurmur(event, name, gapMs, fallbackKey, from, via) {
         gap: gapMs ? gapPhrase(gapMs) : '',
         from: from || '',
         via: via || '',
-        context: (loc && loc.desc) || '',
+        context: (((loc && loc.desc) || '') + (extra ? ' ' + extra : '')).trim(),
         notes: getTravelerNotes().slice(0, 1500),
         crew: getCrewName() || '',
         // Bond signals — the arc register deepens with real continuity
@@ -203,6 +204,34 @@ function restingState() {
 }
 
 export function initCompanion() {
+  // The first officer appraises the ground the traveler chose — the
+  // readings ride along so the approval is SPECIFIC to the site.
+  on('outpost:placed', ({ n, rate, readings }) => {
+    const r = readings || {};
+    brainMurmur('outpost_placed', 'COPRATES CHASMA', 0, null, '', '',
+      `Extractor E${n}. Site readings: slope ${r.slopePct}%, ${r.roughness}, ` +
+      `sun ${r.sunHours} h/sol, fe-ox ${r.feox}%. Expected yield ${rate} units/h.`);
+  });
+
+  // Works that finished while the traveler was away get reported once,
+  // a quiet beat after boot — the ship sharing good news, not a popup.
+  const WORKS_SEEN_KEY = 'solace_works_seen_v1';
+  setTimeout(() => {
+    try {
+      const seen = parseInt(localStorage.getItem(WORKS_SEEN_KEY) || '0', 10) || 0;
+      const nowMs = Date.now();
+      const finished = readOutpostRecords().filter((o) => {
+        const at = onlineAtMs(o);
+        return at > seen && at <= nowMs;
+      });
+      localStorage.setItem(WORKS_SEEN_KEY, String(nowMs));
+      if (finished.length) {
+        brainMurmur('outpost_online', 'COPRATES CHASMA', 0, null, '', '',
+          `Extractor E${finished[0].n} completed construction while the traveler was away.`);
+      }
+    } catch (e) { /* fine */ }
+  }, 45000);
+
   const noteInput = () => { lastInputAt = tSec; };
   for (const ev of ['keydown', 'mousedown', 'touchstart']) {
     window.addEventListener(ev, noteInput, { passive: true });

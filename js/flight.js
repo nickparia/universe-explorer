@@ -275,17 +275,12 @@ export function initFlight(camera) {
 
     // ── Keyboard ─────────────────────────────────────────────────────────────
     window.addEventListener('keydown', (e) => {
-        // Typing in an input (star map search, ship computer) never flies
-        // the ship — but an EMPTY line yields to the stick: after talking
-        // to Sol the input keeps focus, and movement keys must still fly.
+        // Typing in an input (star map search, ship computer) NEVER
+        // flies the ship — an open line owns every key, or half the
+        // alphabet of sentence-openers would blur it mid-thought. The
+        // line is left by Escape, empty-Enter, or clicking the void.
         if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-            if (!e.target.value && /^(Key[WASDQE]|Space|Shift(Left|Right)|KeyC)$/.test(e.code)) {
-                e.target.blur();
-                const cv = document.getElementById('c');
-                if (cv) cv.focus();
-            } else {
-                return;
-            }
+            return;
         }
         // Groundside the helm is cold — boots have their own hands
         if (_suppressed) return;
@@ -300,14 +295,6 @@ export function initFlight(camera) {
         }
         if (e.code === 'KeyH') doHome();
         if (e.code === 'KeyO') toggleOrbit();
-        if (e.code === 'KeyI') {
-          const h = document.getElementById('ctrl-hint');
-          if (h) {
-            const vis = h.style.opacity !== '0';
-            h.style.opacity = vis ? '0' : '1';
-            h.style.pointerEvents = vis ? 'none' : 'auto';
-          }
-        }
 
         // Number keys 1-9,0 for fly-to planets (1=Mercury...9=Pluto, 0=Sun)
         if (e.code.match(/^Digit\d$/) && _allBodies) {

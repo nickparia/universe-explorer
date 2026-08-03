@@ -9,6 +9,7 @@
 //   and the ship computer knows where you've been.
 
 import { on } from './bus.js';
+import { NEWHIRE_SIM } from './crew.js';
 import { getCamPos, getCamQuat, getOrbitBodyName, getSpeedFeel, isOrbiting } from './flight.js';
 
 const KEY = 'solace_session_v1';
@@ -52,6 +53,9 @@ export function getVisited() {
 }
 
 function savePose() {
+  // The ?newhire simulation must not leave footprints: its wanderings
+  // never overwrite the machine's real resume pose.
+  if (NEWHIRE_SIM) return;
   const feel = getSpeedFeel();
   // Only save stable states — free flight or orbit. Mid-warp/fly-to poses
   // are transient; resuming into one would strand you between places.

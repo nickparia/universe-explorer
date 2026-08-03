@@ -7,11 +7,27 @@
     "directory": "./dist",
     "binding": "ASSETS",
     // Media paths bypass static assets and hit the worker → R2.
-    "run_worker_first": ["/", "/index.html", "/audio/*", "/textures/*", "/models/*", "/locations/*", "/api/*"]
+    "run_worker_first": ["/", "/index.html", "/audio/*", "/textures/*", "/models/*", "/locations/*", "/downloads/*", "/api/*"]
   },
   "ai": {
     "binding": "AI"
   },
+  "durable_objects": {
+    "bindings": [
+      {
+        // The gate on the brain: global per-identity rate limits for
+        // every LLM route + sign-on brute-force armor.
+        "name": "RATE",
+        "class_name": "RateGate"
+      }
+    ]
+  },
+  "migrations": [
+    {
+      "tag": "v1",
+      "new_sqlite_classes": ["RateGate"]
+    }
+  ],
   "kv_namespaces": [
     {
       // Crew records: sign-on credentials + SOLACE's per-traveler log

@@ -3,3 +3,5 @@ dist
 .wrangler
 .netlify
 .claude
+desktop/node_modules
+desktop/release

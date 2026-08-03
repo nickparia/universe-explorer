@@ -27,6 +27,7 @@ let lastGait = null;
 let glass = null;    // the rover's projected instrument layer
 let g = {};          // glass elements by key
 let survey = null;   // the readings panel beside a stake
+let works = null;    // the outpost's ledger line, on approach
 let lastHeading = 0, parX = 0, parY = 0;
 let _crtT = 0;
 let guidance = null, guideList = null;
@@ -185,12 +186,15 @@ export function initGroundHud(siteName, actions = {}) {
   strip.style.cssText =
     'position:fixed;bottom:22px;left:50%;transform:translateX(-50%);' +
     'display:flex;gap:22px;align-items:center;z-index:46;pointer-events:none;';
+  chips.move = makeChip('WASD', 'MOVE');
   chips.gait = makeChip('V', 'ROVER', actions.onGait);
   chips.run = makeChip('SHIFT', 'RUN');
   chips.hop = makeChip('SPACE', 'HOP');
   chips.stake = makeChip('E', 'PLANT STAKE', actions.onStake);
-  chips.lift = makeChip('L', 'LIFT OFF', actions.onLiftoff);
-  for (const k of ['gait', 'run', 'hop', 'stake', 'lift']) strip.appendChild(chips[k].el);
+  chips.build = makeChip('B', 'BUILD', actions.onBuild);
+  chips.lamp = makeChip('L', 'LIGHT', actions.onLamp);
+  chips.lift = makeChip('O', 'LIFT OFF', actions.onLiftoff);
+  for (const k of ['move', 'gait', 'run', 'hop', 'stake', 'build', 'lamp', 'lift']) strip.appendChild(chips[k].el);
   document.body.appendChild(strip);
 
   // The lander's guidance feed: telemetry scrolling up the glass
@@ -218,12 +222,22 @@ export function initGroundHud(siteName, actions = {}) {
     'text-align:right;opacity:0;transition:opacity 0.5s;' +
     'text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 8px rgba(255,150,60,0.2);' + SCAN;
   document.body.appendChild(survey);
+
+  // The works, on approach — stage and ETA while it builds, the hopper
+  // once it runs. Same school as the survey panel, stacked below it.
+  works = document.createElement('div');
+  works.style.cssText =
+    `position:fixed;top:330px;right:22px;z-index:46;pointer-events:none;` +
+    `font-family:${MONO};font-size:10px;letter-spacing:2px;color:${AMBER}0.66);` +
+    'text-align:right;opacity:0;transition:opacity 0.5s;' +
+    'text-shadow:0 1px 4px rgba(0,0,0,0.9),0 0 8px rgba(255,150,60,0.2);' + SCAN;
+  document.body.appendChild(works);
   lastGait = null;
 }
 
 export function disposeGroundHud() {
-  for (const el of [vignette, compass, panel, strip, glass, survey, guidance]) if (el && el.parentNode) el.parentNode.removeChild(el);
-  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; glass = null; g = {}; survey = null;
+  for (const el of [vignette, compass, panel, strip, glass, survey, works, guidance]) if (el && el.parentNode) el.parentNode.removeChild(el);
+  vignette = null; compass = null; cctx = null; panel = null; lines = {}; strip = null; chips = {}; glass = null; g = {}; survey = null; works = null;
   guidance = null; guideList = null; _gEvents = null;
 }
 
@@ -251,21 +265,64 @@ export function updateGroundHud(dt, s) {
       chips.gait.cap.textContent = roving ? 'DISMOUNT' : 'ROVER';
       setChipLit(chips.gait, roving);
     }
+    if (chips.move) chips.move.cap.textContent = roving ? 'DRIVE' : 'MOVE';
     if (chips.run) chips.run.cap.textContent = roving ? 'BOOST' : 'RUN';
     if (chips.hop) chips.hop.el.style.opacity = roving ? '0' : '1';
   }
   if (chips.run) setChipLit(chips.run, !!s.run && s.speed > 0.5);
+  if (chips.lamp) {
+    chips.lamp.cap.textContent = s.mode === 'rove' ? 'HEADLIGHTS' : 'LAMP';
+    setChipLit(chips.lamp, !!s.lamp);
+  }
+  const placingStake = s.placing && s.placeKind !== 'extractor';
   if (chips.stake) {
+    const canCollect = s.nearOutpost && s.nearOutpost.dist < 6 && s.nearOutpost.hopper > 0 && !s.placing;
     chips.stake.cap.textContent =
-      s.placing
+      placingStake
         ? (s.placeBlocked === 'supply' ? `FABRICATING · ${s.supplyEtaMin} MIN`
           : s.placeBlocked === 'spacing' ? 'TOO CLOSE · 12 M'
           : s.placeBlocked === 'ground' ? 'GROUND REFUSES'
           : `SET STAKE · ×${s.supply}`)
+        : canCollect ? `COLLECT · ${s.nearOutpost.hopper} FE-OX`
         : s.inReach ? 'UPROOT'
         : s.supply > 0 ? `PLANT STAKE · ×${s.supply}`
         : `FABRICATING · ${s.supplyEtaMin} MIN`;
-    setChipLit(chips.stake, !!s.inReach || (!!s.placing && !s.placeBlocked));
+    setChipLit(chips.stake, canCollect || !!s.inReach || (placingStake && !s.placeBlocked));
+  }
+  // The BUILD chip narrates the whole arc: progress toward the
+  // blueprint, then the kit, then the placement conversation.
+  if (chips.build) {
+    const placingExt = s.placing && s.placeKind === 'extractor';
+    const surveysDone = 3 - (s.surveysToGo ?? 3);
+    chips.build.el.style.opacity = (s.buildUnlocked || surveysDone > 0) ? '1' : '0';
+    chips.build.cap.textContent =
+      placingExt
+        ? (s.placeBlocked === 'supply' ? 'UNSURVEYED GROUND'
+          : s.placeBlocked === 'spacing' ? 'TOO CLOSE · 30 M'
+          : s.placeBlocked === 'ground' ? 'GROUND REFUSES'
+          : 'SET EXTRACTOR')
+        : s.buildUnlocked ? 'BUILD EXTRACTOR'
+        : `EXTRACTOR · ${surveysDone}/3 SURVEYS`;
+    setChipLit(chips.build, placingExt && !s.placeBlocked);
+  }
+
+  // The works report on approach — building: stage and ETA; online:
+  // the rate the land pays and what the hopper holds
+  if (works) {
+    if (s.nearOutpost) {
+      const o = s.nearOutpost;
+      works.innerHTML =
+        `<div style="color:${AMBER}0.85);letter-spacing:4px;margin-bottom:4px;">EXTRACTOR E${o.n}</div>` +
+        (o.frac < 1
+          ? `${o.stage} · ${Math.round(o.frac * 100)}%<br>` +
+            `ONLINE IN ${o.etaH < 1 ? Math.max(1, Math.round(o.etaH * 60)) + ' MIN' : o.etaH.toFixed(1) + ' H'}`
+          : `RATE ${o.rate} FE-OX/H<br>` +
+            `HOPPER ${o.hopper}` +
+            (o.hopper > 0 && o.dist < 6 ? `<br><span style="color:${AMBER}0.45);">E · COLLECT</span>` : ''));
+      works.style.opacity = '1';
+    } else {
+      works.style.opacity = '0';
+    }
   }
 
   // The stake speaks when you stand beside it
@@ -308,7 +365,7 @@ export function updateGroundHud(dt, s) {
         el.style.color = on ? AMBER + '0.95)' : AMBER + '0.18)';
         el.style.textShadow = on ? `0 0 8px ${glow},0 1px 3px rgba(0,0,0,0.9)` : 'none';
       };
-      lit('LAMP', s.sunElev < 1.5);
+      lit('LAMP', !!s.lamp);
       lit('BOOST', !!s.run && s.speed > 1);
       lit('SRV', !!s.nearStake);
       lit('PWR', true);

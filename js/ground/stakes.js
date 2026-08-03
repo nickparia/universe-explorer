@@ -21,7 +21,11 @@ import { emit, on } from '../bus.js';
 import { pushCrewState } from '../crew.js';
 
 const MAX_STAKES = 24;
-const SURVEY_RADIUS = 400;      // m of verified ground per stake
+// A hand stake verifies a kilometer of ground around it. The radius is
+// stamped ON each stake at plant time (st.r) — future instruments
+// (site drones, the mesh) will plant wider circles without touching
+// the stakes already in the ground.
+const SURVEY_RADIUS = 1000;     // m of verified ground per hand stake
 const MIN_SPACING = 12;         // physical only — circles may overlap
 const SUPPLY_MAX = 6;           // stakes carried; the lander fabricates more
 const REGEN_MS = 5 * 60 * 1000; // one new stake every 5 real minutes
@@ -143,7 +147,9 @@ on('crew:signed-on', (data) => {
 function restore(st) {
   const mesh = buildStakeMesh(st.x, st.z);
   group.add(mesh);
+  // Stakes from before the radius was stamped adopt today's reach
   stakes.push({ x: st.x, z: st.z, t: st.t || Date.now(), n: st.n || stakes.length + 1,
+    r: st.r || SURVEY_RADIUS,
     readings: st.readings || surveyReadings(st.x, st.z), mesh });
 }
 
@@ -176,7 +182,7 @@ export function getSupplyEta() {
 }
 
 function persist() {
-  const flat = stakes.map(({ x, z, t, n, readings }) => ({ x, z, t, n, readings }));
+  const flat = stakes.map(({ x, z, t, n, r, readings }) => ({ x, z, t, n, r, readings }));
   try {
     localStorage.setItem(KEY, JSON.stringify(flat));
     localStorage.setItem(COUNT_KEY, String(plantedCount));
@@ -224,7 +230,7 @@ export function plantAt(x, z) {
   const readings = surveyReadings(x, z);
   const mesh = buildStakeMesh(x, z);
   group.add(mesh);
-  const stake = { x, z, t: Date.now(), n, readings, mesh };
+  const stake = { x, z, t: Date.now(), n, r: SURVEY_RADIUS, readings, mesh };
   stakes.push(stake);
   persist();
   stepCrunch(1.1, true);   // driven into the regolith

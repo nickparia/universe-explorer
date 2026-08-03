@@ -52,7 +52,9 @@ export function beginPlacement(def) {
       o.material.opacity = 0.42;
       o.material.depthWrite = false;
       if (o.material.emissive) o.material.emissive = new THREE.Color(0xff9a3c);
-      if (o.material.emissiveIntensity !== undefined) o.material.emissiveIntensity = 0.7;
+      // A WASH of amber, not a floodlight: big light-colored panels
+      // (the extractor's body) blow out white at higher intensities.
+      if (o.material.emissiveIntensity !== undefined) o.material.emissiveIntensity = 0.22;
     }
   });
   group.add(ghost);
@@ -132,7 +134,7 @@ export function updatePlacement(camLocal, yaw, roving) {
   const cant = (hMax - hMin) / span;               // rise/run across stance
   const seat = THREE.MathUtils.clamp(1 - cant / (def.maxSlope || 0.3), 0, 1);
   const spacing = def.minSpacing ? def.minSpacing(x, z) : 0;
-  const stocked = def.canCommit ? def.canCommit() : true;
+  const stocked = def.canCommit ? def.canCommit(x, z) : true;
   const ok = seat > 0.12 && spacing <= 0 && stocked;
   active.blocked = !stocked ? 'supply' : spacing > 0 ? 'spacing' : seat <= 0.12 ? 'ground' : null;
   active.ok = ok;

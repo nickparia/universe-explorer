@@ -27,6 +27,8 @@ const VOICE_ENABLED = false;
 import { musicCommand, getNowPlaying } from './music.js';
 import { crewHeaders, getCrewName, isSignedOn, signOff, pushCrewState } from './crew.js';
 import { openSignonTerminal } from './signon.js';
+import { openEmployeeModule } from './employee.js';
+import { readOutpostRecords, stageOf, hopperOf, etaHours } from './ground/outposts.js';
 
 let wrap = null;
 let chatHeader = null;
@@ -85,6 +87,7 @@ function bondSignals() {
  */
 export function setChatSurface(mode) {
   if (!wrap) return;
+  wrap.dataset.surface = mode;
   if (mode === 'cab') {
     // PROJECTED on the windshield, not bolted beside it: a thin
     // bracketed frame and a breath of glass tint — the window owns it.
@@ -92,13 +95,13 @@ export function setChatSurface(mode) {
     wrap.style.bottom = '430px';
     wrap.style.width = '300px';
     wrap.style.padding = '2px 10px 6px';
-    wrap.style.background = 'rgba(255,160,70,0.025)';
+    wrap.style.background = 'rgba(70,255,120,0.025)';
     wrap.style.borderRadius = '2px';
     wrap.style.boxShadow =
-      'inset 0 0 0 1px rgba(255,186,100,0.22), ' +
-      '-6px 0 0 -4px rgba(255,186,100,0.45), 6px 0 0 -4px rgba(255,186,100,0.45)';
+      'inset 0 0 0 1px rgba(120,255,150,0.22), ' +
+      '-6px 0 0 -4px rgba(120,255,150,0.45), 6px 0 0 -4px rgba(120,255,150,0.45)';
     chatHeader.style.display = 'block';
-    chatHeader.style.borderBottom = '1px solid rgba(255,186,100,0.14)';
+    chatHeader.style.borderBottom = '1px solid rgba(120,255,150,0.14)';
     chatHeader.textContent = 'SOL // GLASS PROJECTION · CH 2';
   } else if (mode === 'visor') {
     wrap.style.right = '24px';
@@ -112,17 +115,23 @@ export function setChatSurface(mode) {
     chatHeader.style.borderBottom = 'none';
     chatHeader.textContent = 'COM · SOL';
   } else {
+    // The intercom is a TUBE, not a pane of nothing: a curved wash of
+    // green-black glass, brighter where the beam lands, falling off
+    // into the bezel — the chamber aboard the Nostromo, not a widget
+    // on a perfect void.
     wrap.style.right = '24px';
     wrap.style.bottom = '64px';
     wrap.style.width = '320px';
     wrap.style.padding = '0 10px 8px';
-    wrap.style.background = 'linear-gradient(rgba(6,7,5,0.62), rgba(7,8,6,0.72))';
+    wrap.style.background =
+      'radial-gradient(120% 90% at 50% 32%, rgba(14,34,18,0.88), rgba(4,10,5,0.94))';
     wrap.style.borderRadius = '10px';
     wrap.style.boxShadow =
-      '0 0 0 4px rgba(22,20,16,0.9), 0 0 0 6px rgba(210,195,165,0.32), ' +
-      'inset 0 0 30px rgba(0,0,0,0.45), 0 8px 24px rgba(0,0,0,0.55)';
+      '0 0 0 4px rgba(16,22,14,0.95), 0 0 0 6px rgba(95,130,90,0.35), ' +
+      'inset 0 0 34px rgba(0,0,0,0.55), inset 0 0 70px rgba(50,160,80,0.10), ' +
+      '0 0 34px rgba(60,255,110,0.07), 0 8px 24px rgba(0,0,0,0.6)';
     chatHeader.style.display = 'block';
-    chatHeader.style.borderBottom = '1px solid rgba(255,186,100,0.18)';
+    chatHeader.style.borderBottom = '1px solid rgba(120,255,150,0.18)';
     chatHeader.textContent = 'SOL // SHIPBOARD INTERCOM';
   }
 }
@@ -142,9 +151,9 @@ export function initShipChat() {
   chatHeader = document.createElement('div');
   chatHeader.style.cssText =
     "font-family:" + MONO + ";font-size:9px;letter-spacing:4px;" +
-    'color:rgba(255,186,100,0.5);padding:7px 10px 5px;display:none;' +
-    'border-bottom:1px solid rgba(255,186,100,0.18);margin-bottom:6px;' +
-    'text-shadow:0 1px 3px rgba(0,0,0,0.9);';
+    'color:rgba(140,255,160,0.55);padding:7px 10px 5px;display:none;' +
+    'border-bottom:1px solid rgba(120,255,150,0.18);margin-bottom:6px;' +
+    'text-shadow:0 0 6px rgba(60,255,100,0.35),0 1px 3px rgba(0,0,0,0.9);';
   chatHeader.textContent = 'SOL // SHIPBOARD INTERCOM';
   wrap.appendChild(chatHeader);
   // The scene's picker listens on window — swallow pointer events here so
@@ -154,9 +163,6 @@ export function initShipChat() {
     wrap.addEventListener(ev, (e) => e.stopPropagation());
   }
 
-  // No panel, no glass — the words float on the void itself (a scrim
-  // killed the immersion). Legibility over bright cores comes from the
-  // phosphor bloom plus a hard dark halo on every character.
   const style = document.createElement('style');
   style.textContent =
     // Sol's voiceprint is always on the glass — a quiet resting line
@@ -166,7 +172,15 @@ export function initShipChat() {
     '#ship-chat canvas{cursor:pointer;display:block;flex:none;' +
     'transition:filter 0.45s;}' +
     '#ship-chat canvas:hover{filter:brightness(1.5) ' +
-    'drop-shadow(0 0 7px rgba(150,200,255,0.6)) drop-shadow(0 0 14px rgba(120,180,255,0.35));}' +
+    'drop-shadow(0 0 7px rgba(120,255,150,0.6)) drop-shadow(0 0 14px rgba(80,255,120,0.35));}' +
+    // The tube's raster: hairline scanlines across the whole screen and
+    // a faint bloom where the beam is strongest — laid over the glass
+    // surfaces (intercom, cab screen), never over the bare visor.
+    '#ship-chat{cursor:pointer;}' +
+    '#ship-chat[data-surface="void"]::after,#ship-chat[data-surface="cab"]::after{' +
+    "content:'';position:absolute;inset:0;pointer-events:none;border-radius:inherit;" +
+    'background:repeating-linear-gradient(0deg,rgba(0,0,0,0.20) 0 1px,transparent 1px 3px),' +
+    'radial-gradient(90% 40% at 50% 0%,rgba(120,255,150,0.05),transparent 70%);}' +
     // CRT raster on the glyphs themselves: a scanline mask carves thin
     // rows out of the letters and cursor — texture on the phosphor,
     // never a panel over the sky. A slow phosphor waver breathes the
@@ -176,13 +190,12 @@ export function initShipChat() {
     'mask-image:repeating-linear-gradient(0deg,#000 0 2px,rgba(0,0,0,0.62) 2px 3px);}' +
     '#ship-chat{animation:sc-phosphor 7.3s ease-in-out infinite;}' +
     '@keyframes sc-phosphor{0%,100%{opacity:1;}38%{opacity:0.965;}61%{opacity:0.985;}72%{opacity:0.955;}}' +
-    '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(255,190,100,0.18) transparent;}' +
+    '#ship-chat .sc-log{scrollbar-width:thin;scrollbar-color:rgba(120,255,150,0.22) transparent;}' +
     '#ship-chat .sc-log::-webkit-scrollbar{width:4px;}' +
     '#ship-chat .sc-log::-webkit-scrollbar-track{background:transparent;}' +
-    '#ship-chat .sc-log::-webkit-scrollbar-thumb{background:rgba(255,255,255,0.18);border-radius:2px;}' +
-    // Words surface near the mark, hold while they're read, then fade
-    // from the glass entirely — spoken, not posted. Hovering the log
-    // (or being at the line) keeps them lit for rereading.
+    '#ship-chat .sc-log::-webkit-scrollbar-thumb{background:rgba(120,255,150,0.22);border-radius:2px;}' +
+    // Words surface near the mark and stay on the tube, dimming with
+    // age; hovering the log restores full phosphor for rereading.
     '#ship-chat .sc-line{transition:opacity 1.4s;animation:sc-rise 0.8s ease-out;}' +
     '#ship-chat .sc-log:hover .sc-line{opacity:1 !important;transition:opacity 0.6s !important;}' +
     '@keyframes sc-rise{from{opacity:0;transform:translateY(12px);}to{transform:translateY(0);}}' +
@@ -221,10 +234,10 @@ export function initShipChat() {
   input.style.cssText =
     'width:100%;box-sizing:border-box;padding:7px 2px;' +
     'background:transparent;border:none;caret-color:transparent;' +
-    'border-radius:0;outline:none;color:rgba(175,212,255,0.9);' +
+    'border-radius:0;outline:none;color:rgba(190,255,205,0.88);' +
     'font-size:10.5px;letter-spacing:2px;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;' +
-    'text-shadow:0 0 6px rgba(130,185,255,0.45),0 1px 4px rgba(0,0,0,0.95);';
+    'text-shadow:0 0 6px rgba(100,255,140,0.45),0 1px 4px rgba(0,0,0,0.95);';
   // The block cursor is ours, not the browser's: a phosphor slab that
   // rides the end of the typed text, blinking on the teletype beat.
   const inputCursor = document.createElement('span');
@@ -232,9 +245,9 @@ export function initShipChat() {
   inputCursor.textContent = '█'; // full phosphor slab — MOTHER's prompt
   inputCursor.style.cssText =
     'position:absolute;top:50%;transform:translateY(-50%);left:2px;' +
-    'pointer-events:none;color:rgba(255,200,110,0.95);' +
+    'pointer-events:none;color:rgba(150,255,170,0.95);' +
     'font-family:' + MONO + ';font-size:10.5px;' +
-    'text-shadow:0 0 7px rgba(255,170,50,0.6),0 1px 4px rgba(0,0,0,0.95);';
+    'text-shadow:0 0 7px rgba(70,255,110,0.6),0 1px 4px rgba(0,0,0,0.95);';
   // Hidden twin used to measure where the typed text ends
   const measurer = document.createElement('span');
   measurer.style.cssText =
@@ -254,19 +267,24 @@ export function initShipChat() {
   input.addEventListener('focus', placeCursor);
   input.addEventListener('blur', placeCursor);
   input.addEventListener('keydown', (e) => {
-    // An EMPTY line yields to the hands: after speaking to Sol the
-    // line keeps focus, and a movement key with nothing typed means
-    // the traveler wants to move, not talk. Let it bubble to the helm
-    // or the boots. Mid-sentence, typing always wins.
-    if (!input.value && /^(Key[WASDQEVCL]|Space|Shift(Left|Right))$/.test(e.code)) {
+    e.stopPropagation(); // never fly the ship while typing — an open line owns the keys
+    if (e.key === 'Enter') {
+      // Enter on an empty line closes it — the helm gets the keys back.
+      // Enter with words on the glass speaks them; the line stays open.
+      if (!input.value.trim()) {
+        input.blur();
+        const cv = document.getElementById('c');
+        if (cv) cv.focus();
+        return;
+      }
+      send();
+      placeCursor();
+    }
+    if (e.key === 'Escape') {
       input.blur();
       const cv = document.getElementById('c');
       if (cv) cv.focus();
-      return;
     }
-    e.stopPropagation(); // never fly the ship while typing
-    if (e.key === 'Enter') { send(); placeCursor(); }
-    if (e.key === 'Escape') input.blur();
   });
   // The etched caption: consoles label their keys. Beside the resting
   // prompt, in the machine's own register — "enter · speak" — until the
@@ -280,7 +298,7 @@ export function initShipChat() {
   keycap.style.cssText =
     'position:absolute;top:50%;transform:translateY(-50%);left:18px;' +
     'pointer-events:none;font-family:' + MONO + ';font-size:8px;' +
-    'letter-spacing:3px;color:rgba(255,186,100,0.30);text-transform:uppercase;' +
+    'letter-spacing:3px;color:rgba(130,255,160,0.32);text-transform:uppercase;' +
     'text-shadow:0 1px 3px rgba(0,0,0,0.9);transition:opacity 0.8s;';
   const updateKeycap = () => {
     keycap.style.opacity =
@@ -310,8 +328,15 @@ export function initShipChat() {
   const mark = document.createElement('canvas');
   mark.style.cssText = 'width:100%;height:30px;margin:0 0 2px;';
   initCompanionMark(mark);
-  // Addressing the ship: click the trace, the line opens.
-  mark.addEventListener('click', () => input.focus());
+  // Addressing the ship: the WHOLE panel is the switch — trace, log,
+  // header, glass. Hunting for a hairline input in the dark was the
+  // fiddliest act aboard; now any touch on the intercom opens the line.
+  // (Dragging to select words for rereading is left alone.)
+  wrap.addEventListener('click', () => {
+    const sel = window.getSelection();
+    if (sel && !sel.isCollapsed) return;
+    if (document.activeElement !== input) input.focus();
+  });
   // Or simply press Enter — the terminal convention that needs no
   // explaining. Fishing for an invisible field in the dark was the
   // only awkward act aboard. (The sign-on terminal captures its own
@@ -328,34 +353,6 @@ export function initShipChat() {
   wrap.appendChild(row);
   document.body.appendChild(wrap);
   setChatSurface('void');
-
-  // The glass clears itself: spoken lines hold while they're read, then
-  // dissolve. Attention (hovering the log, or being at the line) keeps
-  // them lit and postpones the fade.
-  setInterval(() => {
-    const now = performance.now();
-    const attending = log.matches(':hover') || document.activeElement === input;
-    for (const line of [...log.children]) {
-      if (!line._fadeAt || line._fadeAt === Infinity) continue;
-      if (attending) {
-        line._fadeAt = Math.max(line._fadeAt, now + 5000);
-        if (line._fading) {
-          line._fading = false;
-          line.style.transition = '';
-          applyAgeFade();
-        }
-        continue;
-      }
-      if (!line._fading && now >= line._fadeAt) {
-        line._fading = true;
-        line.style.transition = 'opacity 3.2s ease';
-        line.style.opacity = '0';
-        line._goneAt = now + 3600;
-      } else if (line._fading && now >= line._goneAt) {
-        line.remove();
-      }
-    }
-  }, 1000);
 
   on('orbit:enter', ({ name }) => {
     currentLocation = name;
@@ -380,20 +377,14 @@ export function initShipChat() {
 }
 
 // Older words recede: full strength at the bottom near the mark, dimming
-// as they drift up, never quite gone.
+// as they drift up, never quite gone — the transcript stays on the tube
+// until the traveler leaves (hovering the log restores full phosphor).
 function applyAgeFade() {
   const n = log.children.length;
   for (let i = 0; i < n; i++) {
-    if (log.children[i]._fading) continue; // mid-dissolve — leave it be
     const age = n - 1 - i;
     log.children[i].style.opacity = String(Math.max(0.4, 1 - age * 0.09));
   }
-}
-
-// How long a line stays lit once fully spoken: enough to read it calmly
-// Spoken, not posted: long enough to read once, then off the glass.
-function readingHold(text) {
-  return Math.min(11000, 2500 + text.length * 42);
 }
 
 function addLine(text, who) {
@@ -408,16 +399,15 @@ function addLine(text, who) {
     'font-size:10.5px;letter-spacing:1.8px;line-height:2.0;flex:none;' +
     'white-space:pre-wrap;overflow-wrap:break-word;text-transform:uppercase;' +
     'font-family:' + MONO + ';font-weight:400;' +
-    // Two voices, two temperatures: the ship is warm amber phosphor;
-    // the traveler's words are an ethereal ice-blue — cool glass
-    // against the tube's glow.
+    // One phosphor, two intensities — the 1979 register: the ship burns
+    // bright green with a full CRT bloom; the traveler's echo is the
+    // same tube at quarter power.
     (who === 'you'
-      ? 'color:rgba(168,208,255,0.66);' +
-        'text-shadow:0 0 6px rgba(130,185,255,0.4),0 1px 4px rgba(0,0,0,0.95);'
-      : 'color:rgba(255,206,120,0.95);' +
-        'text-shadow:0 0 7px rgba(255,170,50,0.55),0 0 18px rgba(255,140,30,0.22),0 1px 4px rgba(0,0,0,0.95);');
+      ? 'color:rgba(180,255,195,0.62);' +
+        'text-shadow:0 0 6px rgba(100,255,140,0.35),0 1px 4px rgba(0,0,0,0.95);'
+      : 'color:rgba(140,255,160,0.95);' +
+        'text-shadow:0 0 7px rgba(70,255,110,0.6),0 0 20px rgba(50,255,90,0.25),0 1px 4px rgba(0,0,0,0.95);');
   line.textContent = who === 'you' ? '> ' + text : text;
-  line._fadeAt = performance.now() + 9000; // streamed lines override this
   log.appendChild(line);
   while (log.children.length > HISTORY_KEPT) log.removeChild(log.firstChild);
   applyAgeFade();
@@ -440,7 +430,6 @@ function streamInto(line, text, paceMs) {
   line.appendChild(textNode);
   line.appendChild(cursor);
   setCompanionState('speaking');
-  line._fadeAt = Infinity; // never fade mid-printout
   stream = { line, textNode, cursor, full: text, i: 0, timer: null, lingerTimer: null };
   stream.timer = setInterval(() => {
     // Slightly irregular cadence — a printout, not a CSS animation
@@ -451,7 +440,6 @@ function streamInto(line, text, paceMs) {
     if (stream.i >= text.length) {
       clearInterval(stream.timer);
       stream.timer = null;
-      line._fadeAt = performance.now() + 1600 + readingHold(text);
       // The cursor blinks once or twice more, then the line is just text
       stream.lingerTimer = setTimeout(() => stopSpeaking(), 1600);
     }
@@ -486,9 +474,6 @@ function cancelStream() {
   if (stream.timer) clearInterval(stream.timer);
   if (stream.lingerTimer) clearTimeout(stream.lingerTimer);
   stream.textNode.data = stream.full;
-  if (stream.line._fadeAt === Infinity) {
-    stream.line._fadeAt = performance.now() + readingHold(stream.full);
-  }
   stream.cursor.remove();
   stream = null;
 }
@@ -513,7 +498,6 @@ export function companionSay(text) {
     streamInto(line, text);
     return true;
   }
-  line._fadeAt = Infinity;
   // The voice warms up first (a breath, not a lag) — print and audio
   // then begin together, paced to end together. If the voice is
   // unavailable the teletype simply speaks alone.
@@ -528,7 +512,6 @@ export function companionSay(text) {
       // line lands as plain text, already true, no voice over it.
       if (v) v.cancel();
       line.textContent = text;
-      line._fadeAt = performance.now() + readingHold(text);
       return;
     }
     const dur = v ? v.play() : 0;
@@ -605,8 +588,10 @@ function buildContext(name) {
       'Coprates Chasma, Valles Marineris. Real terrain from NASA elevation ' +
       'data: the canyon floor at −4.7 km, the fluted north wall rising ' +
       'nine kilometers, Coprates Montes to the south. They can walk, or ' +
-      'rove (V). This is the first ground under this ship\'s boots — ' +
-      'no crew has stood here before. L lifts back to orbit.',
+      'rove (V). E plants a survey stake — only surveyed ground appears ' +
+      'on the chart. L switches the suit lamp or the rover headlights. ' +
+      'This is the first ground under this ship\'s boots — ' +
+      'no crew has stood here before. O lifts back to orbit.',
     ];
     const visited = [...getVisited()];
     if (visited.length) parts.push('Voyage log — places this traveler has orbited: ' + visited.join(', '));
@@ -635,6 +620,31 @@ async function send() {
     input.value = '';
     if (isSignedOn()) { companionSay('the record is already open, ' + getCrewName() + '.'); return; }
     openSignonTerminal();
+    return;
+  }
+  // The employee module answers to its name — the personnel record,
+  // where a company designation becomes the traveler's own.
+  if (/^(employee module|employee record|personnel( record)?|my record)$/i.test(q)) {
+    input.value = '';
+    input.blur();
+    openEmployeeModule();
+    return;
+  }
+  // The roster: Sol reads the works the way a first officer would.
+  if (/^(works|the works|roster|duty roster)$/i.test(q)) {
+    input.value = '';
+    const recs = readOutpostRecords();
+    if (!recs.length) {
+      companionSay('nothing on the ledger yet — the first extractor is still waiting to be earned.');
+    } else {
+      const o = recs[0];
+      const st = stageOf(o);
+      companionSay(st.frac >= 1
+        ? 'extractor e' + o.n + ' is online on mars — the hopper holds ' + hopperOf(o) +
+          ' units of iron oxide. worth a landfall, when you are ready.'
+        : 'extractor e' + o.n + ' is at ' + st.label.toLowerCase() + ' — online in about ' +
+          Math.ceil(etaHours(o)) + ' hours. the machines are patient.');
+    }
     return;
   }
   if (/^sign[ -]?off$|^log[ -]?out$/i.test(q)) {
@@ -699,7 +709,6 @@ async function send() {
   addLine(q, 'you');
   // While the ship thinks, the line is just a cursor, blinking
   const pending = addLine('▎', 'solace');
-  pending._fadeAt = Infinity; // holds however long the thinking takes
   pending.style.animation = 'sc-blink 1.06s steps(2,start) infinite';
 
   const past = history.slice(-HISTORY_SENT);
@@ -760,13 +769,11 @@ async function send() {
     } else {
       pending.style.animation = '';
       pending.textContent = 'the ship computer is quiet. try again in a moment.';
-      pending._fadeAt = performance.now() + 12000;
       setCompanionState(currentLocation ? 'idle' : 'dormant');
     }
   } catch (e) {
     pending.style.animation = '';
     pending.textContent = 'the ship computer is offline out here.';
-    pending._fadeAt = performance.now() + 12000;
     setCompanionState(currentLocation ? 'idle' : 'dormant');
   }
   busy = false;

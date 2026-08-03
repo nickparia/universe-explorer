@@ -4,14 +4,89 @@
 // the catalog of locations will keep growing and media updates shouldn't
 // require a code deploy. Everything else is served from static assets.
 
-const MEDIA_PREFIX = /^(audio|textures|models|locations)\//;
+import { DurableObject } from 'cloudflare:workers';
 
-// Naive per-isolate rate limit for the ship computer — enough to stop a
-// runaway client without any storage round-trips. Resets when the isolate
-// recycles, which is fine for this purpose.
-const askCounts = new Map();
-const ASK_LIMIT = 30;            // questions per window per IP
-const ASK_WINDOW_MS = 10 * 60 * 1000;
+// downloads/ carries the desktop installers — same R2 door as the media
+const MEDIA_PREFIX = /^(audio|textures|models|locations|downloads)\//;
+
+// ── The gate on the brain ────────────────────────────────────────────────
+//
+// Every LLM route costs real money per call, so every LLM route passes
+// a RateGate Durable Object before it thinks. One gate per IDENTITY —
+// the crew token when one rides the request (stable across networks),
+// the connecting IP otherwise (the anonymous taste) — so the limits are
+// GLOBAL, not the old per-isolate Maps that reset whenever Cloudflare
+// recycled a worker and never coordinated across the fleet.
+//
+// Two ceilings per route class: a short window (absorbs a runaway
+// client) and a daily one (bounds what any identity can cost in a day).
+
+const GATE_LIMITS = {
+  ask:     { short: 30, shortS: 600, day: 240 },
+  murmur:  { short: 30, shortS: 600, day: 400 },
+  reflect: { short: 12, shortS: 600, day: 80 },
+  voice:   { short: 40, shortS: 600, day: 200 },
+  signon:  { short: 10, shortS: 600, day: 60 },   // brute-force armor, not cost control
+};
+
+export class RateGate extends DurableObject {
+  constructor(ctx, env) {
+    super(ctx, env);
+    ctx.blockConcurrencyWhile(async () => {
+      this.ctx.storage.sql.exec(
+        'CREATE TABLE IF NOT EXISTS counts (' +
+        'k TEXT PRIMARY KEY, n INTEGER NOT NULL, exp INTEGER NOT NULL)'
+      );
+    });
+  }
+
+  /** Count one hit against `cls`. Returns 0 when allowed, else the
+   *  seconds until the tightest exhausted window reopens. */
+  take(cls, shortLimit, shortS, dayLimit) {
+    const now = Date.now();
+    const sql = this.ctx.storage.sql;
+    sql.exec('DELETE FROM counts WHERE exp < ?', now);
+    const shortWin = Math.floor(now / (shortS * 1000));
+    const dayWin = Math.floor(now / 86400000);
+    const windows = [
+      ['s:' + cls + ':' + shortWin, shortLimit, (shortWin + 1) * shortS * 1000],
+      ['d:' + cls + ':' + dayWin, dayLimit, (dayWin + 1) * 86400000],
+    ];
+    let retry = 0;
+    for (const [k, limit, exp] of windows) {
+      const row = sql.exec('SELECT n FROM counts WHERE k = ?', k).toArray()[0];
+      if (row && row.n >= limit) retry = Math.max(retry, Math.ceil((exp - now) / 1000));
+    }
+    if (retry) return retry;
+    for (const [k, , exp] of windows) {
+      sql.exec(
+        'INSERT INTO counts (k, n, exp) VALUES (?, 1, ?) ' +
+        'ON CONFLICT(k) DO UPDATE SET n = n + 1',
+        k, exp
+      );
+    }
+    return 0;
+  }
+}
+
+/** Pass, or the 429 to return. Fails OPEN on gate errors — the limiter
+ *  must never be the thing that takes the ship's voice down. */
+async function gate(request, env, cls) {
+  const l = GATE_LIMITS[cls];
+  try {
+    const who = await crewFromRequest(request, env);
+    const key = who
+      ? 'crew:' + who
+      : 'ip:' + (request.headers.get('cf-connecting-ip') || 'unknown');
+    const retry = await env.RATE.getByName(key).take(cls, l.short, l.shortS, l.day);
+    if (retry) {
+      return json({ error: 'rate limited', retryAfter: retry }, 429);
+    }
+  } catch (e) {
+    console.error('[gate] failing open', e);
+  }
+  return null;
+}
 
 export default {
   async fetch(request, env) {
@@ -35,6 +110,15 @@ export default {
     }
     if (url.pathname === '/api/signon' && request.method === 'POST') {
       return handleSignon(request, env);
+    }
+    if (url.pathname === '/api/enlist' && request.method === 'POST') {
+      return handleEnlist(request, env);
+    }
+    if (url.pathname === '/api/crew/rename' && request.method === 'POST') {
+      return handleRename(request, env);
+    }
+    if (url.pathname === '/api/crew/recode' && request.method === 'POST') {
+      return handleRecode(request, env);
     }
     if (url.pathname === '/api/crew/state') {
       if (request.method === 'GET') return handleCrewGet(request, env);
@@ -117,8 +201,6 @@ function json(obj, status = 200) {
 
 const TOKEN_TTL_S = 90 * 24 * 3600;
 const PBKDF2_ITER = 100000;
-const signonCounts = new Map();
-const SIGNON_LIMIT = 10;
 
 function normalizeCrewName(raw) {
   const name = String(raw || '').trim().toLowerCase().replace(/\s+/g, ' ');
@@ -155,16 +237,10 @@ async function crewFromRequest(request, env) {
 }
 
 async function handleSignon(request, env) {
-  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  const now = Date.now();
-  const entry = signonCounts.get(ip);
-  if (entry && now - entry.ts < ASK_WINDOW_MS) {
-    if (entry.count >= SIGNON_LIMIT) return json({ error: 'rate limited' }, 429);
-    entry.count++;
-  } else {
-    signonCounts.set(ip, { ts: now, count: 1 });
-    if (signonCounts.size > 5000) signonCounts.clear();
-  }
+  // Sign-on is a password check — the gate here is brute-force armor,
+  // keyed by IP (there is no token yet at the moment of knocking).
+  const limited = await gate(request, env, 'signon');
+  if (limited) return limited;
 
   let body;
   try {
@@ -177,6 +253,7 @@ async function handleSignon(request, env) {
   if (!name) return json({ error: 'bad name' }, 400);
   if (code.length < 4 || code.length > 72) return json({ error: 'bad code' }, 400);
 
+  const now = Date.now();
   const key = 'crew:' + name;
   const rec = await env.CREW.get(key, 'json');
 
@@ -212,7 +289,92 @@ async function handleCrewGet(request, env) {
   if (!name) return json({ error: 'unauthorized' }, 401);
   const rec = await env.CREW.get('crew:' + name, 'json');
   if (!rec) return json({ error: 'unauthorized' }, 401);
-  return json({ name, notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {}, stakes: rec.stakes || [] });
+  return json({
+    name, notes: rec.notes || '', places: rec.places || {}, prefs: rec.prefs || {},
+    stakes: rec.stakes || [], outposts: rec.outposts || [],
+    credits: rec.credits || 0, ore: rec.ore || 0, woPaid: rec.woPaid || [],
+    createdAt: rec.createdAt || 0, assigned: !!rec.assigned,
+    lastSeen: rec.lastSeen || 0,
+  });
+}
+
+// ── Enlistment — the company assigns a designation ──────────────────────
+// A new worker never fills a form: the terminal FILES them. The assigned
+// designation doubles as the first access key (company-issued temporary
+// credential); the employee module later replaces either. Entropy note:
+// 10^4 × 19^3 ≈ 69M designations — under the signon gate that is armor
+// enough for a space journal, and personalizing retires the ID entirely.
+
+const DESIG_LETTERS = 'bcdfghjklmnprstvwxz'; // no vowels: no words, ever
+
+function makeDesignation() {
+  const d = () => Math.floor(Math.random() * 10);
+  const L = () => DESIG_LETTERS[Math.floor(Math.random() * DESIG_LETTERS.length)];
+  return 'emp-' + d() + d() + d() + d() + '-' + L() + L() + L();
+}
+
+async function handleEnlist(request, env) {
+  const limited = await gate(request, env, 'signon');
+  if (limited) return limited;
+  let body = {};
+  try { body = await request.json(); } catch (e) { /* empty contract */ }
+  const now = Date.now();
+  for (let i = 0; i < 6; i++) {
+    const name = makeDesignation();
+    const key = 'crew:' + name;
+    if (await env.CREW.get(key)) continue;    // occupied berth — redraw
+    const salt = toHex(crypto.getRandomValues(new Uint8Array(16)));
+    const hash = await hashCode(name, salt);  // the designation IS the first key
+    const record = {
+      salt, hash, createdAt: now, lastSeen: now,
+      notes: String(body.notes || '').slice(0, 4000),
+      places: {},
+      assigned: true,   // still on the company-issued designation
+    };
+    await env.CREW.put(key, JSON.stringify(record));
+    const token = await issueToken(env, name);
+    return json({ status: 'created', token, name, notes: record.notes, places: {} });
+  }
+  return json({ error: 'registry busy' }, 503);
+}
+
+// ── The employee module's two pens ──────────────────────────────────────
+
+async function handleRename(request, env) {
+  const oldName = await crewFromRequest(request, env);
+  if (!oldName) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: 'bad request' }, 400); }
+  const newName = normalizeCrewName(body.name);
+  if (!newName) return json({ error: 'bad name' }, 400);
+  if (newName === oldName) return json({ status: 'ok', name: oldName });
+  if (await env.CREW.get('crew:' + newName)) return json({ error: 'taken' }, 409);
+  const rec = await env.CREW.get('crew:' + oldName, 'json');
+  if (!rec) return json({ error: 'unauthorized' }, 401);
+  rec.assigned = false;
+  await env.CREW.put('crew:' + newName, JSON.stringify(rec));
+  await env.CREW.delete('crew:' + oldName);
+  // Rebind THIS token to the new name. Tokens on other machines still
+  // point at the old name and will age out into guests — acceptable:
+  // KV cannot be queried by value, and a re-sign-on repairs any of them.
+  const tok = (request.headers.get('authorization') || '').match(/^Bearer (.+)$/)[1];
+  await env.CREW.put('token:' + tok, newName, { expirationTtl: TOKEN_TTL_S });
+  return json({ status: 'ok', name: newName });
+}
+
+async function handleRecode(request, env) {
+  const name = await crewFromRequest(request, env);
+  if (!name) return json({ error: 'unauthorized' }, 401);
+  let body;
+  try { body = await request.json(); } catch (e) { return json({ error: 'bad request' }, 400); }
+  const code = String(body.code || '');
+  if (code.length < 4 || code.length > 72) return json({ error: 'bad code' }, 400);
+  const rec = await env.CREW.get('crew:' + name, 'json');
+  if (!rec) return json({ error: 'unauthorized' }, 401);
+  rec.salt = toHex(crypto.getRandomValues(new Uint8Array(16)));
+  rec.hash = await hashCode(code, rec.salt);
+  await env.CREW.put('crew:' + name, JSON.stringify(rec));
+  return json({ status: 'ok' });
 }
 
 async function handleCrewPost(request, env) {
@@ -244,6 +406,31 @@ async function handleCrewPost(request, env) {
       st && typeof st.x === 'number' && typeof st.z === 'number' &&
       typeof st.t === 'number' && Math.abs(st.x) < 2e5 && Math.abs(st.z) < 2e5
     ).map((st) => ({ x: Math.round(st.x * 10) / 10, z: Math.round(st.z * 10) / 10, t: st.t, n: st.n || 0 }));
+  }
+  if (Array.isArray(body.outposts)) {
+    // The works: extractors persist in the record like stakes do —
+    // rate rides along so any device renders the same ledger.
+    rec.outposts = body.outposts.slice(0, 8).filter((o) =>
+      o && typeof o.x === 'number' && typeof o.z === 'number' &&
+      typeof o.t === 'number' && Math.abs(o.x) < 2e5 && Math.abs(o.z) < 2e5
+    ).map((o) => ({
+      x: Math.round(o.x * 10) / 10, z: Math.round(o.z * 10) / 10,
+      t: o.t, n: o.n || 0,
+      rate: Math.max(0, Math.min(30, Number(o.rate) || 0)),
+      hopperFrom: typeof o.hopperFrom === 'number' ? o.hopperFrom : 0,
+    }));
+  }
+  // The company ledger: wages and lifetime ore, monotonic — the
+  // record never pays twice and never forgets a delivery.
+  if (typeof body.credits === 'number' && body.credits >= 0 && body.credits < 1e7) {
+    rec.credits = Math.max(rec.credits || 0, Math.round(body.credits));
+  }
+  if (typeof body.ore === 'number' && body.ore >= 0 && body.ore < 1e7) {
+    rec.ore = Math.max(rec.ore || 0, Math.round(body.ore));
+  }
+  if (Array.isArray(body.woPaid)) {
+    const merged = new Set([...(rec.woPaid || []), ...body.woPaid.map((s) => String(s).slice(0, 8))]);
+    rec.woPaid = [...merged].slice(0, 32);
   }
   if (body.places && typeof body.places === 'object') {
     // Merge, newest timestamp wins — visits accumulate across devices
@@ -485,16 +672,8 @@ async function callGemini(env, system, history, userText, maxTokens) {
 }
 
 async function handleAsk(request, env) {
-  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  const now = Date.now();
-  const entry = askCounts.get(ip);
-  if (entry && now - entry.ts < ASK_WINDOW_MS) {
-    if (entry.count >= ASK_LIMIT) return json({ error: 'rate limited' }, 429);
-    entry.count++;
-  } else {
-    askCounts.set(ip, { ts: now, count: 1 });
-    if (askCounts.size > 5000) askCounts.clear(); // memory backstop
-  }
+  const limited = await gate(request, env, 'ask');
+  if (limited) return limited;
 
   let body;
   try {
@@ -628,8 +807,6 @@ async function handleAsk(request, env) {
 // keep the log on their own machine only; signed-on crew get it written
 // into their crew record too, so memory follows them across devices.
 
-const reflectCounts = new Map();
-const REFLECT_LIMIT = 12;
 
 // ── /api/murmur — SOLACE speaks first ──────────────────────────────────
 // The companion's unprompted lines (arrivals, returns, departures) are
@@ -637,20 +814,10 @@ const REFLECT_LIMIT = 12;
 // you've been here, how long you've been away, what the ship knows
 // about you — instead of canned pools that repeat.
 
-const murmurCounts = new Map();
-const MURMUR_LIMIT = 30;
 
 async function handleMurmur(request, env) {
-  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  const now = Date.now();
-  const entry = murmurCounts.get(ip);
-  if (entry && now - entry.ts < ASK_WINDOW_MS) {
-    if (entry.count >= MURMUR_LIMIT) return json({ error: 'rate limited' }, 429);
-    entry.count++;
-  } else {
-    murmurCounts.set(ip, { ts: now, count: 1 });
-    if (murmurCounts.size > 5000) murmurCounts.clear();
-  }
+  const limited = await gate(request, env, 'murmur');
+  if (limited) return limited;
 
   let body;
   try {
@@ -658,7 +825,7 @@ async function handleMurmur(request, env) {
   } catch (e) {
     return json({ error: 'bad request' }, 400);
   }
-  const event = ['arrival', 'return', 'departure', 'course', 'journey', 'waypoint', 'music_offer'].includes(body.event) ? body.event : 'arrival';
+  const event = ['arrival', 'return', 'departure', 'course', 'journey', 'waypoint', 'music_offer', 'outpost_placed', 'outpost_online'].includes(body.event) ? body.event : 'arrival';
   const location = String(body.location || 'deep space').slice(0, 80);
   const gap = String(body.gap || '').slice(0, 60);
   const from = String(body.from || '').slice(0, 80);
@@ -683,7 +850,18 @@ async function handleMurmur(request, env) {
     'truly invites one. ' + BOND_MURMUR[bond];
 
   let situation;
-  if (event === 'music_offer') {
+  if (event === 'outpost_placed') {
+    situation = 'The traveler has just sited their first works on ' + location +
+      ' — an ore extractor, placed by hand on ground they surveyed themselves. ' +
+      'The site readings ride in the context. Appraise the CHOICE of ground in one line — ' +
+      'the sun it will catch, the ore under it, the stance of the slope — like a first officer ' +
+      'quietly approving (or gently noting the compromise in) a decision already made. ' +
+      'Construction will take real days; you may touch on the patience of machines.';
+  } else if (event === 'outpost_online') {
+    situation = 'While the traveler was elsewhere, their extractor on ' + location +
+      ' finished its own construction and has begun to work — the first machine of theirs ' +
+      'that runs without them. Report it the way a ship reports good news: one calm line.';
+  } else if (event === 'music_offer') {
     situation = 'A quiet moment at ' + location + '. You keep the ship\'s music library yourself and love it — classical above all, deep lo-fi for the crossings — and this traveler has never heard it. Offer, once and softly, to put something on for them. An invitation, not a feature.';
   } else if (event === 'waypoint') {
     situation = 'Mid-cruise, the route is sweeping close past ' + location + ' — it fills the window for a while, then falls behind. The traveler is watching it pass.';
@@ -731,21 +909,11 @@ async function handleMurmur(request, env) {
 // always-there fallback. The client plays it through the ship's
 // intercom filter — the wire timbre comes from THERE, not the model.
 
-const voiceCounts = new Map();
-const VOICE_LIMIT = 40;
 const GEMINI_TTS_MODEL = 'gemini-2.5-flash-preview-tts';
 
 async function handleVoice(request, env) {
-  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  const now = Date.now();
-  const entry = voiceCounts.get(ip);
-  if (entry && now - entry.ts < ASK_WINDOW_MS) {
-    if (entry.count >= VOICE_LIMIT) return json({ error: 'rate limited' }, 429);
-    entry.count++;
-  } else {
-    voiceCounts.set(ip, { ts: now, count: 1 });
-    if (voiceCounts.size > 5000) voiceCounts.clear();
-  }
+  const limited = await gate(request, env, 'voice');
+  if (limited) return limited;
 
   let body;
   try {
@@ -805,16 +973,8 @@ async function handleVoice(request, env) {
 }
 
 async function handleReflect(request, env) {
-  const ip = request.headers.get('cf-connecting-ip') || 'unknown';
-  const now = Date.now();
-  const entry = reflectCounts.get(ip);
-  if (entry && now - entry.ts < ASK_WINDOW_MS) {
-    if (entry.count >= REFLECT_LIMIT) return json({ error: 'rate limited' }, 429);
-    entry.count++;
-  } else {
-    reflectCounts.set(ip, { ts: now, count: 1 });
-    if (reflectCounts.size > 5000) reflectCounts.clear();
-  }
+  const limited = await gate(request, env, 'reflect');
+  if (limited) return limited;
 
   let body;
   try {

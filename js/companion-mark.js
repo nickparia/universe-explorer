@@ -13,19 +13,20 @@
 // setCompanionState(key), drive updateCompanionMark(dt) from the main
 // render loop. Never cut between states — a 0.9s easeInOutCubic blend.
 
-// Amber phosphor throughout — MU/TH/UR's chamber, the user's chosen
-// register: the P3-phosphor family on near-black. States now speak
-// through WARMTH and energy, not hue-jumps: dormant is embers, idle a
-// steady lamp, pleased runs golden-bright, concerned goes hot orange,
-// and the sinister slip deepens toward red — a screen running wrong.
+// Green phosphor throughout — MU/TH/UR's chamber, the 1979 register:
+// the P1-phosphor family on near-black tube glass. States speak
+// through BRIGHTNESS and energy, not hue-jumps: dormant is a dim
+// residue, idle a steady lamp, pleased runs pale-bright, concerned
+// shifts yellow-green, and the sinister slip breaks toward red — a
+// screen running wrong.
 const STATES = [
-  { key: 'idle',      col: [255, 176, 64],  glow: 10, alpha: 0.9  },
-  { key: 'thinking',  col: [255, 190, 88],  glow: 13, alpha: 0.95 },
-  { key: 'speaking',  col: [255, 205, 110], glow: 15, alpha: 1    },
-  { key: 'pleased',   col: [255, 224, 150], glow: 17, alpha: 1    },
-  { key: 'concerned', col: [255, 150, 40],  glow: 14, alpha: 0.95 },
-  { key: 'sinister',  col: [255, 96, 56],   glow: 20, alpha: 1    },
-  { key: 'dormant',   col: [176, 116, 44],  glow: 6,  alpha: 0.42 },
+  { key: 'idle',      col: [96, 232, 128],  glow: 10, alpha: 0.9  },
+  { key: 'thinking',  col: [122, 245, 148], glow: 13, alpha: 0.95 },
+  { key: 'speaking',  col: [150, 255, 170], glow: 15, alpha: 1    },
+  { key: 'pleased',   col: [190, 255, 200], glow: 17, alpha: 1    },
+  { key: 'concerned', col: [205, 235, 90],  glow: 14, alpha: 0.95 },
+  { key: 'sinister',  col: [255, 88, 56],   glow: 20, alpha: 1    },
+  { key: 'dormant',   col: [52, 140, 78],   glow: 6,  alpha: 0.42 },
 ];
 const BY = {};
 STATES.forEach((s) => { BY[s.key] = s; });

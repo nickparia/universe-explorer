@@ -1,0 +1,39 @@
+{
+  "name": "solace-desktop",
+  "productName": "Solace",
+  "version": "0.1.0",
+  "private": true,
+  "description": "Solace — the cockpit shell (Electron) around the deployed web build",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dist": "electron-builder --mac dir",
+    "release": "electron-builder --mac dmg --universal"
+  },
+  "devDependencies": {
+    "electron": "^38.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.solace.cockpit",
+    "productName": "Solace",
+    "directories": {
+      "output": "release"
+    },
+    "files": [
+      "main.js"
+    ],
+    "mac": {
+      "category": "public.app-category.games",
+      "hardenedRuntime": true,
+      "gatekeeperAssess": false,
+      "entitlements": "entitlements.mac.plist",
+      "entitlementsInherit": "entitlements.mac.plist",
+      "notarize": true
+    },
+    "dmg": {
+      "title": "Solace",
+      "iconSize": 100
+    }
+  }
+}

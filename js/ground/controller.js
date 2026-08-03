@@ -74,16 +74,12 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
 
   const canvas = document.getElementById('c');
   addL(window, 'keydown', (e) => {
+    // An open terminal line owns every key — yielding an empty line to
+    // the boots meant any sentence starting with W/A/S/D/V/E walked the
+    // traveler instead of typing. The line is left by Escape,
+    // empty-Enter, or clicking the world.
     if (e.target && (e.target.tagName === 'INPUT' || e.target.tagName === 'TEXTAREA')) {
-      // An EMPTY terminal line yields to the boots: after talking to
-      // Sol the input keeps focus, and without this every W went into
-      // the chat — "movement doesn't work." Mid-sentence, typing wins.
-      if (!e.target.value && /^(Key[WASDVE]|Space|Shift(Left|Right)|Arrow)/.test(e.code)) {
-        e.target.blur();
-        if (canvas) canvas.focus();
-      } else {
-        return;
-      }
+      return;
     }
     // macOS: while Cmd is held other keys' keyups are swallowed — a
     // screenshot chord left Shift stuck down. Chorded keys don't move.

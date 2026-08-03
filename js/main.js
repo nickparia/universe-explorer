@@ -1,6 +1,9 @@
 // js/main.js — Universe Explorer entry point
 // Wires all modules together: engine, textures, bodies, deep space, flight, music, HUD
 
+// MUST stay the first import: swaps the persistence layer for the
+// ?newhire clean room before any module reads storage at import time.
+import './simstore.js';
 import { initEngine, getSunLight, createSkybox, createStars, applyCameraRelative, setStarFieldOpacity, updateStarFieldOpacity, updateMilkyWayRotation, setSkyboxOpacity, setMilkyWayOpacity, updateStarParallax, updateSkyDrift, setWarpStarMode, setGalaxyInteriorFactor, GALACTIC_CENTER } from './engine.js';
 import { runBenchmark, getTier, getConfig, adaptTier } from './perf.js';
 import { loadAllTextures } from './textures.js';
@@ -8,15 +11,17 @@ import { createSolarSystem, updateBodies, getBodies, setHomeBeaconFactor } from 
 import { createDeepSpace, updateDeepSpace, getDeepSpaceObjects, getLandmarks } from './deepspace.js';
 import { initFlight, updateFlight, getCamPos, getSpeed, getVelocity, getSpeedFeel, doHome, isIntroPlaying, startArrival, skipArrival, flyTo, warpTo } from './flight.js';
 import { initFieldNotes } from './fieldnotes.js';
-import { initShipChat } from './shipchat.js';
+import { initShipChat, companionSay } from './shipchat.js';
 import { updateCompanionMark } from './companion-mark.js';
 import { initCompanion, updateCompanion } from './companion.js';
 import { initDust, updateDust } from './dust.js';
 import { initTransit, updateTransit } from './transit.js';
 import { initAutopilot, updateAutopilot } from './autopilot.js';
 import { initSession, getResumePose } from './session.js';
-import { initCrew } from './crew.js';
-import { initSignon } from './signon.js';
+import { initCrew, isSignedOn, getCrewName, NEWHIRE_SIM } from './crew.js';
+import { initSignon, showShiftResumption } from './signon.js';
+import { initSystems } from './systems.js';
+import { initWorkOrders } from './workorders.js';
 import { on } from './bus.js';
 import { initSoundscape, startSoundscape, updateSoundscape, setVoidHush } from './soundscape.js';
 import { restorePose, settleIntoNearestOrbit } from './flight.js';
@@ -149,28 +154,36 @@ async function boot() {
   const canvas = document.getElementById('c');
   if (canvas) canvas.focus();
 
-  // The glass takes the whole screen at the FIRST gesture — there is
-  // no reason to show the browser around a spaceship. Esc is respected:
-  // once the traveler exits, we never force it again this session.
+  // FULLSCREEN IS HOME — there is no reason to show the browser around
+  // a spaceship. The platform imposes two facts we design around:
+  // (1) fullscreen can only be ENTERED from a user gesture, never on
+  // load — so the first click seals the glass, that's the earliest
+  // legal moment; (2) Esc ALWAYS exits and cannot be intercepted, and
+  // Esc is a working key aboard (chart, placements, the line) — so
+  // windowed mode will keep happening. The rule: any click re-seals.
+  // Exiting TWICE in quick succession is the traveler telling us they
+  // want the window — then we stand down for the session.
   let fsDeclined = false;
-  let fsRequested = false;
+  let fsLastExit = 0;
   document.addEventListener('fullscreenchange', () => {
-    if (!document.fullscreenElement && fsRequested) fsDeclined = true;
+    if (!document.fullscreenElement) {
+      const now = performance.now();
+      if (now - fsLastExit < 10000) fsDeclined = true;
+      fsLastExit = now;
+    }
   });
   window.solaceFullscreen = () => {
     if (fsDeclined || document.fullscreenElement) return;
     try {
       const pr = document.documentElement.requestFullscreen({ navigationUI: 'hide' });
-      if (pr && pr.then) pr.then(() => { fsRequested = true; }).catch(() => {});
+      if (pr && pr.catch) pr.catch(() => {});
     } catch (e) { /* not offered */ }
   };
-  function fsOnGesture() {
-    window.solaceFullscreen();
-    window.removeEventListener('click', fsOnGesture);
-    window.removeEventListener('keydown', fsOnGesture);
-  }
-  window.addEventListener('click', fsOnGesture);
-  window.addEventListener('keydown', fsOnGesture);
+  // The re-seal stands down while the systems menu (or the ended-shift
+  // screen) holds the stage — quitting must never be a wrestling match.
+  window.addEventListener('click', () => {
+    if (!window.__solaceHoldSeal) window.solaceFullscreen();
+  });
 
   // Defer music start until first user interaction (browser requires gesture for audio)
   function startMusicOnGesture() {
@@ -250,12 +263,24 @@ async function boot() {
   initSession();
   initSoundscape();
   initCrew();
+  initSystems();   // registered LAST among key listeners: Esc reaches it only unclaimed
+  initWorkOrders();
 
-  // First boot offers the crew sign-on terminal over black — MOTHER's
-  // chamber before the vista. The opening shot waits for it: the title
-  // fly-through belongs to the moment the traveler actually boards.
+  // First boot: the cryostasis wake terminal over black — the company
+  // files a new worker (or checks an existing one) before the vista.
+  // The opening shot waits for it: waking IS logging on.
+  let enlisted = false;
+  on('crew:enlisted', () => { enlisted = true; });
   if (initSignon()) {
     await new Promise((resolve) => on('signon:closed', resolve));
+  } else if (isSignedOn()) {
+    // A returning worker: the shift-resumption card — the record's
+    // basics flash past while the world decodes behind the black.
+    const rec = await Promise.race([
+      new Promise((res) => on('crew:signed-on', res)),
+      new Promise((res) => setTimeout(() => res(null), 4500)),  // offline: no card
+    ]);
+    if (rec && rec.name) await showShiftResumption(rec);
   }
 
   // One zero-dt pass so every body has its world position before we compose
@@ -267,7 +292,10 @@ async function boot() {
 
   // Returning travelers resume where they left off — the title sequence
   // belongs to first arrivals (and long absences). The ship remembers.
-  const resume = getResumePose();
+  // A FRESH CONTRACT always gets the full opening (the words, the long
+  // drift to the third planet) — a machine's stale resume pose must
+  // never rob a new hire of their arrival. The ?newhire sim likewise.
+  const resume = (enlisted || NEWHIRE_SIM) ? null : getResumePose();
   if (resume) {
     const orbitRef = resume.orbit
       ? getBodies().concat(getDeepSpaceObjects()).find(b => b.name === resume.orbit)
@@ -280,7 +308,17 @@ async function boot() {
       settleIntoNearestOrbit(getBodies().concat(getDeepSpaceObjects()));
     }
   } else {
-    startArrival(earthBody, { duration: 8 });
+    // A fresh contract wakes ADRIFT: the long haul still carrying the
+    // pod toward the system — a slow glide, not an 8-second swoop —
+    // and Sol's first words come once the glass has cleared.
+    startArrival(earthBody, { duration: enlisted ? 24 : 8 });
+    if (enlisted) {
+      const id = (getCrewName() || 'traveler').toUpperCase();
+      setTimeout(() => {
+        companionSay('cryostasis revival complete. good morning, ' + id +
+          '. the long drift is behind you — the system is ahead. i kept the lights on.');
+      }, 9000);
+    }
   }
 
   const titleEl = document.getElementById('hero-title');

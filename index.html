@@ -402,8 +402,7 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     <span>SHIFT</span> WARP · <span>H</span> HOME<br>
     <span>0-9</span> FLY TO · <span>O</span> ORBIT<br>
     <span>[/]</span> TIME · <span>R-DRAG</span> LOOK<br>
-    <span>ENTER</span> SPEAK TO THE SHIP<br>
-    <span>I</span> TOGGLE THIS
+    <span>ENTER</span> SPEAK TO THE SHIP
   </div>
   <div id="nav-rail-tab" title="Destinations">
     <svg viewBox="0 0 24 24" fill="none" xmlns="http://www.w3.org/2000/svg">
@@ -419,7 +418,7 @@ td:first-child{color:rgba(120,180,255,0.85);text-align:right;font-weight:600}
     border-radius:50%;border:1px solid rgba(255,255,255,0.2);color:rgba(255,255,255,0.35);
     font-size:13px;font-style:italic;text-align:center;line-height:22px;cursor:pointer;
     pointer-events:all;transition:all 0.2s;text-shadow:0 1px 3px rgba(0,0,0,0.8)"
-    onclick="document.dispatchEvent(new KeyboardEvent('keydown',{code:'KeyI',bubbles:true}))">i</div>
+    onclick="var h=document.getElementById('ctrl-hint');var v=h.style.opacity!=='0';h.style.opacity=v?'0':'1';h.style.pointerEvents=v?'none':'auto'">i</div>
   <!-- The music has no interface: the library is Sol's own, and you
        ask the ship. (Removed music-ui — button, track label, slider.) -->
 </div>
