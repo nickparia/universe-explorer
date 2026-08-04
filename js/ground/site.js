@@ -203,7 +203,37 @@ export function heightAt(x, z, minLambda = 0) {
     const n = ridged ? rnoise(wx / lam, wz / lam) : vnoise(wx / lam, wz / lam);
     h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * k * sK;
   }
+
+  // ── The graded apron ────────────────────────────────────────────────
+  // The company levelled a landing field before the first bootfall:
+  // ship stand + egress ground blended flat, with a soft berm at the
+  // edge where the grader's work meets the native slope. Flows into
+  // the terrain mesh AND all physics, because this function IS the
+  // ground.
+  const ap = apronBlend(x, z);
+  if (ap > 0) h = h * (1 - ap) + apronHeight() * ap;
   return h;
+}
+
+// Apron footprint: an ellipse covering the SOLACE's stand and the walk
+// to her ramp (ship parks near local (36,-6), spawn steps out at ~(16,-6)).
+const APRON = { cx: 27, cz: -6, rx: 30, rz: 32 };
+let _apronH = null;
+
+export function apronHeight() {
+  if (_apronH === null) _apronH = demAt(APRON.cx, APRON.cz);
+  return _apronH;
+}
+
+/** 1 on the graded flat, 0 on native ground, smooth berm between. */
+export function apronBlend(x, z) {
+  const dx = (x - APRON.cx) / APRON.rx;
+  const dz = (z - APRON.cz) / APRON.rz;
+  const d = Math.sqrt(dx * dx + dz * dz);
+  if (d >= 1) return 0;
+  if (d <= 0.72) return 1;
+  const t = (1 - d) / 0.28;
+  return t * t * (3 - 2 * t);
 }
 
 function lodFade(lam, minLambda) {

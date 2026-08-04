@@ -12,6 +12,7 @@
 
 import * as THREE from 'three';
 import { heightAt } from './site.js';
+import { resolveShipCollision } from './lander.js';
 import { getLookInvert } from '../lookpref.js';
 import { stepCrunch, setRoverBed } from '../soundscape.js';
 
@@ -265,6 +266,11 @@ export function updateController(dt) {
   pos.x += vel.x * dt;
   pos.z += vel.z * dt;
   pos.y += vel.y * dt;
+
+  // The ship is solid: boots and wheels alike are pushed out of her
+  // footprint (the rover uses a wider radius — it has fenders).
+  const shipHit = resolveShipCollision(pos.x, pos.z, roving ? 1.6 : 0.55);
+  if (shipHit) { pos.x = shipHit.x; pos.z = shipHit.z; }
 
   const floorY = heightAt(pos.x, pos.z);
   const standY = floorY + eyeTarget;

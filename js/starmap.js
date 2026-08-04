@@ -45,12 +45,22 @@ function nice(name) {
   return name.toLowerCase();
 }
 
+/** Mirror flight.js routing truth: hops beyond the glide range ride
+ *  the warp pipeline WHATEVER the destination class — a planet a
+ *  system away is a warp, and the button must not promise a glide. */
+function isWarpRoute(d) {
+  const pos = d.live && worldPos(d.live);
+  if (!pos) return d.warps;
+  return d.warps || getCamPos().distanceTo(pos) > 40000;
+}
+
 function travelSeconds(d) {
   const pos = d.live && worldPos(d.live);
   if (!pos) return 0;
   const dist = getCamPos().distanceTo(pos);
-  return d.warps
-    ? Math.max(15, Math.min(30, dist / 2000))
+  return isWarpRoute(d)
+    // flight.js's own warp-duration arithmetic — the estimate is the truth
+    ? Math.min(40, Math.max(9, 10 + 4.6 * Math.log10(Math.max(dist, 10000) / 10000)))
     : Math.max(2, Math.min(6, dist / 6000));
 }
 
@@ -208,7 +218,7 @@ function showSelection(d) {
   // The crossing chooser — two verbs, a per-journey choice
   if (!d.ship) {
     const warpBtn = makeButton(
-      (d.warps ? 'engage warp' : 'fly there') + ' ≈ ' + Math.round(travelSeconds(d)) + 's');
+      (isWarpRoute(d) ? 'engage warp' : 'fly there') + ' ≈ ' + Math.round(travelSeconds(d)) + 's');
     warpBtn.addEventListener('click', () => goWarp(d));
     selBarEl.appendChild(warpBtn);
     const cruiseBtn = makeButton('let solace take you ≈ ' + cruiseMinutes(d) + ' min');

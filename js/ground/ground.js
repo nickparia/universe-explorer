@@ -34,6 +34,7 @@ import { initGroundMap, updateGroundMap, disposeGroundMap } from './map.js';
 import { initStakes, disposeStakes, updateStakes, nearestStake, getStakes, uprootNear, stakeDef, getSupply, getSupplyEta } from './stakes.js';
 import { initBuild, disposeBuild, beginPlacement, cancelPlacement, commitPlacement, updatePlacement, isPlacing, activeDef } from './build.js';
 import { initOutposts, disposeOutposts, updateOutposts, nearestOutpost, collectHopper, hopperOf, stageOf, etaHours, extractorDef, isExtractorUnlocked, surveysUntilUnlock, getOutposts } from './outposts.js';
+import { initLander, disposeLander, updateLander, setLanderVisible, playEgress } from './lander.js';
 import { startDescent, startAscent, updateDescent, getDescentPos, fadePlasma, disposeDescent, tickSmoke } from './descent.js';
 import { stepCrunch } from '../soundscape.js';
 import { heightAt } from './site.js';
@@ -324,6 +325,10 @@ export async function enterGround() {
   initStakes(rootGroup);
   initBuild(rootGroup);
   initOutposts(rootGroup);
+  initLander(rootGroup);
+  // During the descent SHE is the thing flying — the hull can't
+  // already be standing on the pad while it's also landing.
+  setLanderVisible(false);
 
   swapHud(true);
   setZoneOverride({ name: 'ground-mars', track: null });
@@ -344,11 +349,18 @@ export async function enterGround() {
   const landMeta = getSite().meta.landing || {};
   const vYaw = landMeta.yaw ?? Math.PI + 0.25;
   const vPitch = landMeta.pitch ?? -0.15;
-  const endLocal = new THREE.Vector3(0, heightAt(0, 0), 0);
+  // Bootfall happens at the SHIP's ramp side on the graded apron —
+  // you step out of her, you don't materialize forty meters away.
+  const SPAWN = { x: 16, z: -6 };
+  const endLocal = new THREE.Vector3(SPAWN.x, heightAt(SPAWN.x, SPAWN.z), SPAWN.z);
   state = 'descending';
   startDescent(camera, rootGroup, endLocal, vYaw, vPitch, () => {
-    initController(camera, new THREE.Vector3(0, 0, 0), vYaw, vPitch);
+    initController(camera, new THREE.Vector3(SPAWN.x, 0, SPAWN.z), vYaw, vPitch);
     stepCrunch(1.25, true);   // the shelf takes the weight
+    // Touchdown: the hull is HERE now — reveal her mid-egress, ramp
+    // falling and vent gas rolling, the residue of your own exit.
+    setLanderVisible(true);
+    playEgress();
     const cv2 = document.getElementById('c');
     if (cv2) cv2.focus();
     state = 'active';
@@ -372,6 +384,8 @@ export function exitGround() {
   from.y = getEyeY();
   const camera = getCamera();
   disposeController();
+  // Lifting off: she is the thing flying again
+  setLanderVisible(false);
   startAscent(camera, rootGroup, from, () => {
     const scene = getScene();
     disposeDustField();
@@ -384,6 +398,7 @@ export function exitGround() {
     disposeStakes();
     disposeBuild();
     disposeOutposts();
+    disposeLander();
     disposeSky(scene);
     disposeTerrain();
     if (rootGroup) { scene.remove(rootGroup); rootGroup = null; }
@@ -467,6 +482,7 @@ export function updateGround(dt) {
   updateLamp(dt, getSunState().elevDeg, local, getCamera().quaternion, getMode() === 'rove');
   updateStakes(local, getSunState().elevDeg, dt);
   updateOutposts(dt);
+  updateLander(dt, getSunState().elevDeg);
   let placeStatus = null;
   {
     const cam0 = getCamera();

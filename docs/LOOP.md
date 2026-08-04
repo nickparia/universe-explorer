@@ -47,15 +47,24 @@ built is visible. Nothing built is ever lost.
 
 ## The ship — the farm
 
-The ship gets a body. Two ways to see it:
+The ship gets a body — the SOLACE, built in the school of the
+Nostromo (industrial refinery-tug massing, gantry spine, practicals,
+stencils; the school, never the trademark). Two ways to see it:
 
 - **Exterior (third person)**: orbit the camera around your own
   vessel. Everything built accretes visibly on the hull. The
   silhouette of your ship is your save file.
-- **Interiors (camera stations, not a walk engine)**: each built room
-  is a composed cinematic viewpoint with the live sky outside its
-  glass. (A walkable interior can arrive years later; the rooms will
-  already be there.)
+- **Interiors (FULL 3D, walkable)** *(amended 2026-08-04 — the
+  composed-camera-station plan is dead: "if we make it just camera
+  scenes, we are just like the game Myst")*: the interior is a real
+  first-person environment, walked with the same boots as the ground.
+  It rides the ship's frame inside the live scene, so every window is
+  an honest window — sit in the observatory while the landmark you
+  are orbiting wheels past the glass. The ground engine is the
+  precedent: if a planet can be walked, so can a home. Rooms are
+  built one compartment at a time, the observatory first (it IS the
+  vibe), then the cryo bay (the wake sequence gains its set), the
+  mess, the bridge.
 
 ### Rooms (initial set)
 
@@ -233,4 +242,5 @@ thermal suit) → …
 
 Deferred, deliberately: combat (revisit only with evidence the loop
 needs it), the radio-voice cast (garnish, later), multiplayer
-presence, walkable interiors.
+presence. (Walkable interiors were deferred here once — un-deferred
+2026-08-04; the ship is the home, and homes are walked.)

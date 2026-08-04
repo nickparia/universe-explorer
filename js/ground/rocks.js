@@ -8,7 +8,7 @@
 // Deterministic per tile: the same stone is always in the same place.
 
 import * as THREE from 'three';
-import { heightAt, macroSlopeAt } from './site.js';
+import { heightAt, macroSlopeAt, apronBlend } from './site.js';
 import { makePaletteRamp, todY } from './terrain.js';
 import { getSunState } from './sky.js';
 
@@ -104,8 +104,10 @@ function placeTile(gx, gz, target, isBoulderPass, n, cap) {
     const u = h32(gx, gz, i * 3 + 3);
     const boulder = u >= 0.985;
     if (boulder !== isBoulderPass) continue;
-    // The landing pad stays clean — nobody sets down in a boulder
+    // The landing pad stays clean — nobody sets down in a boulder,
+    // and the company's graded apron was cleared by the grader
     if (rx * rx + rz * rz < 24 * 24) continue;
+    if (apronBlend(rx, rz) > 0) continue;
     const s = u < 0.86 ? 0.12 + u * 0.5 : u < 0.985 ? 0.6 + (u - 0.86) * 6 : 2.2 + (u - 0.985) * 160;
     const y = heightAt(rx, rz) + s * 0.22;
     _p.set(rx, y, rz);

@@ -492,7 +492,7 @@ function renderSheet() {
   sctx.lineWidth = 3;
   sctx.strokeRect(toX(0) - 8, toY(0) - 8, 16, 16);
   sctx.fillStyle = 'rgba(255,186,100,0.7)';
-  sctx.fillText('PAD', toX(0) + 14, toY(0) + 7);
+  sctx.fillText('SOLACE', toX(0) + 14, toY(0) + 7);
   drawPlayer(sctx, toX(lastLocal.x), toY(lastLocal.z), lastHeading, 2.8);
 
   // adaptive scale bar: a tidy length that stays readable at any zoom

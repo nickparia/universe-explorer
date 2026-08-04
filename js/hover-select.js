@@ -141,11 +141,12 @@ function onMouseUp(e) {
 export function updateHoverSelect() {
   if (!raycaster || !camera) return;
   if (shouldSuppress()) {
-    if (hoveredBody) {
-      hoveredBody = null;
-      if (labelEl) labelEl.style.opacity = '0';
-      if (canvas) canvas.style.cursor = 'crosshair';
-    }
+    // Unconditional: a label that was mid-fade (or left visible by any
+    // earlier path) must never survive into a suppressed surface —
+    // "mars · 38 M KM" floating over the ground broke the world.
+    hoveredBody = null;
+    if (labelEl) labelEl.style.opacity = '0';
+    if (canvas) canvas.style.cursor = 'crosshair';
     return;
   }
 

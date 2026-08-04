@@ -1689,6 +1689,16 @@ export function warpTo(targetName, mode = 'warp') {
     warpDuration = Math.min(40, Math.max(9, 10 + 4.6 * Math.log10(Math.max(dist, 10000) / 10000)));
   }
 
+  // The sigmoid's tails scale with the clock: an interstellar haul can
+  // afford long imperceptible ramps (the anticipation IS the drama),
+  // but a short interplanetary hop on ±8 reads as "nothing happening,
+  // then a spurt". Tighter endpoints put visible motion inside the
+  // first seconds of a short warp.
+  if (mode !== 'cruise') {
+    warpU1 = warpDuration < 20 ? 5.5 : 8;
+    warpU0 = -warpU1;
+  }
+
   // Set warp target
   warpTarget = { name: targetName, desc: landmark ? landmark.desc : '', pos: targetPos.clone ? targetPos.clone() : targetPos };
   warpT = 0;

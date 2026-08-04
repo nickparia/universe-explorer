@@ -232,6 +232,15 @@ export function initCompanion() {
     } catch (e) { /* fine */ }
   }, 45000);
 
+  // A hand on the stick mid-crossing cancels the journey — which is
+  // right, but must never be SILENT: a traveler who grazed W deserves
+  // to know why the sky stopped moving.
+  on('warp:end', ({ name, reason }) => {
+    if (reason !== 'cancelled') return;
+    companionSay('helm returned — the crossing to ' + String(name || 'the destination').toLowerCase() +
+      ' is stood down. say the word, or fly it yourself.');
+  });
+
   const noteInput = () => { lastInputAt = tSec; };
   for (const ev of ['keydown', 'mousedown', 'touchstart']) {
     window.addEventListener(ev, noteInput, { passive: true });
