@@ -511,17 +511,17 @@ export function createSolarSystem(scene, textures) {
 function buildSpacecraft(scene) {
   const craftDefs = [
     { name: 'VOYAGER 1', desc: 'Launched 1977. Farthest human-made object at 24.4 billion km. First to enter interstellar space (2012). Still transmitting.',
-      dist: 163, angle: 1.2, size: 1.5, color: 0xffeedd, model: 'models/voyager.glb', modelScale: 0.25 },
+      dist: 163, angle: 1.2, size: 1.5, color: 0xffeedd, model: 'models/voyager.opt.glb', modelScale: 0.25 },
     { name: 'VOYAGER 2', desc: 'Launched 1977. Only spacecraft to visit all four gas giants. Entered interstellar space 2018. Twin of Voyager 1.',
-      dist: 137, angle: 3.8, size: 1.5, color: 0xffeedd, model: 'models/voyager.glb', modelScale: 0.25 },
+      dist: 137, angle: 3.8, size: 1.5, color: 0xffeedd, model: 'models/voyager.opt.glb', modelScale: 0.25 },
     { name: 'NEW HORIZONS', desc: 'First to fly by Pluto (2015). Revealed a heart-shaped nitrogen glacier. Now exploring the Kuiper Belt.',
-      dist: 60, angle: 5.1, size: 1.2, color: 0xddddff, model: 'models/newhorizons.glb', modelScale: 0.09 },
+      dist: 60, angle: 5.1, size: 1.2, color: 0xddddff, model: 'models/newhorizons.opt.glb', modelScale: 0.09 },
     { name: 'JWST', desc: 'James Webb Space Telescope at Sun-Earth L2 point. 6.5m gold mirror. Seeing the first galaxies formed after the Big Bang.',
-      dist: 1.01, angle: null, size: 2, color: 0xffdd66, model: 'models/jwst.glb', modelScale: 0.25 },
+      dist: 1.01, angle: null, size: 2, color: 0xffdd66, model: 'models/jwst.opt.glb', modelScale: 0.25 },
     { name: 'HUBBLE', desc: 'Hubble Space Telescope. 540 km altitude. Launched 1990. Revolutionized astronomy with deep field images.',
-      dist: null, angle: null, size: 0.6, color: 0xccddff, orbitsEarth: true, model: 'models/hubble.glb', modelScale: 0.25 },
+      dist: null, angle: null, size: 0.6, color: 0xccddff, orbitsEarth: true, model: 'models/hubble.opt.glb', modelScale: 0.25 },
     { name: 'ISS', desc: 'International Space Station. 420 km altitude. Continuously crewed since 2000. Visible from Earth with naked eye.',
-      dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true, model: 'models/iss.glb', modelScale: 0.2 },
+      dist: null, angle: null, size: 0.8, color: 0xffffff, orbitsEarth: true, model: 'models/iss.opt.glb', modelScale: 0.2 },
   ];
 
   const dracoLoader = new DRACOLoader();

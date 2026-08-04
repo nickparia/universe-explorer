@@ -1,0 +1,325 @@
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>SOLACE — ship bench</title>
+<style>
+  html, body { margin: 0; height: 100%; background: #000; overflow: hidden;
+    font: 12px/1.5 ui-monospace, Menlo, monospace; color: #9ab; }
+  #hud { position: fixed; top: 12px; left: 12px; z-index: 2; background: rgba(8,10,14,.82);
+    border: 1px solid #223; border-radius: 6px; padding: 10px 12px; width: 230px; }
+  #hud label { display: flex; justify-content: space-between; align-items: center;
+    gap: 8px; margin: 4px 0; }
+  #hud select, #hud input[type=range] { width: 130px; accent-color: #6af; }
+  #hud select { background: #0b0e14; color: #9ab; border: 1px solid #334; border-radius: 3px; }
+  #stats { margin-top: 8px; padding-top: 8px; border-top: 1px solid #223; white-space: pre; color: #678; }
+  #hud h1 { font-size: 11px; letter-spacing: .2em; color: #6af; margin: 0 0 6px; font-weight: normal; }
+</style>
+</head>
+<body>
+<div id="hud">
+  <h1>SHIP BENCH</h1>
+  <label>model <select id="model"></select></label>
+  <label>mode <select id="mode">
+    <option value="orbit" selected>orbit (space)</option>
+    <option value="studio">studio (neutral)</option>
+    <option value="clay">clay (edge check)</option>
+    <option value="pad">mars pad (in-game)</option>
+  </select></label>
+  <label>tonemap <select id="tonemap">
+    <option value="agx" selected>AgX</option>
+    <option value="aces">ACESFilmic</option>
+    <option value="none">none</option>
+  </select></label>
+  <label>exposure <input id="exposure" type="range" min="0.2" max="2.5" step="0.05" value="1"></label>
+  <label>env <input id="env" type="range" min="0" max="1.5" step="0.05" value="0.15"></label>
+  <label>bloom <input id="bloom" type="checkbox" checked></label>
+  <div id="stats">loading…</div>
+</div>
+<script type="module">
+import * as THREE from 'three';
+import { OrbitControls } from 'three/addons/controls/OrbitControls.js';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
+import { RoomEnvironment } from 'three/addons/environments/RoomEnvironment.js';
+import { EffectComposer } from 'three/addons/postprocessing/EffectComposer.js';
+import { RenderPass } from 'three/addons/postprocessing/RenderPass.js';
+import { UnrealBloomPass } from 'three/addons/postprocessing/UnrealBloomPass.js';
+import { OutputPass } from 'three/addons/postprocessing/OutputPass.js';
+
+// Dev-only bench, not part of the build (vite only builds index.html).
+// Stage 9 of docs/webgl-asset-pipeline.md as a standing acceptance rig:
+// judge every asset here, under the real renderer, before it ships.
+
+// Shipping asset first — it's the default; the rest are history for A/B
+const MODELS = [
+  { label: 'baked (shipping)', url: '/models/solace-hauler.baked.glb' },
+  { label: 'beveled', url: '/models/solace-hauler.bevel.glb' },
+  { label: 'optimized', url: '/models/solace-hauler.opt.glb' },
+  { label: 'source', url: '/models/solace-hauler.glb' },
+];
+// Bench any GLB: ?url=/models/hubble.opt.glb
+const custom = new URLSearchParams(location.search).get('url');
+if (custom) MODELS.unshift({ label: custom.split('/').pop(), url: custom });
+
+// Surface failures on the HUD — a bench that hangs at "loading…" is useless
+addEventListener('error', (e) => { document.getElementById('stats').textContent = 'ERR ' + e.message; });
+addEventListener('unhandledrejection', (e) => {
+  document.getElementById('stats').textContent = 'ERR ' + (e.reason?.message || e.reason);
+});
+
+const renderer = new THREE.WebGLRenderer({ antialias: true });
+renderer.setPixelRatio(Math.min(devicePixelRatio, 2));
+renderer.setSize(innerWidth, innerHeight);
+renderer.outputColorSpace = THREE.SRGBColorSpace;
+renderer.toneMapping = THREE.AgXToneMapping;
+document.body.appendChild(renderer.domElement);
+
+const scene = new THREE.Scene();
+const camera = new THREE.PerspectiveCamera(45, innerWidth / innerHeight, 0.5, 5000);
+camera.position.set(220, 90, 260);
+const controls = new OrbitControls(camera, renderer.domElement);
+controls.enableDamping = true;
+
+const pmrem = new THREE.PMREMGenerator(renderer);
+const roomEnv = pmrem.fromScene(new RoomEnvironment(), 0.04).texture;
+scene.environment = roomEnv;
+scene.environmentIntensity = 0.15;
+
+// Starfield backdrop so orbit mode reads as space, not a void
+const stars = (() => {
+  const n = 3000, pos = new Float32Array(n * 3);
+  for (let i = 0; i < n; i++) {
+    const v = new THREE.Vector3().randomDirection().multiplyScalar(2000);
+    pos.set([v.x, v.y, v.z], i * 3);
+  }
+  const g = new THREE.BufferGeometry();
+  g.setAttribute('position', new THREE.BufferAttribute(pos, 3));
+  return new THREE.Points(g, new THREE.PointsMaterial({ color: 0x8899bb, size: 1.6, sizeAttenuation: false }));
+})();
+scene.add(stars);
+
+// Lighting rig, doc stage 5: hard sun key, near-black env fill, coloured rim
+const sun = new THREE.DirectionalLight(0xfff4e6, 4);
+sun.position.set(300, 200, 150);
+const rim = new THREE.DirectionalLight(0xff8855, 1.6);      // planet-side rim
+rim.position.set(-250, 40, -300);
+const padSun = new THREE.DirectionalLight(0xffd9b0, 2.2);   // low warm Mars sun
+padSun.position.set(-200, 80, 260);
+const padSky = new THREE.HemisphereLight(0xc08a5f, 0x3a2418, 0.5);
+scene.add(sun, rim, padSun, padSky);
+
+const composer = new EffectComposer(renderer);
+composer.addPass(new RenderPass(scene, camera));
+const bloomPass = new UnrealBloomPass(new THREE.Vector2(innerWidth, innerHeight), 0.6, 0.4, 0.9);
+composer.addPass(bloomPass);
+composer.addPass(new OutputPass());
+
+let ship = null;
+const original = new Map();   // mesh -> authored material
+const clayMat = new THREE.MeshStandardMaterial({ color: 0x888888, roughness: 0.9, metalness: 0 });
+
+// ── Flight-config life (orbit mode): gear up, beacons, RCS trims ─────
+// Prototype for the S1 space exterior; the pad keeps her powered-down.
+let shipGear = null, navMats = [], rcsPoints = [];
+let livePuffs = [], nextTrim = 1.0, trimPair = 0;
+const puffTex = (() => {
+  const c = document.createElement('canvas');
+  c.width = c.height = 64;
+  const g = c.getContext('2d');
+  const grad = g.createRadialGradient(32, 32, 2, 32, 32, 30);
+  grad.addColorStop(0, 'rgba(255,255,255,0.9)');
+  grad.addColorStop(1, 'rgba(255,255,255,0)');
+  g.fillStyle = grad;
+  g.fillRect(0, 0, 64, 64);
+  return new THREE.CanvasTexture(c);
+})();
+function fireTrim(t) {
+  trimPair = (trimPair + 1) % 2;
+  for (const p of [rcsPoints[trimPair * 2], rcsPoints[trimPair * 2 + 1]]) {
+    if (!p) continue;
+    const s = new THREE.Sprite(new THREE.SpriteMaterial({
+      map: puffTex, transparent: true, opacity: 0.8,
+      depthWrite: false, blending: THREE.AdditiveBlending,
+    }));
+    s.position.copy(p);
+    s.scale.setScalar(2.5);
+    ship.add(s);
+    livePuffs.push({ s, born: t });
+  }
+}
+
+// The lander.js material law, replicated: keep baked PBR maps, add the
+// painted-emissive floor (cloned so the other bench modes stay pristine)
+function toPadMaterial(m) {
+  const hasGlow = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.05 &&
+    (m.emissiveIntensity === undefined || m.emissiveIntensity > 0);
+  const std = m.clone();
+  if (!hasGlow) {
+    std.emissiveMap = std.map || null;
+    std.emissive = std.map ? new THREE.Color(0xc0906c)
+      : std.color.clone().lerp(new THREE.Color(0xc0906c), 0.3);
+    std.emissiveIntensity = std.map ? 0.34 : 0.30;
+  }
+  return std;
+}
+const padCache = new Map();
+
+function applyMode(mode) {
+  if (!ship) return;
+  ship.traverse((o) => {
+    if (!o.isMesh) return;
+    const orig = original.get(o);
+    if (mode === 'clay') o.material = clayMat;
+    else if (mode === 'pad') {
+      if (!padCache.has(o)) {
+        const conv = Array.isArray(orig) ? orig.map(toPadMaterial) : toPadMaterial(orig);
+        padCache.set(o, conv);
+      }
+      o.material = padCache.get(o);
+    } else o.material = orig;
+  });
+  const space = mode === 'orbit', pad = mode === 'pad', clay = mode === 'clay';
+  if (shipGear) shipGear.visible = !space;      // gear stows in flight
+  if (ship && !space) ship.rotation.set(0, 0, 0);
+  if (!space) for (const m of navMats) m.emissiveIntensity = m.userData.baseEI ?? 1;
+  sun.visible = space || clay;
+  sun.intensity = clay ? 3 : 4;
+  rim.visible = space;
+  padSun.visible = pad;
+  padSky.visible = pad;
+  stars.visible = space;
+  scene.environment = (clay || pad) ? null : roomEnv;
+  scene.background = pad ? new THREE.Color(0x2a1a10) : clay ? new THREE.Color(0x101010) : null;
+  bloomPass.enabled = ui.bloom.checked && space;
+}
+
+const ui = Object.fromEntries(['model', 'mode', 'tonemap', 'exposure', 'env', 'bloom', 'stats']
+  .map((id) => [id, document.getElementById(id)]));
+
+for (const m of MODELS) {
+  const ok = await fetch(m.url, { method: 'HEAD' }).then((r) => r.ok).catch(() => false);
+  if (!ok) continue;
+  const opt = document.createElement('option');
+  opt.value = m.url; opt.textContent = m.label;
+  ui.model.appendChild(opt);
+}
+
+let fileKB = 0;
+async function loadShip(url) {
+  if (ship) { scene.remove(ship); original.clear(); padCache.clear(); }
+  shipGear = null; navMats = []; rcsPoints = []; livePuffs = [];
+  nextTrim = 1.0;
+  const draco = new DRACOLoader().setDecoderPath('/draco/gltf/');
+  const gltf = await new GLTFLoader().setDRACOLoader(draco).loadAsync(url);
+  ship = gltf.scene;
+  const maxAniso = renderer.capabilities.getMaxAnisotropy();
+  let meshes = 0;
+  ship.traverse((o) => {
+    if (!o.isMesh) return;
+    meshes++;
+    original.set(o, o.material);
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      for (const t of [m.map, m.emissiveMap, m.normalMap, m.roughnessMap, m.metalnessMap, m.aoMap]) {
+        if (t) t.anisotropy = maxAniso;
+      }
+    }
+  });
+  shipGear = ship.getObjectByName('gear');
+  ship.traverse((o) => {
+    if (!o.isMesh) return;
+    for (const m of Array.isArray(o.material) ? o.material : [o.material]) {
+      if (m.name?.startsWith('nav_')) {
+        m.userData.baseEI = m.emissiveIntensity;
+        navMats.push(m);
+      }
+    }
+  });
+  const bb = new THREE.Box3().setFromObject(ship);
+  // RCS clusters: bow pair then stern pair, upper hull, both flanks
+  rcsPoints = [
+    new THREE.Vector3(bb.min.x + 10, bb.max.y * 0.62, bb.max.z * 0.85),
+    new THREE.Vector3(bb.min.x + 10, bb.max.y * 0.62, bb.min.z * 0.85),
+    new THREE.Vector3(bb.max.x - 18, bb.max.y * 0.55, bb.max.z * 0.85),
+    new THREE.Vector3(bb.max.x - 18, bb.max.y * 0.55, bb.min.z * 0.85),
+  ];
+  const c = bb.getCenter(new THREE.Vector3());
+  if (!lockTarget) {
+    controls.target.copy(c);
+    // frame whatever scale arrives — a 250 m hauler or a 15 m telescope
+    const r = bb.getSize(new THREE.Vector3()).length() / 2;
+    camera.position.copy(c).add(new THREE.Vector3(0.62, 0.28, 0.73).multiplyScalar(r * 2.4));
+  }
+  fileKB = Math.round((await fetch(url, { method: 'HEAD' }).then((r) => +r.headers.get('content-length'))) / 1024) || 0;
+  scene.add(ship);
+  ship.userData.meshes = meshes;
+  applyMode(ui.mode.value);
+}
+
+// Presettable via URL for headless A/B shots:
+//   ?mode=clay&model=beveled&cam=x,y,z&target=x,y,z
+const q = new URLSearchParams(location.search);
+if (q.get('mode')) ui.mode.value = q.get('mode');
+if (q.get('cam')) camera.position.set(...q.get('cam').split(',').map(Number));
+if (q.get('target')) controls.target.set(...q.get('target').split(',').map(Number));
+const lockTarget = !!(q.get('target') || q.get('cam'));
+const want = [...ui.model.options].findIndex((o) => o.textContent.startsWith(q.get('model') || ''));
+if (q.get('model') && want >= 0) ui.model.selectedIndex = want;
+
+ui.model.onchange = () => loadShip(ui.model.value);
+ui.mode.onchange = () => applyMode(ui.mode.value);
+ui.tonemap.onchange = () => {
+  renderer.toneMapping = { agx: THREE.AgXToneMapping, aces: THREE.ACESFilmicToneMapping, none: THREE.NoToneMapping }[ui.tonemap.value];
+};
+ui.exposure.oninput = () => { renderer.toneMappingExposure = +ui.exposure.value; };
+ui.env.oninput = () => { scene.environmentIntensity = +ui.env.value; };
+ui.bloom.onchange = () => applyMode(ui.mode.value);
+
+addEventListener('resize', () => {
+  camera.aspect = innerWidth / innerHeight;
+  camera.updateProjectionMatrix();
+  renderer.setSize(innerWidth, innerHeight);
+  composer.setSize(innerWidth, innerHeight);
+});
+
+renderer.info.autoReset = false;   // survive composer's multi-pass renders
+let frames = 0;
+function tick() {
+  requestAnimationFrame(tick);
+  controls.update();
+  // She's on station: attitude is rock-steady (real corrections are
+  // milliradians — invisible). Life reads through the beacons and the
+  // occasional RCS trim puff, never through hull motion.
+  if (ship && ui.mode.value === 'orbit') {
+    const t = performance.now() / 1000;
+    for (const m of navMats) m.emissiveIntensity = ((t + 0.35) % 1.4) < 0.35 ? 4 : 0.12;
+    if (t > nextTrim) {
+      fireTrim(t);
+      nextTrim = t + 5 + 4 * Math.abs(Math.sin(t * 7.13));
+    }
+    for (let i = livePuffs.length - 1; i >= 0; i--) {
+      const p = livePuffs[i], age = t - p.born;
+      p.s.scale.setScalar(2.5 + age * 7);
+      p.s.material.opacity = Math.max(0, 0.8 * (1 - age / 0.9));
+      if (age > 0.9) { ship.remove(p.s); p.s.material.dispose(); livePuffs.splice(i, 1); }
+    }
+  }
+  renderer.info.reset();
+  composer.render();
+  if (ship && frames++ % 30 === 0) {
+    const r = renderer.info.render;
+    ui.stats.textContent =
+      `file      ${fileKB ? (fileKB / 1024).toFixed(1) + ' MB' : '—'}\n` +
+      `meshes    ${ship.userData.meshes}\n` +
+      `calls     ${r.calls}\n` +
+      `tris      ${r.triangles.toLocaleString()}`;
+  }
+}
+await loadShip(ui.model.value || MODELS[0].url);
+tick();
+window.__shipBench = { scene, renderer };   // headless probe hook
+requestAnimationFrame(() => { window.__benchReady = true; });  // tools/bench-shot.mjs waits on this
+</script>
+</body>
+</html>

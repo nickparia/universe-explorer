@@ -15,6 +15,7 @@
 
 import * as THREE from 'three';
 import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
+import { DRACOLoader } from 'three/addons/loaders/DRACOLoader.js';
 import { heightAt } from './site.js';
 
 let group = null;
@@ -566,49 +567,45 @@ export function setLanderVisible(v) {
   if (group) group.visible = v;
 }
 
-// ── The modelled hull: solace-hauler.glb ─────────────────────────────
-// A proper sculpted body (models/solace-hauler.glb — authored in real
-// meters: 238 m stem to stern, y-up, bow pointing −X, gear pads at
-// y=0). We load it async and swap it in over the procedural hull; the
-// painted ship stays as the instant-on fallback so the pad is never
-// empty while 6.7 MB travels. Practicals and collision re-seat
-// themselves from the real model's bounding box.
+// ── The modelled hull: solace-hauler.baked.glb ───────────────────────
+// A proper sculpted body (authored in real meters: 238 m stem to stern,
+// y-up, bow pointing −X, gear pads at y=0; the .baked variant is the
+// authored model run through tools/ship-pipeline.sh — machined-edge
+// bevel pass, baked AO + edge-wear roughness atlas, join (645→~15 draw
+// calls), draco + webp (6.7→1.1 MB)). We load it async and swap it in
+// over the procedural hull; the painted ship stays as the instant-on
+// fallback so the pad is never empty while 1 MB travels. Practicals and
+// collision re-seat themselves from the model's bbox.
 
 const REAL_LEN = 238;      // authored length, meters
 const TARGET_LEN = 52;     // game-scale hull — fills the graded apron
 
 function upgradeToModel() {
-  new GLTFLoader().load('/models/solace-hauler.glb', (gltf) => {
+  const draco = new DRACOLoader();
+  draco.setDecoderPath('/draco/gltf/');
+  new GLTFLoader().setDRACOLoader(draco).load('/models/solace-hauler.baked.glb', (gltf) => {
     if (!group || !parts) return;            // site torn down mid-flight
     const model = gltf.scene;
     // real meters → game hull; bow −X → our local +X (π about Y).
     // group already carries SCALE, so divide it out here.
     model.scale.setScalar(TARGET_LEN / REAL_LEN / SCALE);
     model.rotation.y = Math.PI;
-    // Materials → palette-law Lambert with the painted-emissive floor
-    // (the site has no ambient light; shadow sides must stay art).
-    // Authored glow (windows, bells) survives untouched.
+    // Materials keep their baked PBR maps (AO + roughness) and get the
+    // palette-law painted-emissive floor (the site has no ambient light;
+    // shadow sides must stay art). Authored glow survives untouched.
     model.traverse((o) => {
       if (!o.isMesh) return;
       const convert = (m) => {
         const hasGlow = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.05 &&
           (m.emissiveIntensity === undefined || m.emissiveIntensity > 0);
         if (m.map) { m.map.colorSpace = THREE.SRGBColorSpace; m.map.anisotropy = 4; }
-        const lam = new THREE.MeshLambertMaterial({
-          map: m.map || null,
-          color: m.color ? m.color.clone() : new THREE.Color(0x8a8272),
-        });
-        if (hasGlow) {
-          lam.emissive = m.emissive.clone();
-          lam.emissiveIntensity = m.emissiveIntensity ?? 1;
-          lam.emissiveMap = m.emissiveMap || null;
-        } else {
-          lam.emissiveMap = m.map || null;
-          lam.emissive = m.map ? new THREE.Color(0xc0906c)
-            : lam.color.clone().lerp(new THREE.Color(0xc0906c), 0.3);
-          lam.emissiveIntensity = m.map ? 0.34 : 0.30;
+        if (!hasGlow) {
+          m.emissiveMap = m.map || null;
+          m.emissive = m.map ? new THREE.Color(0xc0906c)
+            : m.color.clone().lerp(new THREE.Color(0xc0906c), 0.3);
+          m.emissiveIntensity = m.map ? 0.34 : 0.30;
         }
-        return lam;
+        return m;
       };
       o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
     });

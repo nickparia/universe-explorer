@@ -1,44 +1,44 @@
 {
- "id": "mars-valles",
- "name": "COPRATES CHASMA",
- "body": "MARS",
- "source": {
-  "dem": "Mars HRSC/MOLA Blended DEM Global 200m v2 (USGS Astrogeology)",
-  "albedo": "Mars Viking MDIM2.1 Colorized Global Mosaic 232m (USGS)",
-  "hidem": "HiRISE DTEEC_048689_1670_048610_1670_A01 (UA/NASA)"
- },
- "grid": {
-  "cols": 494,
-  "rows": 520,
-  "mPerPxEW": 194.72,
-  "mPerPxNS": 200.0,
-  "elevMin": -5273.0,
-  "elevMax": 4160.0,
-  "westLon": -61.76692,
-  "northLat": -12.32066,
-  "latC": -13.2
- },
- "landing": {
-  "px": [
-   95.24,
-   112.83
-  ],
-  "elev": -2691.052435980903,
-  "yaw": 3.3916,
-  "pitch": -0.15
- },
- "files": {
-  "dem": "dem_v1.bin",
-  "albedo": "albedo_v1.jpg",
-  "hidem": "hidem_v2.bin"
- },
- "hires": {
-  "cols": 1797,
-  "rows": 2695,
-  "mPerPx": 3.0324,
-  "elevBase": -3262.0,
-  "x0": -1579.88,
-  "z0": -2441.08,
-  "source": "HiRISE DTEEC_048689_1670_048610_1670_A01 (UA/NASA)"
- }
+  "id": "mars-valles",
+  "name": "COPRATES CHASMA",
+  "body": "MARS",
+  "source": {
+    "dem": "Mars HRSC/MOLA Blended DEM Global 200m v2 (USGS Astrogeology)",
+    "albedo": "Mars Viking MDIM2.1 Colorized Global Mosaic 232m (USGS)",
+    "hidem": "HiRISE DTEEC_048689_1670_048610_1670_A01 (UA/NASA)"
+  },
+  "grid": {
+    "cols": 494,
+    "rows": 520,
+    "mPerPxEW": 194.72,
+    "mPerPxNS": 200.0,
+    "elevMin": -5273.0,
+    "elevMax": 4160.0,
+    "westLon": -61.76692,
+    "northLat": -12.32066,
+    "latC": -13.2
+  },
+  "landing": {
+    "px": [
+      100.129,
+      140.9
+    ],
+    "elev": -4645.5,
+    "yaw": 0.17,
+    "pitch": 0.04
+  },
+  "files": {
+    "dem": "dem_v1.bin",
+    "albedo": "albedo_v1.jpg",
+    "hidem": "hidem_v2.bin"
+  },
+  "hires": {
+    "cols": 1797,
+    "rows": 2695,
+    "mPerPx": 3.0324,
+    "elevBase": -3262.0,
+    "x0": -2531.88,
+    "z0": -8055.08,
+    "source": "HiRISE DTEEC_048689_1670_048610_1670_A01 (UA/NASA)"
+  }
 }
