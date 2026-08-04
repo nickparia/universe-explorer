@@ -101,16 +101,24 @@ export function initGround() {
   // The offer is PROXIMITY, not paperwork: any approach to Mars —
   // manual stick, autopilot, or a formal orbit — brings the landfall
   // line up. Within six radii the planet fills enough of the window
-  // that the invitation reads as belonging to it.
-  const nearMars = () => {
-    const a = getAltitude();
-    return a.nearestBody === 'MARS' && a.altitudeNorm < 6;
-  };
+  // that the invitation reads as belonging to it. Keyed to the distance
+  // to MARS ITSELF (marsAltitudeNorm), never to nearest-body — Phobos
+  // and Deimos both orbit inside the hint zone and were stealing
+  // "nearest" every pass, blinking the line out mid-approach.
+  // L accepts anywhere the offer can be lit (the hysteresis outer edge),
+  // so the key never refuses while the line is on screen.
+  const nearMars = () => getAltitude().marsAltitudeNorm < 7;
 
-  // The affordance breathes on its own clock — no per-frame main.js tax
+  // The affordance breathes on its own clock — no per-frame main.js tax.
+  // Hysteresis: lights below 6 radii, holds until 7 — cruising right on
+  // the threshold must not strobe the invitation.
+  let offered = false;
   setInterval(() => {
-    const offer = state === 'idle' && nearMars();
-    hintEl.style.opacity = offer ? '1' : '0';
+    const norm = getAltitude().marsAltitudeNorm;
+    if (state !== 'idle') offered = false;
+    else if (norm < 6) offered = true;
+    else if (norm > 7) offered = false;
+    hintEl.style.opacity = offered ? '1' : '0';
   }, 700);
 
   window.addEventListener('keydown', (e) => {

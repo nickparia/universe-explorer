@@ -10,6 +10,11 @@ const state = {
   isGasGiant: false,
   hasAtmosphere: false,
   body: null,
+  // Altitude above MARS regardless of what is nearest — the landfall
+  // affordance keys off this. nearestBody flips to PHOBOS/DEIMOS every
+  // time a moon crosses your approach line (both orbit inside the hint
+  // zone), which made the hint blink for no visible reason.
+  marsAltitudeNorm: Infinity,
 };
 
 const GAS_GIANTS = ['JUPITER', 'SATURN', 'URANUS', 'NEPTUNE'];
@@ -18,6 +23,7 @@ const ATMOSPHERE_BODIES = ['VENUS', 'EARTH', 'MARS', 'JUPITER', 'SATURN', 'URANU
 export function updateAltitude(camPos, allBodies) {
   let nearest = null;
   let minDist = Infinity;
+  state.marsAltitudeNorm = Infinity;
 
   for (let i = 0; i < allBodies.length; i++) {
     const b = allBodies[i];
@@ -26,6 +32,7 @@ export function updateAltitude(camPos, allBodies) {
     const bodyPos = b.g.userData._worldPos || b.g.position;
     const d = camPos.distanceTo(bodyPos);
     const surfDist = d - b.r;
+    if (b.name === 'MARS') state.marsAltitudeNorm = Math.max(0, surfDist) / b.r;
     if (surfDist < minDist) {
       minDist = surfDist;
       nearest = b;
