@@ -14,6 +14,7 @@
 // a few minutes after landing, then cool.
 
 import * as THREE from 'three';
+import { GLTFLoader } from 'three/addons/loaders/GLTFLoader.js';
 import { heightAt } from './site.js';
 
 let group = null;
@@ -509,6 +510,7 @@ function buildShip() {
   const skyfill = new THREE.PointLight(0x93a2b6, 40, 60, 1.0);
   skyfill.position.set(0, 20, 0);
   ship.add(skyfill);
+  P.skyfill = skyfill;
 
   // ── the egress ramp: hinged at the west-flank sill, swings down to
   // the ground when the traveler steps out. Gas vents ride its fall.
@@ -564,6 +566,100 @@ export function setLanderVisible(v) {
   if (group) group.visible = v;
 }
 
+// ── The modelled hull: solace-hauler.glb ─────────────────────────────
+// A proper sculpted body (models/solace-hauler.glb — authored in real
+// meters: 238 m stem to stern, y-up, bow pointing −X, gear pads at
+// y=0). We load it async and swap it in over the procedural hull; the
+// painted ship stays as the instant-on fallback so the pad is never
+// empty while 6.7 MB travels. Practicals and collision re-seat
+// themselves from the real model's bounding box.
+
+const REAL_LEN = 238;      // authored length, meters
+const TARGET_LEN = 52;     // game-scale hull — fills the graded apron
+
+function upgradeToModel() {
+  new GLTFLoader().load('/models/solace-hauler.glb', (gltf) => {
+    if (!group || !parts) return;            // site torn down mid-flight
+    const model = gltf.scene;
+    // real meters → game hull; bow −X → our local +X (π about Y).
+    // group already carries SCALE, so divide it out here.
+    model.scale.setScalar(TARGET_LEN / REAL_LEN / SCALE);
+    model.rotation.y = Math.PI;
+    // Materials → palette-law Lambert with the painted-emissive floor
+    // (the site has no ambient light; shadow sides must stay art).
+    // Authored glow (windows, bells) survives untouched.
+    model.traverse((o) => {
+      if (!o.isMesh) return;
+      const convert = (m) => {
+        const hasGlow = m.emissive && (m.emissive.r + m.emissive.g + m.emissive.b) > 0.05 &&
+          (m.emissiveIntensity === undefined || m.emissiveIntensity > 0);
+        if (m.map) { m.map.colorSpace = THREE.SRGBColorSpace; m.map.anisotropy = 4; }
+        const lam = new THREE.MeshLambertMaterial({
+          map: m.map || null,
+          color: m.color ? m.color.clone() : new THREE.Color(0x8a8272),
+        });
+        if (hasGlow) {
+          lam.emissive = m.emissive.clone();
+          lam.emissiveIntensity = m.emissiveIntensity ?? 1;
+          lam.emissiveMap = m.emissiveMap || null;
+        } else {
+          lam.emissiveMap = m.map || null;
+          lam.emissive = m.map ? new THREE.Color(0xc0906c)
+            : lam.color.clone().lerp(new THREE.Color(0xc0906c), 0.3);
+          lam.emissiveIntensity = m.map ? 0.34 : 0.30;
+        }
+        return lam;
+      };
+      o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
+    });
+    // Her true footprint, in group-local (unscaled) units
+    model.updateMatrixWorld(true);
+    const bb = new THREE.Box3().setFromObject(model);
+
+    // The procedural hull stands down; the practicals stay in service
+    const keep = new Set([parts.flood, parts.flood.target, parts.skyfill,
+      parts.beaconR, parts.beaconG, parts.strobe, ...parts.puffs]);
+    for (const child of [...group.children]) {
+      if (keep.has(child)) continue;
+      group.remove(child);
+      child.traverse((o) => {
+        if (o.geometry) o.geometry.dispose();
+        if (o.material) {
+          const list = Array.isArray(o.material) ? o.material : [o.material];
+          for (const m of list) { if (m.map) m.map.dispose(); m.dispose(); }
+        }
+      });
+    }
+    parts.dome = null;
+    parts.ramp = null;
+    parts.bells = [];
+    parts.windows = [];
+    group.add(model);
+
+    // Re-seat the jewelry on the real body
+    parts.strobe.position.set(bb.max.x * 0.55, bb.max.y + 0.15, (bb.min.z + bb.max.z) / 2);
+    parts.beaconR.position.set(0, bb.max.y * 0.8, bb.max.z + 0.12);
+    parts.beaconG.position.set(0, bb.max.y * 0.8, bb.min.z - 0.12);
+    parts.flood.position.set(bb.max.x - 2, 1.6, 0);
+    parts.flood.target.position.set(bb.max.x + 7, -2, 0);
+    parts.skyfill.position.set(0, bb.max.y + 8, 0);
+    parts.skyfill.distance = Math.max(60, bb.max.x * 3);
+    for (const p of parts.puffs) {
+      p.position.set((Math.random() - 0.5) * 4, 0.6, bb.min.z - 0.6 - Math.random());
+    }
+
+    // Collision follows the body: a narrow full-length core plus the
+    // full-width aft span (nacelles/outriggers live astern).
+    const hzFull = Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z));
+    COLL_BOXES = [
+      { minX: bb.min.x, maxX: bb.max.x, hz: hzFull * 0.38 },
+      { minX: bb.min.x, maxX: bb.min.x + (bb.max.x - bb.min.x) * 0.42, hz: hzFull },
+    ];
+  }, undefined, (err) => {
+    console.warn('[SOLACE] hauler model failed to load; painted hull stands', err);
+  });
+}
+
 // ── Lifecycle ────────────────────────────────────────────────────────
 
 const SCALE = 1.4;   // she was too small at 34 m — ~48 m reads as a SHIP
@@ -574,6 +670,7 @@ export function initLander(parentGroup) {
   parts = P;
   landedAt = performance.now();
   group.scale.setScalar(SCALE);
+  upgradeToModel();
 
   // Seat her on the graded apron: highest leg contact wins (the apron
   // makes them agree to within centimetres)
@@ -596,8 +693,8 @@ export function disposeLander() {
     group.traverse((o) => {
       if (o.geometry) o.geometry.dispose();
       if (o.material) {
-        if (o.material.map) o.material.map.dispose();
-        o.material.dispose();
+        const list = Array.isArray(o.material) ? o.material : [o.material];
+        for (const m of list) { if (m.map) m.map.dispose(); m.dispose(); }
       }
     });
   }
@@ -623,7 +720,7 @@ export function updateLander(dt, sunElevDeg) {
 
   // windows: the hearth — warm after sundown
   parts.glassWarm.emissiveIntensity = 0.12 + night * 1.15;
-  parts.dome.material.emissiveIntensity = 0.06 + night * 0.22;
+  if (parts.dome) parts.dome.material.emissiveIntensity = 0.06 + night * 0.22;
 
   // floodlights pool on the pad after dark
   parts.flood.intensity = night * 160;
@@ -639,14 +736,17 @@ export function updateLander(dt, sunElevDeg) {
   if (egressT >= 0) {
     egressT = Math.min(1, egressT + dt / 1.6);
     const e = egressT < 0.5 ? 2 * egressT * egressT : 1 - Math.pow(-2 * egressT + 2, 2) / 2;
-    parts.ramp.rotation.x = -e * 1.15;         // falls outward to the ground
+    if (parts.ramp) parts.ramp.rotation.x = -e * 1.15;  // falls outward to the ground
     for (const p of parts.puffs) {
       if (p.material.opacity <= 0) continue;
       p.position.x += (p.userData.vx || 0) * dt;
       p.position.y += (p.userData.vy || 0) * dt;
       p.position.z += (p.userData.vz || 0) * dt;
-      p.scale.multiplyScalar(1 + dt * 1.4);
-      p.material.opacity = Math.max(0, p.material.opacity - dt * 0.34);
+      // grow gently and CAP — exponential growth compounded to a
+      // thirty-meter white ball that ate the whole hull on camera
+      p.scale.multiplyScalar(1 + dt * 0.55);
+      if (p.scale.x > 3.5) p.scale.setScalar(3.5);
+      p.material.opacity = Math.max(0, p.material.opacity - dt * 0.6);
     }
     if (egressT >= 1 && parts.puffs.every((p) => p.material.opacity <= 0)) egressT = -1;
   }
@@ -660,7 +760,9 @@ export function getLanderPos() { return SHIP_POS; }
 // either is pushed out along the axis of least penetration. Cheap,
 // exact enough, and it works whether she's visible or not — but only
 // when she's actually standing (not mid-descent).
-const HULL_BOXES = [
+// Defaults fit the procedural hull; the GLB upgrade rewrites them
+// from the loaded model's real bounding box.
+let COLL_BOXES = [
   { minX: -11.5, maxX: 15.2, hz: 4.4 },   // hull + castle + legs
   { minX: -14.2, maxX: -6.6, hz: 8.2 },   // nacelle outriggers
 ];
@@ -675,7 +777,7 @@ export function resolveShipCollision(px, pz, r = 0.6) {
   let lz = (wx * sin + wz * cos) / SCALE;
   const rl = r / SCALE;
   let moved = false;
-  for (const b of HULL_BOXES) {
+  for (const b of COLL_BOXES) {
     if (lx < b.minX - rl || lx > b.maxX + rl || Math.abs(lz) > b.hz + rl) continue;
     // penetration on each axis — exit through the shallowest wall
     const pxMin = lx - (b.minX - rl);

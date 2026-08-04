@@ -73,6 +73,14 @@ export function initController(camera, spawn, faceYaw, facePitch = 0) {
   accelPitch = 0; slopeRoll = 0; prevFwdSpeed = 0; visX = 0; visZ = 0;
   fovBase = camera.fov;
 
+  // Dev handle (headless testing): jump the boots to a local x,z and
+  // face a heading, exactly like the space-side teleport trick.
+  window.__groundTP = (tx, tz, yawRad = yaw, pitchRad = pitch) => {
+    pos.set(tx, heightAt(tx, tz) + EYE_WALK, tz);
+    yaw = yawRad; pitch = pitchRad;
+    vel.set(0, 0, 0);
+  };
+
   const canvas = document.getElementById('c');
   addL(window, 'keydown', (e) => {
     // An open terminal line owns every key — yielding an empty line to

@@ -15,7 +15,21 @@ blinking on their own clocks. Stylized craft, not photorealism:
 painted texture detail, palette-law shading, silhouette density.
 (The school of the Nostromo — never its name, mark, or silhouette.)
 
-## Massing (≈34 m stem to stern)
+## The modelled hull
+
+`models/solace-hauler.glb` (user-authored, 2026-08-04) is the S0
+exterior body: real meters (238 m stem to stern, y-up, bow → −X, gear
+pads at y=0, belly at 12 m). `js/ground/lander.js` loads it at runtime
+(served from `public/models/` in dev, R2 in prod), scales it to game
+hull length (~52 m), flips the bow to local +X, and converts its
+materials to Lambert with the painted-emissive floor so the no-ambient
+site can't drop her flanks to black. Practicals (beacons, strobe,
+floodlight, egress gas) and collision re-seat themselves from the
+loaded model's bounding box. The procedural painted hull below remains
+as the instant-on fallback while the GLB travels — and as the deck-plan
+truth the interior is built against.
+
+## Massing (≈34 m stem to stern, procedural fallback)
 
 ```
         ┌─────┐
