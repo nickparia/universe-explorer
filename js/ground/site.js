@@ -39,11 +39,37 @@ function rnoise(x, z) {
 
 // ── Load ─────────────────────────────────────────────────────────────
 
+// fetch() resolves on 404/500 — an error page fed to Int16Array became
+// the heightfield once (the traveler landed inside the noise). Every
+// site file is checked for status AND exact size, with two retries for
+// transient drops; a truly failed load rejects, and enterGround's
+// abort path returns the traveler to space instead of to garbage.
+async function fetchChecked(url, expectBytes = null) {
+  let err = null;
+  for (let attempt = 0; attempt < 3; attempt++) {
+    if (attempt) await new Promise((r) => setTimeout(r, 700 * attempt));
+    try {
+      const res = await fetch(url);
+      if (!res.ok) { err = new Error(url + ' → HTTP ' + res.status); continue; }
+      const buf = await res.arrayBuffer();
+      if (expectBytes !== null && buf.byteLength !== expectBytes) {
+        err = new Error(url + ' → ' + buf.byteLength + ' bytes, expected ' + expectBytes);
+        continue;
+      }
+      return buf;
+    } catch (e) { err = e; }
+  }
+  throw err;
+}
+
 export async function loadSite() {
   if (site) return site;
   const base = 'locations/mars-valles/';
-  const meta = await (await fetch(base + 'site_v2.json')).json();
-  const buf = await (await fetch(base + meta.files.dem)).arrayBuffer();
+  const metaRes = await fetch(base + 'site_v2.json');
+  if (!metaRes.ok) throw new Error('site_v2.json → HTTP ' + metaRes.status);
+  const meta = await metaRes.json();
+  const g0 = meta.grid;
+  const buf = await fetchChecked(base + meta.files.dem, g0.cols * g0.rows * 2);
   const raw = new Int16Array(buf);
   const dem = new Float32Array(raw.length);
   for (let i = 0; i < raw.length; i++) dem[i] = raw[i];
@@ -53,9 +79,9 @@ export async function loadSite() {
   // stand. Everything outside it falls back to the 200 m blend.
   let hi = null;
   if (meta.files.hidem) {
-    const hbuf = await (await fetch(base + meta.files.hidem)).arrayBuffer();
-    const hraw = new Int16Array(hbuf);
     const h = meta.hires;
+    const hbuf = await fetchChecked(base + meta.files.hidem, h.cols * h.rows * 2);
+    const hraw = new Int16Array(hbuf);
     const hdem = new Float32Array(hraw.length);
     // stored as decimeters relative to hires.elevBase to keep int16
     for (let i = 0; i < hraw.length; i++) hdem[i] = h.elevBase + hraw[i] * 0.1;
@@ -94,6 +120,14 @@ export async function loadSite() {
     minZ: -lpy * g.mPerPxNS,
     maxZ: (g.rows - 1 - lpy) * g.mPerPxNS,
   };
+  // The bootfall point defines local zero — if the assembled field
+  // disagrees by more than a wall's worth, the data is wrong no matter
+  // what the transport said. Reject and let the next attempt refetch.
+  const padH = demAt(0, 0);
+  if (!Number.isFinite(padH) || Math.abs(padH) > 60) {
+    site = null;
+    throw new Error('site DEM failed sanity: ground at landing = ' + padH);
+  }
   return site;
 }
 
