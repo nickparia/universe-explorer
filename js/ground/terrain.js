@@ -51,9 +51,16 @@ export function initTerrain(parentGroup) {
   // photograph's color). Chunk positions are site-local and static —
   // the grain never swims under camera-relative rendering.
   const detailTex = makeDetailTexture();
+  const hiAlb = site.hiAlb;
   material.onBeforeCompile = (shader) => {
     shader.uniforms.uDetail = { value: detailTex };
     shader.uniforms.uNow = { value: 0 };
+    if (hiAlb) {
+      shader.uniforms.uHiAlbedo = { value: hiAlb.tex };
+      shader.uniforms.uHiOrigin = { value: new THREE.Vector2(hiAlb.x0, hiAlb.z0) };
+      shader.uniforms.uHiSize = { value: new THREE.Vector2(hiAlb.x1 - hiAlb.x0, hiAlb.z1 - hiAlb.z0) };
+      shader.uniforms.uHiFeather = { value: hiAlb.feather };
+    }
     material.userData.shader = shader;
     // Geomorph: every refined chunk carries the coarse height/normal it
     // replaced and blends to its own over ~0.8 s from first showing —
@@ -69,9 +76,23 @@ export function initTerrain(parentGroup) {
       .replace('#include <project_vertex>', '#include <project_vertex>\nvSitePos = position.xz;\nvViewZ = -mvPosition.z;');
     shader.uniforms.uRamp = { value: makePaletteRamp() };
     shader.uniforms.uTodY = { value: 0.5 };
+    // The photograph goes on FIRST, under the procedural grain: where
+    // NASA imaged this ground at a meter, that is the albedo, and the
+    // synthetic noise is only there to carry the last few meters to the
+    // eye — the same deal the height function already strikes with the
+    // HiRISE elevation.
+    const hiChunk = hiAlb ? (
+      '  vec2 huv = vec2((vSitePos.x - uHiOrigin.x) / uHiSize.x,\n' +
+      '                  1.0 - (vSitePos.y - uHiOrigin.y) / uHiSize.y);\n' +
+      '  vec2 inset = min(huv, 1.0 - huv) * uHiSize;\n' +
+      '  float hw = clamp(min(inset.x, inset.y) / uHiFeather, 0.0, 1.0);\n' +
+      '  hw = hw * hw * (3.0 - 2.0 * hw);\n' +
+      '  diffuseColor.rgb = mix(diffuseColor.rgb, texture2D(uHiAlbedo, huv).rgb, hw);\n'
+    ) : '';
     shader.fragmentShader = shader.fragmentShader
-      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform sampler2D uRamp;\nuniform float uTodY;\nvarying vec2 vSitePos;\nvarying float vViewZ;')
-      .replace('#include <map_fragment>', '#include <map_fragment>\n{\n  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}')
+      .replace('#include <common>', '#include <common>\nuniform sampler2D uDetail;\nuniform sampler2D uRamp;\nuniform float uTodY;\nvarying vec2 vSitePos;\nvarying float vViewZ;' +
+        (hiAlb ? '\nuniform sampler2D uHiAlbedo;\nuniform vec2 uHiOrigin;\nuniform vec2 uHiSize;\nuniform float uHiFeather;' : ''))
+      .replace('#include <map_fragment>', '#include <map_fragment>\n{\n' + hiChunk + '  float dn = texture2D(uDetail, vSitePos / 2.6).r * 0.62 + texture2D(uDetail, vSitePos / 17.0).r * 0.38;\n  float dfade = exp(-vViewZ / 220.0);\n  diffuseColor.rgb *= mix(1.0, 0.72 + 0.54 * dn, dfade);\n}')
       .replace('#include <opaque_fragment>',
         '#include <opaque_fragment>\n{\n  float lum = dot(gl_FragColor.rgb, vec3(0.299, 0.587, 0.114));\n' +
         '  vec3 graded = texture2D(uRamp, vec2(clamp(pow(lum, 0.85), 0.004, 0.996), uTodY)).rgb;\n' +

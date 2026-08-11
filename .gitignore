@@ -5,3 +5,4 @@ dist
 .claude
 desktop/node_modules
 desktop/release
+tools/mars-dem/.venv/

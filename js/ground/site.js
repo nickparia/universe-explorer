@@ -65,8 +65,8 @@ async function fetchChecked(url, expectBytes = null) {
 export async function loadSite() {
   if (site) return site;
   const base = 'locations/mars-valles/';
-  const metaRes = await fetch(base + 'site_v2.json');
-  if (!metaRes.ok) throw new Error('site_v2.json → HTTP ' + metaRes.status);
+  const metaRes = await fetch(base + 'site_v3.json');
+  if (!metaRes.ok) throw new Error('site_v3.json → HTTP ' + metaRes.status);
   const meta = await metaRes.json();
   const g0 = meta.grid;
   const buf = await fetchChecked(base + meta.files.dem, g0.cols * g0.rows * 2);
@@ -101,6 +101,37 @@ export async function loadSite() {
   albedo.wrapS = albedo.wrapT = THREE.ClampToEdgeWrapping;
   albedo.anisotropy = 4;
 
+  // The photograph. The global mosaic above is 195 m per pixel — one
+  // pixel covers two football fields, so at walking scale it is a flat
+  // wash and nothing more. This layer is the HiRISE orthoimage of the
+  // same ground the DTM was built from, pan-sharpened over that wash at
+  // ONE METER per pixel, pixel-aligned to the elevation: a shadow in the
+  // photograph falls on the bump that casts it.
+  //
+  // Failure here is cosmetic, never fatal — the wash still renders, so a
+  // missing or broken texture costs detail, not the site.
+  let hiAlb = null;
+  if (meta.hiAlbedo) {
+    const a = meta.hiAlbedo;
+    try {
+      const tex = await new Promise((resolve, reject) => {
+        new THREE.TextureLoader().load(base + a.file, resolve, undefined, reject);
+      });
+      tex.colorSpace = THREE.SRGBColorSpace;
+      tex.wrapS = tex.wrapT = THREE.ClampToEdgeWrapping;
+      tex.anisotropy = 8;
+      hiAlb = {
+        tex,
+        x0: a.x0, z0: a.z0,
+        x1: a.x0 + a.cols * a.mpp,
+        z1: a.z0 + a.rows * a.mpp,
+        feather: a.feather ?? 120,
+      };
+    } catch (e) {
+      console.warn('[SOLACE] hi-res albedo failed; the 195 m wash stands', e);
+    }
+  }
+
   const g = meta.grid;
   const [lpx, lpy] = meta.landing.px;
   site = {
@@ -108,6 +139,7 @@ export async function loadSite() {
     dem,
     hi,
     albedo,
+    hiAlb,
     cols: g.cols,
     rows: g.rows,
     dx: g.mPerPxEW,
@@ -206,6 +238,19 @@ function hiAt(x, z) {
  * detail finer than ~2 vertex spacings); pass 0 for collision truth.
  */
 export function heightAt(x, z, minLambda = 0) {
+  const h = nativeHeightAt(x, z, minLambda);
+  // ── The graded apron ────────────────────────────────────────────────
+  // The company levelled a landing field before the first bootfall:
+  // ship stand + egress ground blended flat, with a soft berm at the
+  // edge where the grader's work meets the native slope. Flows into
+  // the terrain mesh AND all physics, because this function IS the
+  // ground.
+  const ap = apronBlend(x, z);
+  return ap > 0 ? h * (1 - ap) + apronHeight() * ap : h;
+}
+
+/** The ground as Mars left it — everything except the grader's work. */
+function nativeHeightAt(x, z, minLambda = 0) {
   let h = demAt(x, z);
   // Where NASA measured the ground at one meter, NASA wins — and the
   // synthetic octaves stand down for every wavelength the real data
@@ -237,33 +282,43 @@ export function heightAt(x, z, minLambda = 0) {
     const n = ridged ? rnoise(wx / lam, wz / lam) : vnoise(wx / lam, wz / lam);
     h += (ridged ? (n - 0.62) : (n - 0.5) * 2) * amp * k * sK;
   }
-
-  // ── The graded apron ────────────────────────────────────────────────
-  // The company levelled a landing field before the first bootfall:
-  // ship stand + egress ground blended flat, with a soft berm at the
-  // edge where the grader's work meets the native slope. Flows into
-  // the terrain mesh AND all physics, because this function IS the
-  // ground.
-  const ap = apronBlend(x, z);
-  if (ap > 0) h = h * (1 - ap) + apronHeight() * ap;
   return h;
 }
 
 // Apron footprint: an ellipse covering the SOLACE's stand and the walk
-// to her ramp (ship parks near local (36,-6), spawn steps out at ~(16,-6)).
-const APRON = { cx: 27, cz: -6, rx: 30, rz: 32 };
+// around her. She lies east–west at local (36,-6) — 256 m of hull, 59 m
+// abeam — and the traveler steps out under her south flank at (16,18).
+//
+// The grading is deliberately LIGHT, and it STOPS SHORT OF THE LIP. The
+// shelf under her already sits within 4.4 m, so the company only had to
+// true it; the field reaches z≈-44 while the escarpment breaks at z≈-54
+// (NORTH of her — +z is south here), leaving ten meters of native ground
+// at the edge. Grading over the lip would have squared off the one piece
+// of drama on the site.
+const APRON = { cx: 36, cz: 4, rx: 160, rz: 48 };
 let _apronH = null;
 
 export function apronHeight() {
-  if (_apronH === null) _apronH = demAt(APRON.cx, APRON.cz);
+  // Cut to the ground the HiRISE data actually measured under her, not
+  // to the 200 m MOLA average: on a 330 m apron the two disagree by
+  // enough to step visibly where the berm meets native ground.
+  if (_apronH === null) _apronH = nativeHeightAt(APRON.cx, APRON.cz, 0);
   return _apronH;
 }
 
-/** 1 on the graded flat, 0 on native ground, smooth berm between. */
+/** 1 on the graded flat, 0 on native ground, smooth berm between.
+ *
+ * A SUPERELLIPSE, not an ellipse. A ship is a rectangle and an ellipse
+ * is not: with a true ellipse her outboard gear pads landed on the berm
+ * — 1.4 m of spread across six legs that are supposed to agree — and
+ * the only cure was an oversized field that graded ground nobody walks.
+ * The fourth-power norm hugs the footprint instead, so the flat covers
+ * the legs and stops.
+ */
 export function apronBlend(x, z) {
-  const dx = (x - APRON.cx) / APRON.rx;
-  const dz = (z - APRON.cz) / APRON.rz;
-  const d = Math.sqrt(dx * dx + dz * dz);
+  const dx = Math.abs((x - APRON.cx) / APRON.rx);
+  const dz = Math.abs((z - APRON.cz) / APRON.rz);
+  const d = Math.pow(dx * dx * dx * dx + dz * dz * dz * dz, 0.25);
   if (d >= 1) return 0;
   if (d <= 0.72) return 1;
   const t = (1 - d) / 0.28;

@@ -20,12 +20,25 @@ import { heightAt } from './site.js';
 
 let group = null;
 let parts = null;      // named practicals for the update loop
+let procHull = null;   // the painted stopgap, until the model lands
 let landedAt = 0;      // ember clock
 
-// The ship parks east of the touchdown point, broadside to the spawn —
-// far enough that she reads as a VESSEL, not a wall. (34 m of hull
-// wants ~35 m of viewing distance.)
-export const SHIP_POS = { x: 36, z: -6, yaw: Math.PI / 2 };
+// She lies EAST–WEST along the shelf, broadside to the escarpment, on
+// the exact original bootfall coordinates.
+//
+// The orientation is not a style choice — it is the only one that works.
+// The HiRISE data ends 120 m south of the pad, and the shelf runs only
+// 160 m north–south before its northern lip drops 76 m. Turned across
+// the shelf (the old yaw) a 256 m hull straddles that cliff; turned
+// along it she finds 4.4 m of variation over her whole footprint and
+// stays on measured ground end to end. Every other heading runs off the
+// patch: 30° costs 63 m of span, 60° leaves the data entirely.
+//
+// (+z is SOUTH here — the site's z is measured southward from the
+// crop's north edge, per tools/mars-dem/bake_site.py.)
+//
+// Her northern flank sits ~18 m back from the lip. That is the view.
+export const SHIP_POS = { x: 36, z: -6, yaw: 0 };
 
 // ── The paint shop: hand-crafted canvas textures ─────────────────────
 
@@ -553,12 +566,14 @@ let egressT = -1;   // -1 idle; 0..1 playing
 export function playEgress() {
   egressT = 0;
   if (parts) {
+    // Vent gas off a 256 m hull is a weather event, not a wisp — the
+    // sizes and drift speeds are meters, same as everything else.
     for (const p of parts.puffs) {
       p.material.opacity = 0.85;
-      p.scale.setScalar(0.7 + Math.random() * 0.5);
-      p.userData.vx = (Math.random() - 0.5) * 1.6;
-      p.userData.vz = -1.2 - Math.random() * 1.6;
-      p.userData.vy = 0.5 + Math.random() * 0.8;
+      p.scale.setScalar((0.7 + Math.random() * 0.5) * PROC_SCALE);
+      p.userData.vx = (Math.random() - 0.5) * 1.6 * PROC_SCALE;
+      p.userData.vz = (-1.2 - Math.random() * 1.6) * PROC_SCALE;
+      p.userData.vy = (0.5 + Math.random() * 0.8) * PROC_SCALE;
     }
   }
 }
@@ -577,8 +592,23 @@ export function setLanderVisible(v) {
 // fallback so the pad is never empty while 1 MB travels. Practicals and
 // collision re-seat themselves from the model's bbox.
 
-const REAL_LEN = 238;      // authored length, meters
-const TARGET_LEN = 52;     // game-scale hull — fills the graded apron
+// She stands at the size she was drawn. The GLB is authored in real
+// meters — measured stem to stern from its own bbox, not the 238 m the
+// old constant guessed — and nothing scales it down any more.
+//
+// The shrink that used to live here (52 m, "fills the graded apron")
+// was the apron wagging the ship: a 4.7× reduction that put her leg
+// pads at 0.35 m, ankle-high on a 1.65 m traveler. Authored, the same
+// pad stands 1.6 m — you look across the top of it, which is the read
+// a 256 m hauler is supposed to have.
+export const SHIP_LEN = 256.4;   // measured: bbox x −125.15 … 131.30
+
+// The painted fallback hull is drawn at its own convenient size; it
+// gets multiplied up to meet her. Only the stopgap needs this — the
+// modelled body arrives already true, and everything outside this
+// module reasons in real meters.
+const PROC_LEN = 34;
+const PROC_SCALE = SHIP_LEN / PROC_LEN;
 
 function upgradeToModel() {
   const draco = new DRACOLoader();
@@ -586,9 +616,8 @@ function upgradeToModel() {
   new GLTFLoader().setDRACOLoader(draco).load('/models/solace-hauler.baked.glb', (gltf) => {
     if (!group || !parts) return;            // site torn down mid-flight
     const model = gltf.scene;
-    // real meters → game hull; bow −X → our local +X (π about Y).
-    // group already carries SCALE, so divide it out here.
-    model.scale.setScalar(TARGET_LEN / REAL_LEN / SCALE);
+    // Authored meters ARE world meters now — no scale at all. Bow −X →
+    // our local +X (π about Y).
     model.rotation.y = Math.PI;
     // Materials keep their baked PBR maps (AO + roughness) and get the
     // palette-law painted-emissive floor (the site has no ambient light;
@@ -609,23 +638,23 @@ function upgradeToModel() {
       };
       o.material = Array.isArray(o.material) ? o.material.map(convert) : convert(o.material);
     });
-    // Her true footprint, in group-local (unscaled) units
+    // Her true footprint — real meters, because nothing scales her now
     model.updateMatrixWorld(true);
     const bb = new THREE.Box3().setFromObject(model);
 
-    // The procedural hull stands down; the practicals stay in service
-    const keep = new Set([parts.flood, parts.flood.target, parts.skyfill,
-      parts.beaconR, parts.beaconG, parts.strobe, ...parts.puffs]);
-    for (const child of [...group.children]) {
-      if (keep.has(child)) continue;
-      group.remove(child);
-      child.traverse((o) => {
+    // The painted stopgap stands down. The practicals already live on
+    // the outer group in world meters, so they simply stay where they
+    // are while the hull under them is replaced.
+    if (procHull) {
+      group.remove(procHull);
+      procHull.traverse((o) => {
         if (o.geometry) o.geometry.dispose();
         if (o.material) {
           const list = Array.isArray(o.material) ? o.material : [o.material];
           for (const m of list) { if (m.map) m.map.dispose(); m.dispose(); }
         }
       });
+      procHull = null;
     }
     parts.dome = null;
     parts.ramp = null;
@@ -633,23 +662,28 @@ function upgradeToModel() {
     parts.windows = [];
     group.add(model);
 
-    // Re-seat the jewelry on the real body
-    parts.strobe.position.set(bb.max.x * 0.55, bb.max.y + 0.15, (bb.min.z + bb.max.z) / 2);
-    parts.beaconR.position.set(0, bb.max.y * 0.8, bb.max.z + 0.12);
-    parts.beaconG.position.set(0, bb.max.y * 0.8, bb.min.z - 0.12);
-    parts.flood.position.set(bb.max.x - 2, 1.6, 0);
-    parts.flood.target.position.set(bb.max.x + 7, -2, 0);
-    parts.skyfill.position.set(0, bb.max.y + 8, 0);
-    parts.skyfill.distance = Math.max(60, bb.max.x * 3);
+    // Re-seat the jewelry on the real body. These are measurements on a
+    // 256 m hull: the flood is a mast lamp 8 m up throwing 35 m onto the
+    // pad, not a porch light 1.6 m off the deck.
+    parts.strobe.position.set(bb.max.x * 0.55, bb.max.y + 0.8, (bb.min.z + bb.max.z) / 2);
+    parts.beaconR.position.set(0, bb.max.y * 0.8, bb.max.z + 0.6);
+    parts.beaconG.position.set(0, bb.max.y * 0.8, bb.min.z - 0.6);
+    parts.flood.position.set(bb.max.x - 10, 8, 0);
+    parts.flood.target.position.set(bb.max.x + 35, -2, 0);
+    parts.flood.distance = 220;
+    parts.skyfill.position.set(0, bb.max.y + 40, 0);
+    parts.skyfill.distance = Math.max(320, bb.max.x * 3);
     for (const p of parts.puffs) {
-      p.position.set((Math.random() - 0.5) * 4, 0.6, bb.min.z - 0.6 - Math.random());
+      p.position.set((Math.random() - 0.5) * 18, 3, bb.min.z - 4 - Math.random() * 6);
     }
 
-    // Collision follows the body: a narrow full-length core plus the
-    // full-width aft span (nacelles/outriggers live astern).
+    // Collision follows the body. The old 0.38 core let you walk ~4 m
+    // into the hull skin amidships; measured against her actual beam,
+    // the pressure hull carries most of the width and only the gear
+    // outriggers reach past it.
     const hzFull = Math.max(Math.abs(bb.min.z), Math.abs(bb.max.z));
     COLL_BOXES = [
-      { minX: bb.min.x, maxX: bb.max.x, hz: hzFull * 0.38 },
+      { minX: bb.min.x, maxX: bb.max.x, hz: hzFull * 0.62 },
       { minX: bb.min.x, maxX: bb.min.x + (bb.max.x - bb.min.x) * 0.42, hz: hzFull },
     ];
   }, undefined, (err) => {
@@ -659,29 +693,69 @@ function upgradeToModel() {
 
 // ── Lifecycle ────────────────────────────────────────────────────────
 
-const SCALE = 1.4;   // she was too small at 34 m — ~48 m reads as a SHIP
-
 export function initLander(parentGroup) {
   const { ship, P } = buildShip();
-  group = ship;
   parts = P;
   landedAt = performance.now();
-  group.scale.setScalar(SCALE);
+
+  // The outer group is world meters — every offset outside buildShip()
+  // is a real measurement. Only the painted stopgap carries a scale,
+  // and it carries it alone.
+  group = new THREE.Group();
+  procHull = ship;
+  ship.scale.setScalar(PROC_SCALE);
+  group.add(ship);
+
+  // The jewelry moves out to real meters immediately, so the practicals
+  // survive the model swap without a unit change halfway through their
+  // lives. Their apparent size is preserved — they were sized by eye
+  // against the painted hull, and that judgement still holds.
+  for (const o of [P.flood, P.flood.target, P.skyfill, P.beaconR, P.beaconG,
+    P.strobe, ...P.puffs]) {
+    o.position.multiplyScalar(PROC_SCALE);
+    if (!o.isLight) o.scale.multiplyScalar(PROC_SCALE);
+    group.add(o);                        // add() reparents off the hull
+  }
+  P.flood.distance *= PROC_SCALE;
+  P.skyfill.distance *= PROC_SCALE;
+
   upgradeToModel();
 
-  // Seat her on the graded apron: highest leg contact wins (the apron
-  // makes them agree to within centimetres)
+  // Seat her on the shelf: highest leg contact wins. The probes are her
+  // real gear pads, not the painted hull's four corners — six legs on
+  // 256 m of ship find ground the old four never touched. Authored pads
+  // sit at x −100/0/+88; the model is flipped π about Y to bring the bow
+  // round, so in group-local they read +100/0/−88.
   const { x, z, yaw } = SHIP_POS;
   let ground = -Infinity;
-  for (const [lx, lz] of [[7.5, 3.2], [7.5, -3.2], [-7.5, 3.2], [-7.5, -3.2]]) {
-    const sx = lx * SCALE, sz = lz * SCALE;
-    const wx = x + Math.cos(yaw) * sx - Math.sin(yaw) * sz;
-    const wz = z - Math.sin(yaw) * sx - Math.cos(yaw) * sz;
-    ground = Math.max(ground, heightAt(wx, wz));
+  for (const lx of [-88, 0, 100]) {
+    for (const lz of [17, -17]) {
+      const wx = x + Math.cos(yaw) * lx - Math.sin(yaw) * lz;
+      const wz = z - Math.sin(yaw) * lx - Math.cos(yaw) * lz;
+      ground = Math.max(ground, heightAt(wx, wz));
+    }
   }
   group.position.set(x, ground + 0.05, z);
   group.rotation.y = yaw;
   parentGroup.add(group);
+
+  // Dev handle, same school as __groundTP: her real extent in site-local
+  // meters, so a screenshot can be aimed at her instead of hunted for.
+  if (typeof window !== 'undefined') {
+    window.__shipDbg = () => {
+      if (!group) return null;
+      const bb = new THREE.Box3().setFromObject(group);
+      return {
+        pos: [+group.position.x.toFixed(1), +group.position.y.toFixed(1), +group.position.z.toFixed(1)],
+        visible: group.visible,
+        modelled: !procHull,
+        size: [+(bb.max.x - bb.min.x).toFixed(1), +(bb.max.y - bb.min.y).toFixed(1),
+          +(bb.max.z - bb.min.z).toFixed(1)],
+        min: [+bb.min.x.toFixed(1), +bb.min.y.toFixed(1), +bb.min.z.toFixed(1)],
+        max: [+bb.max.x.toFixed(1), +bb.max.y.toFixed(1), +bb.max.z.toFixed(1)],
+      };
+    };
+  }
 }
 
 export function disposeLander() {
@@ -742,7 +816,7 @@ export function updateLander(dt, sunElevDeg) {
       // grow gently and CAP — exponential growth compounded to a
       // thirty-meter white ball that ate the whole hull on camera
       p.scale.multiplyScalar(1 + dt * 0.55);
-      if (p.scale.x > 3.5) p.scale.setScalar(3.5);
+      if (p.scale.x > 3.5 * PROC_SCALE) p.scale.setScalar(3.5 * PROC_SCALE);
       p.material.opacity = Math.max(0, p.material.opacity - dt * 0.6);
     }
     if (egressT >= 1 && parts.puffs.every((p) => p.material.opacity <= 0)) egressT = -1;
@@ -757,11 +831,12 @@ export function getLanderPos() { return SHIP_POS; }
 // either is pushed out along the axis of least penetration. Cheap,
 // exact enough, and it works whether she's visible or not — but only
 // when she's actually standing (not mid-descent).
-// Defaults fit the procedural hull; the GLB upgrade rewrites them
-// from the loaded model's real bounding box.
+// Defaults fit the painted stopgap AT REAL SIZE (its own figures times
+// PROC_SCALE); the GLB upgrade rewrites them from the loaded model's
+// real bounding box.
 let COLL_BOXES = [
-  { minX: -11.5, maxX: 15.2, hz: 4.4 },   // hull + castle + legs
-  { minX: -14.2, maxX: -6.6, hz: 8.2 },   // nacelle outriggers
+  { minX: -11.5 * PROC_SCALE, maxX: 15.2 * PROC_SCALE, hz: 4.4 * PROC_SCALE },
+  { minX: -14.2 * PROC_SCALE, maxX: -6.6 * PROC_SCALE, hz: 8.2 * PROC_SCALE },
 ];
 
 export function resolveShipCollision(px, pz, r = 0.6) {
@@ -769,10 +844,11 @@ export function resolveShipCollision(px, pz, r = 0.6) {
   const { x, z, yaw } = SHIP_POS;
   const cos = Math.cos(yaw), sin = Math.sin(yaw);
   const wx = px - x, wz = pz - z;
-  // world → ship-local (invert rotation.y), then unscale
-  let lx = (wx * cos - wz * sin) / SCALE;
-  let lz = (wx * sin + wz * cos) / SCALE;
-  const rl = r / SCALE;
+  // world → ship-local (invert rotation.y). Both frames are meters now,
+  // so there is nothing left to unscale.
+  let lx = wx * cos - wz * sin;
+  let lz = wx * sin + wz * cos;
+  const rl = r;
   let moved = false;
   for (const b of COLL_BOXES) {
     if (lx < b.minX - rl || lx > b.maxX + rl || Math.abs(lz) > b.hz + rl) continue;
@@ -790,6 +866,5 @@ export function resolveShipCollision(px, pz, r = 0.6) {
   }
   if (!moved) return null;
   // ship-local → world
-  const sx = lx * SCALE, sz = lz * SCALE;
-  return { x: x + sx * cos + sz * sin, z: z + (-sx * sin + sz * cos) };
+  return { x: x + lx * cos + lz * sin, z: z + (-lx * sin + lz * cos) };
 }

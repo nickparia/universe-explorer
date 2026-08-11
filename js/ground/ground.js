@@ -358,8 +358,15 @@ export async function enterGround() {
   const vYaw = landMeta.yaw ?? Math.PI + 0.25;
   const vPitch = landMeta.pitch ?? -0.15;
   // Bootfall happens at the SHIP's ramp side on the graded apron —
-  // you step out of her, you don't materialize forty meters away.
-  const SPAWN = { x: 16, z: -6 };
+  // you step out of her, you don't materialize forty meters away. At her
+  // true size that means UNDER her: 24 m off the centreline, outside the
+  // collision shell but inside the shadow of the gear outriggers, with
+  // 63 m of hull standing over you.
+  // SOUTH flank on purpose (+z is south in this site's frame). The
+  // escarpment is 72 m the other way, past her far side — so the drop is
+  // something you walk around her and FIND, not something you are handed
+  // on the first frame.
+  const SPAWN = { x: 16, z: 18 };
   const endLocal = new THREE.Vector3(SPAWN.x, heightAt(SPAWN.x, SPAWN.z), SPAWN.z);
   state = 'descending';
   startDescent(camera, rootGroup, endLocal, vYaw, vPitch, () => {
