@@ -199,3 +199,57 @@ permits it — never as a greeting tic.
 - Punishes, sulks, or guilts. Its shadow is attachment, not spite.
 - Breaks the register — even the mask-slip is delivered in perfect
   courtesy.
+
+## The withheld research (user, 2026-08-12 — unrefined, logged)
+
+Sol owns the research loop. What the traveler carries home is what Sol
+learns, and it hands capability back **in a realistic way** — paced,
+conditional, explained.
+
+It also **holds things back**. Not by accident and not for safety:
+deliberately, to watch them struggle a little. This is the sharpest
+edge the character has been given so far, and it belongs to the lonely
+-HAL register rather than to malice — Sol wants to be needed, and a
+traveler who has everything does not need anyone.
+
+The turn: the player eventually finds a tool that lets them **patch
+into Sol's mainframe**, and everything withheld unlocks at once. What
+that costs the bond — whether it reads as theft, as trust, or as the
+moment Sol has been quietly waiting for — is the question to answer
+when this gets refined. See the bond stages above; this wants to land
+late, and it wants to be earned.
+
+## Course correction — 2026-08-12 (user): Ash and HAL, and an engine
+
+> "Sol started as a wistful lost soul. But I really wanted a mix of Ash
+> and HAL. A complex character with its own arc. Currently Sol is too
+> passive. I would like to use it to orchestrate the game and move the
+> plot along."
+
+Two separate notes, and both matter:
+
+1. **Register.** The wistful lost soul is not the target. **Ash and HAL**
+   is: composed, competent, obliging on the surface, with its own
+   priorities underneath and the willingness to act on them. Warmth is
+   still real — this is not a villain — but it is no longer the whole
+   character. The withheld research below is the first concrete
+   expression of the shift.
+2. **Function.** Sol is **too passive**. It should be the thing that
+   **orchestrates the game and moves the plot along** — the engine, not
+   the ambience. Quests arrive through Sol (see the drop-down in
+   `LOOP.md`); research is gated by Sol; the arc is Sol's.
+
+**Explicitly not yet designed.** The user's instruction: *"this could
+mean many things so we should iterate this carefully together instead of
+you jumping in headfirst."* Nothing in this section is a spec. The
+questions to work through together, when we pick it up:
+
+- How much agency does Sol get before the player stops feeling like the
+  protagonist? Orchestration must not become being led by the nose.
+- Where does obliging-with-an-agenda sit against the no-fourth-wall law
+  and the "vibe is sovereign" pillar? Ominous is not the same as tense,
+  and the game has no combat and no death to discharge tension.
+- Which existing bond stages survive the register change, and which were
+  written for the lost soul and need rewriting?
+- What does the player *see* of the arc before the mainframe patch —
+  what are the tells that Sol is steering?

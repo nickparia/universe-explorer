@@ -244,3 +244,87 @@ Deferred, deliberately: combat (revisit only with evidence the loop
 needs it), the radio-voice cast (garnish, later), multiplayer
 presence. (Walkable interiors were deferred here once — un-deferred
 2026-08-04; the ship is the home, and homes are walked.)
+
+## Design notes — 2026-08-12 (user, holiday planning pass)
+
+Logged as given, refined later. These are direction, not yet spec.
+
+### Automation as a property of every action
+
+Every action in the game gets classified for **automation eligibility**:
+once a dependency is built or a skill is held, the task can be handed
+to Solace, who trains its drones to run it. Kept as its own **task
+table**, not scattered through feature code:
+
+| field | meaning |
+| --- | --- |
+| task | the action, e.g. *set survey marker* |
+| mode | `always_manual` \| `gated` |
+| level | for `gated`, the automation level that unlocks it |
+
+The runtime checks the player's qualification against this table when
+they perform an action. This is the machinery under [[the ten-times
+law]] — chores become blueprints — and it wants to exist before the
+chores multiply.
+
+### Solace's screen — the drop-down
+
+On every planet (and everywhere else) a **screen pulls down from the
+top of the frame** to talk to Solace. It is summoned by a **slightly
+ominous logo** in the top bar whose **colour changes with the
+situation**. It is HUD furniture, so it wears the same theme as every
+other HUD notification. Diegetic, per the no-fourth-wall law: this is
+the ship's terminal, not a game menu.
+
+Everything on it is in **MOTHER's register** — minimal, monospaced,
+slightly ominous.
+
+**Default page depends on where you are:**
+
+- **Aboard the ship → system health overview.** The rooms currently
+  built, each room's **level of growth** (rooms level up, they are not
+  binary) and its **health**. Drawn on a **ship map seen from
+  overhead** — the aircraft seat-selection idiom. This is also where
+  you **add a room or upgrade a room**.
+- **On a planet, or inside any object you entered/boarded → that
+  object's summary.** Near-empty until the place has been scouted; it
+  fills as you survey. The ship page is still reachable from here, and
+  the local page is still reachable from the ship — only the default
+  changes.
+
+**Quests arrive here**, delivered by Solace into the overview. A
+waiting notification must read clearly in the top bar.
+
+### Orbit — choosing where to land
+
+While orbiting, **L raises landing markers on the planet view** and
+the player picks which one to descend to. (Today landing is a single
+scripted site.)
+
+### Mars — the cliff is not yet a cliff
+
+The landing spot is right, but the cliff edge "looks more like a lip
+in my backyard". If she is standing above the crater then the drop
+must be **massive** — over-stylise if the real numbers won't carry it.
+Belongs with the terrain/landmark tasks in [[solace-quality-pass]].
+
+### The ship, over time
+
+- **(a) She changes over time** — the hull the player sees should
+  reflect what they have built. The starter tank is the *starting*
+  state, not the ship.
+- **(b) The design keeps progressing** — the hand-model is that work.
+- **(c) She should be TALLER.** The Nostromo school has vertically
+  massive pipework and stacks; the current body is too low. Height is
+  the missing drama.
+- **Her name goes on the hull**: `SOLACE` in **faded lettering, of
+  awe-inspiring size**.
+
+### The research loop — Solace owns it
+
+What the player carries home is what Solace learns. It feeds research
+and capabilities back **in a realistic way** — and it **holds some of
+it back**, deliberately, to watch the player struggle a little. Later
+the player finds a tool that lets them **patch into Solace's
+mainframe**, and everything withheld unlocks at once. Character beat
+as much as a system; the arc detail lives in `SOL.md`.

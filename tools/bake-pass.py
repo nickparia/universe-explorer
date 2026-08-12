@@ -30,12 +30,24 @@ ANGLE_LIMIT = math.radians(40)
 # Per-material resting roughness; wear/grime/noise modulate around it.
 BASE_ROUGH = {
     "hull": 0.55, "hull_light": 0.55, "hull_dark": 0.62, "grime": 0.82,
+    "hull_stencil": 0.68,   # her name: paint over plate, so rougher than plate
     "window_glow": 0.15, "metal_dark": 0.60, "nav_red": 0.35, "rust": 0.85,
     "panel_dark": 0.65, "nav_green": 0.35, "pipe_steel": 0.38,
     "tank_shell": 0.50, "warning_yellow": 0.50, "engine_nozzle": 0.35,
     "crew_suit": 0.70,
 }
 DEFAULT_ROUGH = 0.55
+
+def shortest_edge(me):
+    """The shortest real edge in a mesh — the ceiling on any bevel width."""
+    vs = me.vertices
+    best = None
+    for e in me.edges:
+        a, b = e.vertices
+        d = (vs[a].co - vs[b].co).length
+        if d > 1e-6 and (best is None or d < best):
+            best = d
+    return best
 
 # ── Stage 2: weld + bevel (same recipe as bevel-pass.py) ─────────────
 bpy.ops.wm.read_factory_settings(use_empty=True)
@@ -72,13 +84,25 @@ for o in meshes:
     dims = [d for d in o.dimensions if d > 1e-4]
     if not dims:
         continue
+    # Width from the object's overall size is only half the story: panel
+    # subdivision leaves faces an order of magnitude smaller than the
+    # object, and a bevel wider than the face it sits on inverts. Those
+    # inversions travel all the way to draco before they show, as
+    # vertices 1e29 m out and a viewer that renders nothing. Cap the
+    # width at a third of the shortest edge and the class goes away.
+    shortest = shortest_edge(o.data) or WIDTH_MAX
     b = o.modifiers.new("Bevel", "BEVEL")
     b.offset_type = "OFFSET"
-    b.width = max(WIDTH_MIN, min(WIDTH_MAX, WIDTH_FACTOR * min(dims)))
+    b.width = min(max(WIDTH_MIN, min(WIDTH_MAX, WIDTH_FACTOR * min(dims))),
+                  0.33 * shortest)
     b.segments = SEGMENTS
     b.limit_method = "ANGLE"
     b.angle_limit = ANGLE_LIMIT
-    b.miter_outer = "MITER_ARC"
+    # MITER_SHARP, not MITER_ARC: the arc miter is prettier on a clean
+    # corner and is the one part of this stack that inverts on a marginal
+    # one, throwing vertices past 1e18 and collapsing the whole model at
+    # draco. A machined edge does not need the arc.
+    b.miter_outer = "MITER_SHARP"
     b.use_clamp_overlap = True
     wn = o.modifiers.new("WeightedNormal", "WEIGHTED_NORMAL")
     wn.keep_sharp = True
@@ -265,6 +289,32 @@ for o in bpy.context.selected_objects:
     if o is not ship:
         o.name = "gear"
 ship.name = "solace"
+
+# Insurance before export: bevel and inset can both leave zero-area
+# faces and coincident verts behind. They survive Blender and glTF
+# happily and only detonate at draco quantisation, where the symptom
+# (vertices 4e12 m out, an empty viewer) says nothing about the cause.
+for ob in [o for o in bpy.data.objects if o.type == "MESH"]:
+    bm = bmesh.new()
+    bm.from_mesh(ob.data)
+    bmesh.ops.remove_doubles(bm, verts=bm.verts, dist=1e-5)
+    bmesh.ops.dissolve_degenerate(bm, dist=1e-5, edges=bm.edges[:])
+    bm.to_mesh(ob.data)
+    bm.free()
+
+# Refuse to ship a detonated hull. An inverted sliver anywhere in the
+# stack throws vertices to 1e16 and beyond; draco then quantises against
+# that bounding box and the whole model collapses to nothing on screen.
+# The failure is silent all the way to the viewer, so it gets caught
+# here, loudly, rather than in a screenshot an hour later.
+for ob in [o for o in bpy.data.objects if o.type == "MESH"]:
+    if not ob.data.vertices:
+        continue
+    worst = max(max(abs(c) for c in v.co) for v in ob.data.vertices)
+    if not worst < 1e5:
+        raise SystemExit(
+            f"bake-pass: ABORT — {ob.name} has vertices {worst:.3g} m out. "
+            "Something in the bevel stack inverted; do not ship this file.")
 
 bpy.ops.export_scene.gltf(filepath=dst, export_format="GLB", export_yup=True)
 print(f"bake-pass: {src} -> {dst}")

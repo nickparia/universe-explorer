@@ -582,12 +582,14 @@ export function setLanderVisible(v) {
   if (group) group.visible = v;
 }
 
-// ── The modelled hull: solace-hauler.baked.glb ───────────────────────
-// A proper sculpted body (authored in real meters: 238 m stem to stern,
-// y-up, bow pointing −X, gear pads at y=0; the .baked variant is the
-// authored model run through tools/ship-pipeline.sh — machined-edge
-// bevel pass, baked AO + edge-wear roughness atlas, join (645→~15 draw
-// calls), draco + webp (6.7→1.1 MB)). We load it async and swap it in
+// ── The modelled hull: solace-hauler-v2.baked.glb ────────────────────
+// The hand-modelled body (tools/model-solace.py — a lines plan lofted
+// station by station, not a kit-bash; open models/solace-hauler-v2.blend
+// to work on her by hand). Authored in real meters, y-up, bow pointing
+// −X, gear pads at y=0. The .baked variant is that model run through
+// tools/ship-pipeline.sh — machined-edge bevel pass, baked AO + edge-wear
+// roughness atlas, joined to 2 nodes / ~19 draw calls, draco + webp
+// (9.7 MB → 868 KB). We load it async and swap it in
 // over the procedural hull; the painted ship stays as the instant-on
 // fallback so the pad is never empty while 1 MB travels. Practicals and
 // collision re-seat themselves from the model's bbox.
@@ -601,7 +603,13 @@ export function setLanderVisible(v) {
 // pads at 0.35 m, ankle-high on a 1.65 m traveler. Authored, the same
 // pad stands 1.6 m — you look across the top of it, which is the read
 // a 256 m hauler is supposed to have.
-export const SHIP_LEN = 256.4;   // measured: bbox x −125.15 … 131.30
+//
+// The hand-model measures 262.2 m: her hull is still 256.4 stem to
+// transom, and the extra 5.8 is the bow whiskers, which are allowed to
+// be the first thing you meet. She also stands 74.5 m now rather than
+// 63.3 — the towers are the answer to "Nostromo had vertically massive
+// pipes" (docs/LOOP.md, design notes 2026-08-12).
+export const SHIP_LEN = 262.2;   // measured: bbox x −131.03 … 131.20
 
 // The painted fallback hull is drawn at its own convenient size; it
 // gets multiplied up to meet her. Only the stopgap needs this — the
@@ -613,7 +621,7 @@ const PROC_SCALE = SHIP_LEN / PROC_LEN;
 function upgradeToModel() {
   const draco = new DRACOLoader();
   draco.setDecoderPath('/draco/gltf/');
-  new GLTFLoader().setDRACOLoader(draco).load('/models/solace-hauler.baked.glb', (gltf) => {
+  new GLTFLoader().setDRACOLoader(draco).load('/models/solace-hauler-v2.baked.glb', (gltf) => {
     if (!group || !parts) return;            // site torn down mid-flight
     const model = gltf.scene;
     // Authored meters ARE world meters now — no scale at all. Bow −X →

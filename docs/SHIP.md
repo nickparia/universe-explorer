@@ -17,17 +17,47 @@ painted texture detail, palette-law shading, silhouette density.
 
 ## The modelled hull
 
-`models/solace-hauler.glb` (user-authored, 2026-08-04) is the S0
-exterior body: real meters (238 m stem to stern, y-up, bow → −X, gear
-pads at y=0, belly at 12 m). `js/ground/lander.js` loads it at runtime
-(served from `public/models/` in dev, R2 in prod), scales it to game
-hull length (~52 m), flips the bow to local +X, and converts its
-materials to Lambert with the painted-emissive floor so the no-ambient
-site can't drop her flanks to black. Practicals (beacons, strobe,
-floodlight, egress gas) and collision re-seat themselves from the
-loaded model's bounding box. The procedural painted hull below remains
-as the instant-on fallback while the GLB travels — and as the deck-plan
-truth the interior is built against.
+`tools/model-solace.py` **is** the ship. She is authored as a lines
+plan — stations down her length, each a closed section with its own
+beam, sheer, tumblehome and turn of bilge — and the skin is lofted
+between them. Every mass that grows off the hull is lofted the same
+way, and every corner that reads as a box is a chamfered run, so the
+corner is a face that takes light rather than an edge that doesn't.
+Nothing in the file is a primitive cube standing in for a shape.
+
+That replaces the kit-bash of 2026-08-04: 644 objects, 40,428 tris,
+380 of them 12-tri boxes. Bevel and baked AO made those boxes catch
+light beautifully; they could not make them stop being boxes, and at
+256 m there is nowhere to hide.
+
+- **Source of truth**: `tools/model-solace.py` (re-runnable, seeded, so
+  the panel work is identical every run).
+- **Hand-editable**: `models/solace-hauler-v2.blend` — open it and work
+  on her directly; the script is the origin, not a cage.
+- **Shipping asset**: `public/models/solace-hauler-v2.baked.glb`
+  (868 KB, 111k tris, 2 nodes / ~19 draw calls) via
+  `tools/ship-pipeline.sh`.
+- **Judging**: `tools/clay-shot.py` for form while cutting,
+  `/ship-viewer.html` + `tools/bench-shot.mjs` for the verdict,
+  `tools/ship-shot.mjs` for her on the pad.
+
+**Dimensions**: 262.2 m over the bow whiskers (256.4 m hull, stem to
+transom — the length the scale pass fought for), 80.9 m across the
+nacelles, **74.5 m tall**. The height is deliberate: the user asked for
+vertical mass on 2026-08-12 ("Nostromo had vertically massive pipes"),
+and the first cut of this model stood *lower* than the kit-bash it
+replaced. The answer is the aft plant — twin towers with pipe banks,
+collars, a gantry you could walk, and masts above.
+
+**Her name is on her**: `SOLACE`, eleven metres tall, standing proud of
+the forward flank in `hull_stencil` — paint a shade off the plate, so
+the bake gives the letters their own wear. The flank forward of
+midships is deliberately kept clear of pipe runs to give it a field.
+
+`js/ground/lander.js` loads the baked GLB at runtime, flips the bow to
+local +X, and re-seats practicals and collision from its bbox. The
+procedural painted hull remains the instant-on fallback and the
+deck-plan truth the interior is built against.
 
 ## Massing (≈34 m stem to stern, procedural fallback)
 
